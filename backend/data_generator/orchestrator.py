@@ -10,7 +10,8 @@ from backend.data_generator.attack_scenarios import (
     generate_c2_beaconing,
     generate_lateral_movement,
     generate_false_positive,
-    generate_benign_traffic
+    generate_benign_traffic,
+    generate_data_exfiltration
 )
 from backend.core.schemas import UnifiedEvent
 
@@ -21,9 +22,15 @@ class DataOrchestrator:
         events = []
         
         # Attack events
-        events.extend(generate_brute_force_attack(start_time))
-        events.extend(generate_c2_beaconing(start_time))
-        events.extend(generate_lateral_movement(start_time))
+        # Multiply instances to ensure enough support for models
+        for i in range(5):
+            events.extend(generate_brute_force_attack(start_time + timedelta(hours=i)))
+        for i in range(30):
+            events.extend(generate_c2_beaconing(start_time + timedelta(minutes=i*10), duration_seconds=600))
+        for i in range(15):
+            events.extend(generate_lateral_movement(start_time + timedelta(minutes=i*25)))
+        for i in range(10):
+            events.extend(generate_data_exfiltration(start_time + timedelta(hours=i*2)))
         
         # False positive events (also benign)
         events.extend(generate_false_positive(start_time))
@@ -87,6 +94,7 @@ class DataOrchestrator:
         c2_events = generate_c2_beaconing(base_time + timedelta(seconds=60))
         lm_events = generate_lateral_movement(base_time + timedelta(seconds=300))
         fp_events = generate_false_positive(base_time)
+        exfil_events = generate_data_exfiltration(base_time + timedelta(seconds=200))
 
         print("Starting demo mode...")
         await asyncio.gather(
@@ -94,6 +102,7 @@ class DataOrchestrator:
             run_scenario(c2_events, delay_seconds=60),
             run_scenario(lm_events, delay_seconds=300),
             run_scenario(fp_events, delay_seconds=0),
+            run_scenario(exfil_events, delay_seconds=200),
             benign_traffic_loop()
         )
 

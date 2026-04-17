@@ -284,3 +284,47 @@ def generate_benign_traffic(start_time: datetime, count=500) -> List[UnifiedEven
         current_time += timedelta(milliseconds=random.randint(100, 2000))
         
     return events
+
+def generate_data_exfiltration(start_time: datetime, duration_seconds: int = 120) -> List[UnifiedEvent]:
+    events = []
+    
+    current_time = start_time
+    target_ip = "192.168.100.50" 
+    
+    for i in range(120): 
+        events.append(UnifiedEvent(
+            timestamp=current_time,
+            layer="network",
+            src_entity="10.0.0.33",
+            dst_entity=target_ip,
+            src_internal=True,
+            dst_internal=False,
+            src_ip="10.0.0.33",
+            dst_ip=target_ip,
+            dst_port=443,
+            protocol="TCP",
+            bytes_sent=random.randint(5 * 1024 * 1024, 25 * 1024 * 1024), 
+            bytes_received=random.randint(128, 512),
+            raw_label="malicious",
+            attack_type="data_exfiltration"
+        ))
+        
+        if i % 10 == 0:
+            events.append(UnifiedEvent(
+                timestamp=current_time,
+                layer="endpoint",
+                src_entity="10.0.0.33",
+                dst_entity="10.0.0.33",
+                src_internal=True,
+                dst_internal=True,
+                src_ip="10.0.0.33",
+                process_name="7z.exe",
+                user_account="jsmith",
+                action="read",
+                raw_label="malicious",
+                attack_type="data_exfiltration"
+            ))
+            
+        current_time += timedelta(seconds=random.randint(2, 5))
+        
+    return events
