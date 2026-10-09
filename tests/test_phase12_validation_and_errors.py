@@ -165,7 +165,7 @@ def test_scenario_identifier_absence_documented():
     sample_events = events[:100]
 
     for ev in sample_events:
-        d = ev.model_dump()
+        d = ev.model_dump(exclude_none=True)
         assert "scenario_id" not in d
         assert "campaign_id" not in d
         assert "simulation_batch" not in d

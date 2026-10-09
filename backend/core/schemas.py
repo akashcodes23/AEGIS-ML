@@ -57,6 +57,11 @@ class UnifiedEvent(BaseModel):
     port_risk_score: Optional[float] = None
     connections_per_minute: Optional[float] = None
 
+    # Scenario provenance metadata (Phase 17)
+    scenario_id: Optional[str] = None
+    scenario_type: Optional[str] = None
+    generator_version: Optional[str] = None
+
     # Training labels (None in demo mode)
     raw_label: Optional[str] = None
     attack_type: Optional[str] = None

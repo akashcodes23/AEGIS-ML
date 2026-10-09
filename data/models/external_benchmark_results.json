@@ -1,7 +1,7 @@
 {
   "metadata": {
     "evaluation_name": "CIC-IDS2017 External Benchmark Evaluation",
-    "timestamp": "2026-10-09T18:07:32.746825",
+    "timestamp": "2026-10-09T18:22:30.519950",
     "target_file": "/Users/akashgpatil/major_project/AEGIS-ML/data/external/cicids2017/Monday-WorkingHours.pcap_ISCX.csv",
     "random_seed": 42,
     "provenance": "External benchmark \u2014 University of New Brunswick (UNB), Canadian Institute for Cybersecurity (CIC)."

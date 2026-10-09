@@ -1,24 +1,39 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 import random
+import uuid
 
 from backend.core.schemas import UnifiedEvent
 from backend.core.config import ATTACKER_IPS, C2_SERVER_IP, C2_PORT, INTERNAL_IPS
 
-def generate_brute_force_attack(start_time: datetime) -> List[UnifiedEvent]:
+DEFAULT_GENERATOR_VERSION = "2.0.0"
+
+
+def generate_event_uuid(scenario_id: Optional[str], event_idx: int, rng: Optional[random.Random]) -> str:
+    """Generate deterministic UUID based on scenario_id and event index, or fallback to rng/uuid4."""
+    if scenario_id:
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{scenario_id}_{event_idx}"))
+    if rng is not None:
+        return str(uuid.UUID(int=rng.getrandbits(128)))
+    return str(uuid.uuid4())
+
+
+def generate_brute_force_attack(
+    start_time: datetime,
+    scenario_id: Optional[str] = None,
+    generator_version: str = DEFAULT_GENERATOR_VERSION,
+    rng: Optional[random.Random] = None,
+) -> List[UnifiedEvent]:
+    r = rng if rng is not None else random
     events = []
     
-    # Generate random variance for brute force attempts (noise)
-    attempts = random.randint(150, 450)
+    attempts = r.randint(150, 450)
     for i in range(attempts):
-        # Timestamps: spread with variance across 30 to 120 seconds
-        time_offset = timedelta(seconds=(random.uniform(30.0, 120.0) / attempts) * i)
+        time_offset = timedelta(seconds=(r.uniform(30.0, 120.0) / attempts) * i)
         event_time = start_time + time_offset
-        
         src_ip = ATTACKER_IPS[i % len(ATTACKER_IPS)]
         
-        # Determine status (allow random success or very late success)
-        if i == attempts - random.randint(1, 5):
+        if i == attempts - r.randint(1, 5):
             status_code = 200
             auth_result = "success"
         else:
@@ -27,6 +42,7 @@ def generate_brute_force_attack(start_time: datetime) -> List[UnifiedEvent]:
             
         # Application event
         app_event = UnifiedEvent(
+            event_id=generate_event_uuid(scenario_id, i * 2, rng),
             timestamp=event_time,
             layer="application",
             src_entity=src_ip,
@@ -39,12 +55,16 @@ def generate_brute_force_attack(start_time: datetime) -> List[UnifiedEvent]:
             status_code=status_code,
             auth_result=auth_result,
             raw_label="malicious",
-            attack_type="brute_force"
+            attack_type="brute_force",
+            scenario_id=scenario_id,
+            scenario_type="brute_force" if scenario_id else None,
+            generator_version=generator_version if scenario_id else None,
         )
         events.append(app_event)
         
         # Matching network layer event
         net_event = UnifiedEvent(
+            event_id=generate_event_uuid(scenario_id, i * 2 + 1, rng),
             timestamp=event_time,
             layer="network",
             src_entity=src_ip,
@@ -56,22 +76,34 @@ def generate_brute_force_attack(start_time: datetime) -> List[UnifiedEvent]:
             bytes_sent=512,
             bytes_received=256,
             raw_label="malicious",
-            attack_type="brute_force"
+            attack_type="brute_force",
+            scenario_id=scenario_id,
+            scenario_type="brute_force" if scenario_id else None,
+            generator_version=generator_version if scenario_id else None,
         )
         events.append(net_event)
         
     return events
 
-def generate_c2_beaconing(start_time: datetime, duration_seconds=300) -> List[UnifiedEvent]:
+
+def generate_c2_beaconing(
+    start_time: datetime,
+    duration_seconds: int = 300,
+    scenario_id: Optional[str] = None,
+    generator_version: str = DEFAULT_GENERATOR_VERSION,
+    rng: Optional[random.Random] = None,
+) -> List[UnifiedEvent]:
+    r = rng if rng is not None else random
     events = []
     
     current_time = start_time
     end_time = start_time + timedelta(seconds=duration_seconds)
     beacon_count = 0
+    event_counter = 0
     
     while current_time < end_time:
-        # Network event for beacon
         net_event = UnifiedEvent(
+            event_id=generate_event_uuid(scenario_id, event_counter, rng),
             timestamp=current_time,
             layer="network",
             src_entity="10.0.0.23",
@@ -83,15 +115,20 @@ def generate_c2_beaconing(start_time: datetime, duration_seconds=300) -> List[Un
             dst_port=C2_PORT,
             protocol="TCP",
             bytes_sent=64,
-            bytes_received=random.randint(128, 256),
+            bytes_received=r.randint(128, 256),
             raw_label="malicious",
-            attack_type="c2_beaconing"
+            attack_type="c2_beaconing",
+            scenario_id=scenario_id,
+            scenario_type="c2_beaconing" if scenario_id else None,
+            generator_version=generator_version if scenario_id else None,
         )
         events.append(net_event)
         beacon_count += 1
+        event_counter += 1
         
         if beacon_count == 5:
             endpoint_event = UnifiedEvent(
+                event_id=generate_event_uuid(scenario_id, event_counter, rng),
                 timestamp=current_time,
                 layer="endpoint",
                 src_entity="10.0.0.23",
@@ -104,21 +141,32 @@ def generate_c2_beaconing(start_time: datetime, duration_seconds=300) -> List[Un
                 user_account="jsmith",
                 action="exec",
                 raw_label="malicious",
-                attack_type="c2_beaconing"
+                attack_type="c2_beaconing",
+                scenario_id=scenario_id,
+                scenario_type="c2_beaconing" if scenario_id else None,
+                generator_version=generator_version if scenario_id else None,
             )
             events.append(endpoint_event)
+            event_counter += 1
             
-        jitter = random.randint(-5, 5)
+        jitter = r.randint(-5, 5)
         current_time += timedelta(seconds=60 + jitter)
         
     return events
 
-def generate_lateral_movement(start_time: datetime) -> List[UnifiedEvent]:
+
+def generate_lateral_movement(
+    start_time: datetime,
+    scenario_id: Optional[str] = None,
+    generator_version: str = DEFAULT_GENERATOR_VERSION,
+    rng: Optional[random.Random] = None,
+) -> List[UnifiedEvent]:
+    r = rng if rng is not None else random
     events = []
+    event_counter = 0
     
-    # Endpoint events for discovering and moving laterally
-    # net.exe execution
     events.append(UnifiedEvent(
+        event_id=generate_event_uuid(scenario_id, event_counter, rng),
         timestamp=start_time,
         layer="endpoint",
         src_entity="10.0.0.23",
@@ -130,12 +178,16 @@ def generate_lateral_movement(start_time: datetime) -> List[UnifiedEvent]:
         user_account="jsmith",
         action="exec",
         raw_label="malicious",
-        attack_type="lateral_movement"
+        attack_type="lateral_movement",
+        scenario_id=scenario_id,
+        scenario_type="lateral_movement" if scenario_id else None,
+        generator_version=generator_version if scenario_id else None,
     ))
+    event_counter += 1
     
-    # psexec.exe execution
     psexec_time = start_time + timedelta(seconds=2)
     events.append(UnifiedEvent(
+        event_id=generate_event_uuid(scenario_id, event_counter, rng),
         timestamp=psexec_time,
         layer="endpoint",
         src_entity="10.0.0.23",
@@ -147,17 +199,19 @@ def generate_lateral_movement(start_time: datetime) -> List[UnifiedEvent]:
         user_account="jsmith",
         action="exec",
         raw_label="malicious",
-        attack_type="lateral_movement"
+        attack_type="lateral_movement",
+        scenario_id=scenario_id,
+        scenario_type="lateral_movement" if scenario_id else None,
+        generator_version=generator_version if scenario_id else None,
     ))
+    event_counter += 1
     
-    # Network scan and connection attempts to internal hosts (noisy counts)
     current_time = psexec_time + timedelta(seconds=1)
-    
-    scan_count = random.randint(10, 30)
+    scan_count = r.randint(10, 30)
     for i in range(scan_count):
-        target_ip = f"10.0.0.{random.randint(20, 200)}"
-        
+        target_ip = f"10.0.0.{r.randint(20, 200)}"
         events.append(UnifiedEvent(
+            event_id=generate_event_uuid(scenario_id, event_counter, rng),
             timestamp=current_time,
             layer="network",
             src_entity="10.0.0.23",
@@ -169,29 +223,38 @@ def generate_lateral_movement(start_time: datetime) -> List[UnifiedEvent]:
             dst_port=445,
             protocol="TCP",
             bytes_sent=128,
-            bytes_received=random.randint(64, 512),
+            bytes_received=r.randint(64, 512),
             raw_label="malicious",
-            attack_type="lateral_movement"
+            attack_type="lateral_movement",
+            scenario_id=scenario_id,
+            scenario_type="lateral_movement" if scenario_id else None,
+            generator_version=generator_version if scenario_id else None,
         ))
-        
-        # fast connections, add between 100-500 ms
-        current_time += timedelta(milliseconds=random.randint(100, 500))
+        event_counter += 1
+        current_time += timedelta(milliseconds=r.randint(100, 500))
         
     return events
 
-def generate_false_positive(start_time: datetime) -> List[UnifiedEvent]:
+
+def generate_false_positive(
+    start_time: datetime,
+    scenario_id: Optional[str] = None,
+    generator_version: str = DEFAULT_GENERATOR_VERSION,
+    rng: Optional[random.Random] = None,
+) -> List[UnifiedEvent]:
+    r = rng if rng is not None else random
     events = []
+    event_counter = 0
     
-    # Adjust start time to 2:00 AM
     start_time = start_time.replace(hour=2, minute=0, second=0, microsecond=0)
     
-    # Generate 50 file access endpoint events reading .xlsx and .pdf files
     for i in range(50):
-        file_ext = random.choice([".xlsx", ".pdf"])
-        file_name = f"C:\\Finance\\Q{random.randint(1,4)}_Report_{i}{file_ext}"
+        file_ext = r.choice([".xlsx", ".pdf"])
+        file_name = f"C:\\Finance\\Q{r.randint(1,4)}_Report_{i}{file_ext}"
         
         events.append(UnifiedEvent(
-            timestamp=start_time + timedelta(seconds=i*54 + random.randint(-10, 10)), # Noise around interval
+            event_id=generate_event_uuid(scenario_id, event_counter, rng),
+            timestamp=start_time + timedelta(seconds=i*54 + r.randint(-10, 10)),
             layer="endpoint",
             src_entity="10.0.0.5",
             dst_entity="10.0.0.5",
@@ -203,11 +266,15 @@ def generate_false_positive(start_time: datetime) -> List[UnifiedEvent]:
             file_path=file_name,
             action="read",
             raw_label="benign",
-            attack_type=None
+            attack_type=None,
+            scenario_id=scenario_id,
+            scenario_type="false_positive_backup" if scenario_id else None,
+            generator_version=generator_version if scenario_id else None,
         ))
+        event_counter += 1
         
-    # Single large network transfer event representing the backup
     events.append(UnifiedEvent(
+        event_id=generate_event_uuid(scenario_id, event_counter, rng),
         timestamp=start_time,
         layer="network",
         src_entity="10.0.0.5",
@@ -218,34 +285,45 @@ def generate_false_positive(start_time: datetime) -> List[UnifiedEvent]:
         dst_ip="10.0.0.90",
         dst_port=445,
         protocol="TCP",
-        bytes_sent=random.randint(1900*1024*1024, 2100*1024*1024),
-        bytes_received=1024 * 512, # 512 KB of overhead
-        duration_ms=45 * 60 * 1000, # 45 minutes
+        bytes_sent=r.randint(1900*1024*1024, 2100*1024*1024),
+        bytes_received=1024 * 512,
+        duration_ms=45 * 60 * 1000,
         raw_label="benign",
-        attack_type=None
+        attack_type=None,
+        scenario_id=scenario_id,
+        scenario_type="false_positive_backup" if scenario_id else None,
+        generator_version=generator_version if scenario_id else None,
     ))
     
     return events
 
-def generate_benign_traffic(start_time: datetime, count=500) -> List[UnifiedEvent]:
+
+def generate_benign_traffic(
+    start_time: datetime,
+    count: int = 500,
+    scenario_id: Optional[str] = None,
+    generator_version: str = DEFAULT_GENERATOR_VERSION,
+    rng: Optional[random.Random] = None,
+) -> List[UnifiedEvent]:
+    r = rng if rng is not None else random
     events = []
     
-    # Common internal destinations
     destinations = [
-        ("10.0.0.10", 80, "HTTP", "application"), # Intranet
-        ("10.0.0.11", 53, "DNS", "network"),      # DNS
-        ("10.0.0.12", 445, "SMB", "network"),     # File server
-        ("10.0.0.13", 25, "SMTP", "network")      # Mail server
+        ("10.0.0.10", 80, "HTTP", "application"),
+        ("10.0.0.11", 53, "DNS", "network"),
+        ("10.0.0.12", 445, "SMB", "network"),
+        ("10.0.0.13", 25, "SMTP", "network")
     ]
     
     current_time = start_time
     
     for i in range(count):
-        src_ip = random.choice(INTERNAL_IPS)
-        dst_ip, dst_port, protocol, layer = random.choice(destinations)
+        src_ip = r.choice(INTERNAL_IPS)
+        dst_ip, dst_port, protocol, layer = r.choice(destinations)
         
         if layer == "application":
             event = UnifiedEvent(
+                event_id=generate_event_uuid(scenario_id, i, rng),
                 timestamp=current_time,
                 layer="application",
                 src_entity=src_ip,
@@ -259,13 +337,17 @@ def generate_benign_traffic(start_time: datetime, count=500) -> List[UnifiedEven
                 http_method="GET",
                 endpoint_path="/intranet",
                 status_code=200,
-                bytes_sent=random.randint(500, 2000),
-                bytes_received=random.randint(5000, 50000),
+                bytes_sent=r.randint(500, 2000),
+                bytes_received=r.randint(5000, 50000),
                 raw_label="benign",
-                attack_type=None
+                attack_type=None,
+                scenario_id=scenario_id,
+                scenario_type="benign_traffic" if scenario_id else None,
+                generator_version=generator_version if scenario_id else None,
             )
         else:
             event = UnifiedEvent(
+                event_id=generate_event_uuid(scenario_id, i, rng),
                 timestamp=current_time,
                 layer="network",
                 src_entity=src_ip,
@@ -276,25 +358,38 @@ def generate_benign_traffic(start_time: datetime, count=500) -> List[UnifiedEven
                 dst_ip=dst_ip,
                 dst_port=dst_port,
                 protocol=protocol,
-                bytes_sent=random.randint(100, 1000),
-                bytes_received=random.randint(100, 5000),
+                bytes_sent=r.randint(100, 1000),
+                bytes_received=r.randint(100, 5000),
                 raw_label="benign",
-                attack_type=None
+                attack_type=None,
+                scenario_id=scenario_id,
+                scenario_type="benign_traffic" if scenario_id else None,
+                generator_version=generator_version if scenario_id else None,
             )
             
         events.append(event)
-        current_time += timedelta(milliseconds=random.randint(100, 2000))
+        current_time += timedelta(milliseconds=r.randint(100, 2000))
         
     return events
 
-def generate_data_exfiltration(start_time: datetime, duration_seconds: int = 120) -> List[UnifiedEvent]:
+
+def generate_data_exfiltration(
+    start_time: datetime,
+    duration_seconds: int = 120,
+    scenario_id: Optional[str] = None,
+    generator_version: str = DEFAULT_GENERATOR_VERSION,
+    rng: Optional[random.Random] = None,
+) -> List[UnifiedEvent]:
+    r = rng if rng is not None else random
     events = []
+    event_counter = 0
     
     current_time = start_time
     target_ip = "192.168.100.50" 
     
     for i in range(120): 
         events.append(UnifiedEvent(
+            event_id=generate_event_uuid(scenario_id, event_counter, rng),
             timestamp=current_time,
             layer="network",
             src_entity="10.0.0.33",
@@ -305,14 +400,19 @@ def generate_data_exfiltration(start_time: datetime, duration_seconds: int = 120
             dst_ip=target_ip,
             dst_port=443,
             protocol="TCP",
-            bytes_sent=random.randint(5 * 1024 * 1024, 25 * 1024 * 1024), 
-            bytes_received=random.randint(128, 512),
+            bytes_sent=r.randint(5 * 1024 * 1024, 25 * 1024 * 1024), 
+            bytes_received=r.randint(128, 512),
             raw_label="malicious",
-            attack_type="data_exfiltration"
+            attack_type="data_exfiltration",
+            scenario_id=scenario_id,
+            scenario_type="data_exfiltration" if scenario_id else None,
+            generator_version=generator_version if scenario_id else None,
         ))
+        event_counter += 1
         
         if i % 10 == 0:
             events.append(UnifiedEvent(
+                event_id=generate_event_uuid(scenario_id, event_counter, rng),
                 timestamp=current_time,
                 layer="endpoint",
                 src_entity="10.0.0.33",
@@ -324,9 +424,13 @@ def generate_data_exfiltration(start_time: datetime, duration_seconds: int = 120
                 user_account="jsmith",
                 action="read",
                 raw_label="malicious",
-                attack_type="data_exfiltration"
+                attack_type="data_exfiltration",
+                scenario_id=scenario_id,
+                scenario_type="data_exfiltration" if scenario_id else None,
+                generator_version=generator_version if scenario_id else None,
             ))
+            event_counter += 1
             
-        current_time += timedelta(seconds=random.randint(2, 5))
+        current_time += timedelta(seconds=r.randint(2, 5))
         
     return events
