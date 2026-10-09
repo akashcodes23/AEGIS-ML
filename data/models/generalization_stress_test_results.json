@@ -1,0 +1,408 @@
+{
+  "audit_title": "AEGIS-ML Phase 18: Generalization and Leakage Stress Test",
+  "timestamp": "2026-10-09T18:29:22.051176",
+  "objective": "Determine whether the Phase 17 scenario-grouped Macro-F1 of 0.9732 reflects meaningful generalization or is partly explained by similarities between synthetic scenarios or generator-specific feature patterns.",
+  "scenario_diversity_audit": {
+    "total_scenarios": 81,
+    "total_events": 7361,
+    "diversity_by_type": {
+      "benign_traffic": {
+        "scenario_count": 20,
+        "total_events": 2000,
+        "events_per_scenario_min": 100,
+        "events_per_scenario_max": 100,
+        "events_per_scenario_mean": 100.0,
+        "distinct_src_entities": 100,
+        "sample_src_entities": [
+          "10.0.0.1",
+          "10.0.0.10",
+          "10.0.0.100",
+          "10.0.0.11",
+          "10.0.0.12"
+        ],
+        "distinct_dst_entities": 4,
+        "sample_dst_entities": [
+          "10.0.0.10/intranet",
+          "10.0.0.11",
+          "10.0.0.12",
+          "10.0.0.13"
+        ],
+        "distinct_dst_ports": [
+          25,
+          53,
+          80,
+          445
+        ],
+        "processes_observed": [],
+        "actions_observed": []
+      },
+      "brute_force": {
+        "scenario_count": 5,
+        "total_events": 3292,
+        "events_per_scenario_min": 414,
+        "events_per_scenario_max": 880,
+        "events_per_scenario_mean": 658.4,
+        "distinct_src_entities": 3,
+        "sample_src_entities": [
+          "185.220.101.45",
+          "185.220.101.46",
+          "185.220.101.47"
+        ],
+        "distinct_dst_entities": 2,
+        "sample_dst_entities": [
+          "api.corp.com",
+          "api.corp.com/login"
+        ],
+        "distinct_dst_ports": [
+          443
+        ],
+        "processes_observed": [],
+        "actions_observed": []
+      },
+      "c2_beaconing": {
+        "scenario_count": 30,
+        "total_events": 345,
+        "events_per_scenario_min": 11,
+        "events_per_scenario_max": 12,
+        "events_per_scenario_mean": 11.5,
+        "distinct_src_entities": 1,
+        "sample_src_entities": [
+          "10.0.0.23"
+        ],
+        "distinct_dst_entities": 2,
+        "sample_dst_entities": [
+          "10.0.0.23",
+          "203.0.113.45"
+        ],
+        "distinct_dst_ports": [
+          8080
+        ],
+        "processes_observed": [
+          "cmd.exe"
+        ],
+        "actions_observed": [
+          "exec"
+        ]
+      },
+      "data_exfiltration": {
+        "scenario_count": 10,
+        "total_events": 1320,
+        "events_per_scenario_min": 132,
+        "events_per_scenario_max": 132,
+        "events_per_scenario_mean": 132.0,
+        "distinct_src_entities": 1,
+        "sample_src_entities": [
+          "10.0.0.33"
+        ],
+        "distinct_dst_entities": 2,
+        "sample_dst_entities": [
+          "10.0.0.33",
+          "192.168.100.50"
+        ],
+        "distinct_dst_ports": [
+          443
+        ],
+        "processes_observed": [
+          "7z.exe"
+        ],
+        "actions_observed": [
+          "read"
+        ]
+      },
+      "false_positive_backup": {
+        "scenario_count": 1,
+        "total_events": 51,
+        "events_per_scenario_min": 51,
+        "events_per_scenario_max": 51,
+        "events_per_scenario_mean": 51.0,
+        "distinct_src_entities": 1,
+        "sample_src_entities": [
+          "10.0.0.5"
+        ],
+        "distinct_dst_entities": 2,
+        "sample_dst_entities": [
+          "10.0.0.5",
+          "10.0.0.90"
+        ],
+        "distinct_dst_ports": [
+          445
+        ],
+        "processes_observed": [
+          "robocopy.exe"
+        ],
+        "actions_observed": [
+          "read"
+        ]
+      },
+      "lateral_movement": {
+        "scenario_count": 15,
+        "total_events": 353,
+        "events_per_scenario_min": 15,
+        "events_per_scenario_max": 32,
+        "events_per_scenario_mean": 23.5,
+        "distinct_src_entities": 1,
+        "sample_src_entities": [
+          "10.0.0.23"
+        ],
+        "distinct_dst_entities": 152,
+        "sample_dst_entities": [
+          "10.0.0.100",
+          "10.0.0.101",
+          "10.0.0.102",
+          "10.0.0.104",
+          "10.0.0.106"
+        ],
+        "distinct_dst_ports": [
+          445
+        ],
+        "processes_observed": [
+          "net.exe",
+          "psexec.exe"
+        ],
+        "actions_observed": [
+          "exec"
+        ]
+      }
+    },
+    "template_uniformity_audit": {
+      "brute_force": "All 5 brute force scenarios target identical endpoint 'api.corp.com/login' on port 443 with fixed byte payloads (512/256 bytes) and deterministic rotation across 3 fixed attacker IPs. Variation is limited to random start offset and total attempts (150-450).",
+      "c2_beaconing": "All 30 C2 scenarios originate from a single host (10.0.0.23) connecting to one external C2 IP on port 8080. Every scenario executes cmd.exe on beacon #5. Variation is limited to timing jitter (+/-5s).",
+      "lateral_movement": "All 15 lateral movement scenarios originate from host 10.0.0.23 and follow an identical sequence: net.exe -> psexec.exe -> port 445 sweep. Variation is limited to randomized internal destination IPs.",
+      "data_exfiltration": "All 10 exfiltration scenarios involve host 10.0.0.33 transferring 5-25 MB to target 192.168.100.50:443. Every scenario exhibits exactly 12 7z.exe file reads interspersed every 10 network flows.",
+      "false_positive_backup": "CRITICAL: Exactly 1 scenario instance exists (51 events). It cannot be divided between train and test. Evaluating false positive resilience across independent backup jobs is NOT_ESTABLISHED.",
+      "benign_traffic": "20 sessions connecting to 4 static internal infrastructure hosts (HTTP, DNS, SMB, SMTP)."
+    }
+  },
+  "feature_and_leakage_audit": {
+    "feature_count": 21,
+    "feature_names": [
+      "if_anomaly_score",
+      "baseline_deviation",
+      "graph_new_connections",
+      "failed_auth_rate",
+      "connection_frequency",
+      "bytes_sent_zscore",
+      "bytes_sent_log",
+      "bytes_ratio",
+      "conn_rate_zscore",
+      "dst_port_risk",
+      "is_new_destination",
+      "is_external_dst",
+      "hour_of_day_sin",
+      "hour_of_day_cos",
+      "cross_layer_match",
+      "distinct_dst_internal_5m",
+      "dst_diversity_ratio_5m",
+      "is_new_src_dst_pair",
+      "src_out_degree_5m",
+      "dst_in_degree_5m",
+      "pivot_chain_indicator"
+    ],
+    "prohibited_provenance_fields_in_features": [],
+    "direct_target_leakage": "NONE (raw_label and attack_type completely excluded from feature matrices)",
+    "preprocessing_isolation": "VERIFIED: BehavioralBaselineProfiler, IsolationForestDetector, and failed_auth_rate are fitted strictly on tr_events.",
+    "oversampling_isolation": "VERIFIED: SMOTE is fitted and resampled strictly on (X_tr_c, y_tr). Test set X_te_c is untouched.",
+    "relational_causality": "VERIFIED: CausalTemporalGraphTracker processes events in chronological timestamp order without looking ahead.",
+    "potential_synthetic_leakage_risks": [
+      "Features like dst_port_risk and is_external_dst correlate strongly with the generator's hard-coded target definitions (e.g. port 8080 C2 server vs port 445 SMB).",
+      "Fixed payload size signatures (e.g., exactly 512 bytes for brute force network events) allow the Random Forest to memorize synthetic generator constants."
+    ]
+  },
+  "metric_reconstruction": {
+    "test_sample_count": 1681,
+    "reconstructed_confusion_matrix": [
+      [
+        383,
+        12,
+        5,
+        0,
+        0
+      ],
+      [
+        0,
+        880,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        69,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        264,
+        0
+      ],
+      [
+        0,
+        0,
+        5,
+        0,
+        63
+      ]
+    ],
+    "reconstructed_accuracy": 0.9869,
+    "reconstructed_macro_f1": 0.9732,
+    "reconstructed_weighted_f1": 0.987,
+    "reconstructed_balanced_accuracy": 0.9768,
+    "reconstructed_benign_fpr": 0.0,
+    "reconstructed_binary_false_alarm_rate": 0.0425,
+    "reconstructed_per_class": {
+      "benign": {
+        "precision": 1.0,
+        "recall": 0.9575,
+        "f1": 0.9783,
+        "support": 400
+      },
+      "brute_force": {
+        "precision": 0.9865,
+        "recall": 1.0,
+        "f1": 0.9932,
+        "support": 880
+      },
+      "lateral_movement": {
+        "precision": 0.8734,
+        "recall": 1.0,
+        "f1": 0.9324,
+        "support": 69
+      },
+      "data_exfiltration": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 264
+      },
+      "c2_beaconing": {
+        "precision": 1.0,
+        "recall": 0.9265,
+        "f1": 0.9618,
+        "support": 68
+      }
+    },
+    "discrepancies_found": [],
+    "verification_status": "EXACT_MATCH"
+  },
+  "scenario_partition_robustness": {
+    "split_seeds_evaluated": [
+      42,
+      1337,
+      2026,
+      7,
+      999
+    ],
+    "split_trials": [
+      {
+        "split_seed": 42,
+        "test_scenarios_count": 16,
+        "test_sample_count": 1681,
+        "macro_f1": 0.9732,
+        "balanced_accuracy": 0.9768,
+        "binary_false_alarm_rate": 0.0425,
+        "test_class_distribution": {
+          "c2_beaconing": 68,
+          "lateral_movement": 69,
+          "brute_force": 880,
+          "benign": 400,
+          "data_exfiltration": 264
+        }
+      },
+      {
+        "split_seed": 1337,
+        "test_scenarios_count": 16,
+        "test_sample_count": 1209,
+        "macro_f1": 0.9851,
+        "balanced_accuracy": 0.9917,
+        "binary_false_alarm_rate": 0.0125,
+        "test_class_distribution": {
+          "benign": 400,
+          "brute_force": 414,
+          "c2_beaconing": 69,
+          "lateral_movement": 62,
+          "data_exfiltration": 264
+        }
+      },
+      {
+        "split_seed": 2026,
+        "test_scenarios_count": 16,
+        "test_sample_count": 1209,
+        "macro_f1": 0.9671,
+        "balanced_accuracy": 0.9766,
+        "binary_false_alarm_rate": 0.0275,
+        "test_class_distribution": {
+          "benign": 400,
+          "brute_force": 414,
+          "c2_beaconing": 70,
+          "lateral_movement": 61,
+          "data_exfiltration": 264
+        }
+      },
+      {
+        "split_seed": 7,
+        "test_scenarios_count": 16,
+        "test_sample_count": 1470,
+        "macro_f1": 0.9875,
+        "balanced_accuracy": 0.9882,
+        "binary_false_alarm_rate": 0.0175,
+        "test_class_distribution": {
+          "lateral_movement": 85,
+          "c2_beaconing": 67,
+          "brute_force": 654,
+          "benign": 400,
+          "data_exfiltration": 264
+        }
+      },
+      {
+        "split_seed": 999,
+        "test_scenarios_count": 16,
+        "test_sample_count": 1460,
+        "macro_f1": 0.9718,
+        "balanced_accuracy": 0.9763,
+        "binary_false_alarm_rate": 0.02,
+        "test_class_distribution": {
+          "c2_beaconing": 69,
+          "lateral_movement": 73,
+          "brute_force": 654,
+          "data_exfiltration": 264,
+          "benign": 400
+        }
+      }
+    ],
+    "aggregate_split_variability": {
+      "mean_macro_f1": 0.9769,
+      "std_macro_f1": 0.0079,
+      "min_macro_f1": 0.9671,
+      "max_macro_f1": 0.9875,
+      "mean_balanced_accuracy": 0.9819,
+      "std_balanced_accuracy": 0.0067
+    }
+  },
+  "false_positive_backup_stress_analysis": {
+    "single_scenario_id": "scenario_fp_000",
+    "total_events": 51,
+    "held_out_in_test": true,
+    "actual_label": "benign",
+    "predictions_on_held_out_backup": {
+      "data_exfiltration": 1,
+      "lateral_movement": 50
+    },
+    "false_alarm_count_on_backup": 51,
+    "false_alarm_rate_on_backup": 1.0,
+    "macro_f1_when_fp_held_out": 0.912,
+    "overall_benign_false_alarm_rate": 0.150776,
+    "root_cause_explanation": "Because only 1 false-positive backup scenario exists in the entire dataset, holding it out into test means the model was never trained on administrative file copies (robocopy.exe) or massive 2 GB SMB network transfers. Consequently, when evaluated on this unobserved admin scenario, the classifier suffers a 100.0% false alarm rate on these events (50 predicted as lateral_movement, 1 predicted as data_exfiltration). Generalization to unobserved administrative workflows is NOT_ESTABLISHED."
+  },
+  "stress_test_conclusions": {
+    "template_uniformity_impact": "CONFIRMED_HIGH (Scenarios within a class share identical payload constants and endpoints)",
+    "pipeline_leakage_defects": "NONE (Provenance metadata and preprocessors strictly isolated)",
+    "metric_reconstruction_status": "VERIFIED_EXACT_MATCH",
+    "split_variability_vs_model_randomness": "SEPARATED (Split variance across scenario allocations is measurable)",
+    "unseen_admin_false_alarm_vulnerability": "CONFIRMED_CRITICAL (100% false alarm rate on unobserved backup scenario)",
+    "real_world_generalization_status": "NOT_ESTABLISHED (Requires genuine external network traffic)"
+  }
+}
