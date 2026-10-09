@@ -68,22 +68,36 @@ function DatasetPanel({ currentFile }) {
         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', flexShrink: 0 }}>Active Datasets</span>
       </div>
       <div style={{ width: 1, height: 20, background: 'var(--border-light)' }} />
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1 }}>
-        {files.map(f => (
-          <span key={f.name} style={{
-            fontSize: 12,
-            padding: '6px 14px', borderRadius: 24,
-            background: currentFile === f.name ? 'rgba(79, 70, 229, 0.08)' : 'transparent',
-            border: `1px solid ${currentFile === f.name ? 'rgba(79, 70, 229, 0.2)' : 'var(--border-light)'}`,
-            color: currentFile === f.name ? 'var(--accent-brand)' : 'var(--text-secondary)',
-            fontWeight: currentFile === f.name ? 600 : 500,
-            transition: 'all 0.3s ease',
-            display: 'flex', alignItems: 'center', gap: 6
-          }}>
-            {currentFile === f.name && <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-brand)' }} className="animate-pulse-slow" />}
-            {f.name.replace('.pcap_ISCX.csv', '')} <span style={{ color: 'var(--text-tertiary)' }}>({f.size_mb}MB)</span>
-          </span>
-        ))}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, alignItems: 'center' }}>
+        {files.map(f => {
+          const isSynth = f.is_synthetic || f.name.includes('.jsonl') || f.name.includes('synthetic') || f.name.includes('combined_labeled')
+          const isSelected = currentFile === f.name
+          return (
+            <span key={f.name} style={{
+              fontSize: 12,
+              padding: '6px 14px', borderRadius: 24,
+              background: isSelected ? 'rgba(79, 70, 229, 0.08)' : 'transparent',
+              border: `1px solid ${isSelected ? 'rgba(79, 70, 229, 0.3)' : 'var(--border-light)'}`,
+              color: isSelected ? 'var(--accent-brand)' : 'var(--text-secondary)',
+              fontWeight: isSelected ? 600 : 500,
+              transition: 'all 0.3s ease',
+              display: 'flex', alignItems: 'center', gap: 8
+            }}>
+              {isSelected && <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-brand)' }} className="animate-pulse-slow" />}
+              <span>{f.name.replace('.pcap_ISCX.csv', '')}</span>
+              <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>({f.size_mb}MB)</span>
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 10,
+                background: isSynth ? 'rgba(147, 51, 234, 0.1)' : 'rgba(5, 150, 105, 0.1)',
+                color: isSynth ? '#9333ea' : 'var(--accent-success)',
+                border: `1px solid ${isSynth ? 'rgba(147, 51, 234, 0.25)' : 'rgba(5, 150, 105, 0.25)'}`,
+                textTransform: 'uppercase', letterSpacing: 0.5
+              }}>
+                {isSynth ? 'Synthetic Demo' : 'Real PCAP'}
+              </span>
+            </span>
+          )
+        })}
         {files.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No analysis files available in datasets.</span>}
       </div>
     </div>
@@ -126,7 +140,9 @@ export default function Dashboard() {
     setSimulationRunning(false)
   }, [setSimulationRunning])
 
-  const falsePosPct = ((stats.false_positive_rate || 0) * 100).toFixed(1)
+  const hasFpr = stats.false_positive_rate !== null && stats.false_positive_rate !== undefined
+  const falsePosValue = hasFpr ? ((stats.false_positive_rate) * 100).toFixed(1) : 'N/A'
+  const falsePosUnit = hasFpr ? '%' : ''
 
   return (
     <div style={{
@@ -280,8 +296,8 @@ export default function Dashboard() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:24 }}>
         <StatCard delay={150} icon={Activity} label="Network Pulse" value={stats.events_per_second || 0} unit="eps" accentVar="--accent-brand" />
         <StatCard delay={200} icon={Server} label="Events Processed" value={stats.total_events?.toLocaleString() || 0} accentVar="--accent-info" />
-        <StatCard delay={250} icon={Bell} label="Active Threats" value={stats.total_alerts?.toLocaleString() || 0} accentVar="--accent-high" />
-        <StatCard delay={300} icon={AlertTriangle} label="False Positives" value={falsePosPct} unit="%" accentVar="--accent-critical" />
+        <StatCard delay={250} icon={Bell} label="Correlated Incidents" value={stats.total_incidents || (alerts.length > 0 ? 1 : 0)} unit={alerts.length ? `(${alerts.length} alerts)` : ''} accentVar="--accent-high" />
+        <StatCard delay={300} icon={AlertTriangle} label="False Positives (Unlabelled)" value={falsePosValue} unit={falsePosUnit} accentVar="--accent-critical" />
       </div>
 
       {/* ── Row 2: Main ───────────────────────────────────────────────── */}

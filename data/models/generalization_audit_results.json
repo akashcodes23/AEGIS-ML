@@ -1,0 +1,341 @@
+{
+  "audit_title": "AEGIS-ML Phase 16: Dataset Provenance and Generalization Audit",
+  "timestamp": "2026-10-09T18:00:57.591860",
+  "dataset_provenance": {
+    "dataset_path": "/Users/akashgpatil/major_project/AEGIS-ML/data/raw/combined_labeled.jsonl",
+    "total_records": 7051,
+    "class_distribution": {
+      "benign": 2051,
+      "brute_force": 3000,
+      "data_exfiltration": 1320,
+      "c2_beaconing": 345,
+      "lateral_movement": 335
+    },
+    "field_audit": {
+      "action": {
+        "populated_count": 230,
+        "total_count": 7051,
+        "availability_pct": 3.26,
+        "missingness_pct": 96.74,
+        "sample_value": "read"
+      },
+      "attack_type": {
+        "populated_count": 5000,
+        "total_count": 7051,
+        "availability_pct": 70.91,
+        "missingness_pct": 29.09,
+        "sample_value": "brute_force"
+      },
+      "auth_result": {
+        "populated_count": 1500,
+        "total_count": 7051,
+        "availability_pct": 21.27,
+        "missingness_pct": 78.73,
+        "sample_value": "failure"
+      },
+      "bytes_received": {
+        "populated_count": 5321,
+        "total_count": 7051,
+        "availability_pct": 75.46,
+        "missingness_pct": 24.54,
+        "sample_value": "524288"
+      },
+      "bytes_sent": {
+        "populated_count": 5321,
+        "total_count": 7051,
+        "availability_pct": 75.46,
+        "missingness_pct": 24.54,
+        "sample_value": "2134673710"
+      },
+      "dst_entity": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "10.0.0.90"
+      },
+      "dst_internal": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "True"
+      },
+      "dst_ip": {
+        "populated_count": 3821,
+        "total_count": 7051,
+        "availability_pct": 54.19,
+        "missingness_pct": 45.81,
+        "sample_value": "10.0.0.90"
+      },
+      "dst_port": {
+        "populated_count": 5321,
+        "total_count": 7051,
+        "availability_pct": 75.46,
+        "missingness_pct": 24.54,
+        "sample_value": "445"
+      },
+      "duration_ms": {
+        "populated_count": 1,
+        "total_count": 7051,
+        "availability_pct": 0.01,
+        "missingness_pct": 99.99,
+        "sample_value": "2700000"
+      },
+      "endpoint_path": {
+        "populated_count": 2029,
+        "total_count": 7051,
+        "availability_pct": 28.78,
+        "missingness_pct": 71.22,
+        "sample_value": "/api/login"
+      },
+      "event_id": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "74d6f9a0-f93f-4fa5-b330-323971108638"
+      },
+      "file_path": {
+        "populated_count": 50,
+        "total_count": 7051,
+        "availability_pct": 0.71,
+        "missingness_pct": 99.29,
+        "sample_value": "C:\\Finance\\Q4_Report_0.pdf"
+      },
+      "http_method": {
+        "populated_count": 2029,
+        "total_count": 7051,
+        "availability_pct": 28.78,
+        "missingness_pct": 71.22,
+        "sample_value": "POST"
+      },
+      "layer": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "network"
+      },
+      "parent_process": {
+        "populated_count": 30,
+        "total_count": 7051,
+        "availability_pct": 0.43,
+        "missingness_pct": 99.57,
+        "sample_value": "explorer.exe"
+      },
+      "process_name": {
+        "populated_count": 230,
+        "total_count": 7051,
+        "availability_pct": 3.26,
+        "missingness_pct": 96.74,
+        "sample_value": "robocopy.exe"
+      },
+      "protocol": {
+        "populated_count": 3821,
+        "total_count": 7051,
+        "availability_pct": 54.19,
+        "missingness_pct": 45.81,
+        "sample_value": "TCP"
+      },
+      "raw_label": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "benign"
+      },
+      "src_entity": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "10.0.0.5"
+      },
+      "src_internal": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "True"
+      },
+      "src_ip": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "10.0.0.5"
+      },
+      "status_code": {
+        "populated_count": 2029,
+        "total_count": 7051,
+        "availability_pct": 28.78,
+        "missingness_pct": 71.22,
+        "sample_value": "401"
+      },
+      "timestamp": {
+        "populated_count": 7051,
+        "total_count": 7051,
+        "availability_pct": 100.0,
+        "missingness_pct": 0.0,
+        "sample_value": "2026-10-09T02:00:00"
+      },
+      "user_account": {
+        "populated_count": 230,
+        "total_count": 7051,
+        "availability_pct": 3.26,
+        "missingness_pct": 96.74,
+        "sample_value": "backup_svc"
+      }
+    },
+    "provenance_identifiers": {
+      "scenario_id": {
+        "count": 0,
+        "present": false,
+        "status": "ABSENT"
+      },
+      "campaign_id": {
+        "count": 0,
+        "present": false,
+        "status": "ABSENT"
+      },
+      "template_id": {
+        "count": 0,
+        "present": false,
+        "status": "ABSENT"
+      },
+      "source_event_id": {
+        "count": 0,
+        "present": false,
+        "status": "ABSENT"
+      },
+      "host_id": {
+        "count": 0,
+        "present": false,
+        "status": "ABSENT"
+      },
+      "socket_id": {
+        "count": 0,
+        "present": false,
+        "status": "ABSENT"
+      },
+      "process_guid": {
+        "count": 0,
+        "present": false,
+        "status": "ABSENT"
+      }
+    },
+    "scenario_metadata_present": false,
+    "scenario_level_generalization_status": "NOT_ESTABLISHED"
+  },
+  "split_leakage_audit": {
+    "total_records": 7051,
+    "unique_fingerprint_groups": 3687,
+    "records_with_duplicates": 3469,
+    "duplicate_record_percentage": 49.2,
+    "group_aware_isolation": "Exact duplicate feature vectors are clustered into groups and assigned exclusively to train OR test, guaranteeing 0.0% duplicate overlap across the split.",
+    "scenario_isolation_limitation": "Because explicit scenario/campaign IDs were not recorded during synthetic generation, records originating from the same synthetic attack loop appear in both train and test. Therefore, zero duplicate overlap does NOT establish scenario-level generalization.",
+    "scenario_generalization_status": "NOT_ESTABLISHED"
+  },
+  "frozen_holdout_model_randomness": {
+    "evaluation_mode": "FROZEN_HOLDOUT_MODEL_RANDOMNESS",
+    "split_seed": 42,
+    "test_sample_count": 1400,
+    "train_sample_count": 5651,
+    "seeds_evaluated": [
+      42,
+      1337,
+      2026,
+      7,
+      999
+    ],
+    "individual_seed_results": [
+      {
+        "model_seed": 42,
+        "macro_f1": 0.8685,
+        "weighted_f1": 0.9171,
+        "balanced_accuracy": 0.9317,
+        "benign_fpr": 0.0,
+        "benign_fnr": 0.007317,
+        "binary_false_alarm_rate": 0.007317,
+        "test_sample_count": 1400,
+        "train_sample_count": 5651
+      },
+      {
+        "model_seed": 1337,
+        "macro_f1": 0.8677,
+        "weighted_f1": 0.9169,
+        "balanced_accuracy": 0.9317,
+        "benign_fpr": 0.0,
+        "benign_fnr": 0.007317,
+        "binary_false_alarm_rate": 0.007317,
+        "test_sample_count": 1400,
+        "train_sample_count": 5651
+      },
+      {
+        "model_seed": 2026,
+        "macro_f1": 0.8677,
+        "weighted_f1": 0.9169,
+        "balanced_accuracy": 0.9317,
+        "benign_fpr": 0.0,
+        "benign_fnr": 0.007317,
+        "binary_false_alarm_rate": 0.007317,
+        "test_sample_count": 1400,
+        "train_sample_count": 5651
+      },
+      {
+        "model_seed": 7,
+        "macro_f1": 0.8685,
+        "weighted_f1": 0.9171,
+        "balanced_accuracy": 0.9317,
+        "benign_fpr": 0.0,
+        "benign_fnr": 0.007317,
+        "binary_false_alarm_rate": 0.007317,
+        "test_sample_count": 1400,
+        "train_sample_count": 5651
+      },
+      {
+        "model_seed": 999,
+        "macro_f1": 0.8685,
+        "weighted_f1": 0.9171,
+        "balanced_accuracy": 0.9317,
+        "benign_fpr": 0.0,
+        "benign_fnr": 0.007317,
+        "binary_false_alarm_rate": 0.007317,
+        "test_sample_count": 1400,
+        "train_sample_count": 5651
+      }
+    ],
+    "aggregate_model_randomness": {
+      "mean_macro_f1": 0.8682,
+      "std_macro_f1": 0.0004,
+      "min_macro_f1": 0.8677,
+      "max_macro_f1": 0.8685,
+      "mean_balanced_accuracy": 0.9317,
+      "std_balanced_accuracy": 0.0
+    }
+  },
+  "exfiltration_detection_error_audit": {
+    "total_test_exfiltration_events": 359,
+    "correctly_classified_network_exfiltration": 239,
+    "total_misclassified_exfiltration": 120,
+    "misclassification_predictions": {
+      "lateral_movement": 87,
+      "brute_force": 33
+    },
+    "layers_involved": {
+      "endpoint": 120
+    },
+    "processes_involved": {
+      "7z.exe": 120
+    },
+    "root_cause_summary": "All 120 misclassified data_exfiltration events are endpoint-layer file read operations (7z.exe) on host 10.0.0.33. They contain zero network bytes, null destination ports, and no socket-to-process attribution. Consequently, they appear as isolated local disk actions that overlap with lateral movement or brute force activity."
+  },
+  "generalization_conclusions": {
+    "exact_duplicate_isolation": "VERIFIED (0.0% cross-split duplicate overlap)",
+    "scenario_level_generalization": "NOT_ESTABLISHED (Scenario identifiers absent)",
+    "model_seed_stability_on_frozen_holdout": "VERIFIED (Macro-F1 std = 0.0004)",
+    "split_variability_vs_model_randomness": "SEPARATED (Split variance previously conflated with seed variance)",
+    "endpoint_staging_attribution_gap": "CONFIRMED (120 / 120 endpoint reads misclassified due to missing socket link)"
+  }
+}

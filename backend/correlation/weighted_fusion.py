@@ -1,154 +1,100 @@
-import networkx as nx
-from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Optional
+from datetime import datetime
 
-from backend.core.schemas import UnifiedEvent
+try:
+    from core.schemas import UnifiedEvent, DetectionResult
+    from core.config import (
+        ANOMALY_THRESHOLD,
+        CONFIDENCE_ALERT_MIN,
+        CONFIDENCE_CRITICAL,
+        CONFIDENCE_HIGH,
+        CONFIDENCE_MEDIUM,
+    )
+    from graph.temporal_kg import TemporalKnowledgeGraph
+except ModuleNotFoundError:
+    from backend.core.schemas import UnifiedEvent, DetectionResult
+    from backend.core.config import (
+        ANOMALY_THRESHOLD,
+        CONFIDENCE_ALERT_MIN,
+        CONFIDENCE_CRITICAL,
+        CONFIDENCE_HIGH,
+        CONFIDENCE_MEDIUM,
+    )
+    from backend.graph.temporal_kg import TemporalKnowledgeGraph
 
-class TemporalKnowledgeGraph:
-    def __init__(self):
-        self.graph = nx.DiGraph()
-        self.edge_history: Dict[tuple, List[datetime]] = {}
 
-    def add_event(self, event: UnifiedEvent) -> None:
-        src = event.src_entity
-        dst = event.dst_entity
-        now = event.timestamp
+class WeightedEvidenceFusion:
+    """
+    Weighted Evidence Fusion Engine for AEGIS-ML.
+    
+    Synthesizes multiple multi-layer detection signals:
+    - Isolation Forest anomaly score (unsupervised statistical novelty)
+    - Behavioral baseline profiler deviation (entity historical deviation)
+    - Temporal Knowledge Graph score (topological and relational risk)
+    - Random Forest threat classifier confidence (supervised threat pattern recognition)
+    """
 
-        # Add/update source node
-        if not self.graph.has_node(src):
-            self.graph.add_node(
-                src, 
-                node_type=self._infer_node_type(src, event), 
-                first_seen=now,
-                last_seen=now, 
-                event_count=0, 
-                is_internal=event.src_internal, 
-                risk_score=0.0, 
-                is_compromised=False 
-            )
-        self.graph.nodes[src]["last_seen"] = now
-        self.graph.nodes[src]["event_count"] += 1
+    def __init__(
+        self,
+        weight_if: float = 0.25,
+        weight_baseline: float = 0.20,
+        weight_graph: float = 0.20,
+        weight_classifier: float = 0.35,
+        alert_threshold: float = 0.60
+    ):
+        total_w = weight_if + weight_baseline + weight_graph + weight_classifier
+        self.w_if = weight_if / total_w
+        self.w_base = weight_baseline / total_w
+        self.w_graph = weight_graph / total_w
+        self.w_clf = weight_classifier / total_w
+        self.alert_threshold = alert_threshold
 
-        # Add/update dest node
-        if not self.graph.has_node(dst):
-            self.graph.add_node(
-                dst, 
-                node_type=self._infer_node_type(dst, event), 
-                first_seen=now, 
-                last_seen=now, 
-                event_count=0, 
-                is_internal=event.dst_internal, 
-                risk_score=0.0, 
-                is_compromised=False 
-            )
-        # It's good practice to update destination metrics as well
-        self.graph.nodes[dst]["last_seen"] = now
-        self.graph.nodes[dst]["event_count"] += 1
+    def fuse(
+        self,
+        event: UnifiedEvent,
+        if_score: float,
+        baseline_deviation: float,
+        graph_score: float,
+        threat_type: Optional[str] = None,
+        classifier_confidence: float = 0.0,
+        severity: Optional[str] = None,
+    ) -> DetectionResult:
+        """
+        Combine evidence scores into a unified DetectionResult.
+        """
+        is_attack = threat_type is not None and threat_type != "benign"
+        clf_signal = classifier_confidence if is_attack else 0.0
 
-        # Add/update edge
-        edge_key = (src, dst)
-        if self.graph.has_edge(src, dst):
-            self.graph.edges[src, dst]["frequency"] += 1
-            self.graph.edges[src, dst]["last_seen"] = now
-            if event.bytes_sent:
-                self.graph.edges[src, dst]["bytes_total"] += event.bytes_sent
-        else:
-            self.graph.add_edge(
-                src, dst, 
-                edge_type=self._infer_edge_type(event), 
-                first_seen=now, 
-                last_seen=now, 
-                frequency=1, 
-                bytes_total=event.bytes_sent or 0,
-                layer=event.layer, 
-                is_anomalous=False 
-            )
-        self.edge_history.setdefault(edge_key, []).append(now)
+        fused_score = (
+            self.w_if * float(if_score) +
+            self.w_base * float(baseline_deviation) +
+            self.w_graph * float(graph_score) +
+            self.w_clf * float(clf_signal)
+        )
 
-    def get_new_connections(self, entity: str, since_minutes: int = 10) -> List[str]:
-        """Return destinations this entity connected to for the first time recently."""
-        cutoff = datetime.now() - timedelta(minutes=since_minutes)
-        new_conns = []
-        for src, dst, data in self.graph.edges(entity, data=True):
-            if data["first_seen"] >= cutoff and data["frequency"] == 1:
-                new_conns.append(dst)
-        return new_conns
+        # Alert decision: trigger alert if supervised model identifies threat with confidence >= threshold,
+        # or if composite fused multi-signal anomaly exceeds alert_threshold
+        is_alert = False
+        if is_attack and classifier_confidence >= CONFIDENCE_ALERT_MIN:
+            is_alert = True
+        elif fused_score >= self.alert_threshold:
+            is_alert = True
 
-    def get_graph_features(self, entity: str) -> Dict[str, float]:
-        """Compute graph-based features for detection engine."""
-        if not self.graph.has_node(entity):
-            return {"degree": 0, "new_connections": 0, "external_ratio": 0.0, "total_bytes": 0.0}
-            
-        neighbors = list(self.graph.successors(entity))
-        external = [n for n in neighbors if not self.graph.nodes[n].get("is_internal", True)]
-        
-        # Calculate total bytes using comprehension sum
-        total_bytes = sum(self.graph.edges[entity, n].get("bytes_total", 0) for n in neighbors if self.graph.has_edge(entity, n))
-        
-        return {
-            "degree": self.graph.out_degree(entity),
-            "new_connections": len(self.get_new_connections(entity)),
-            "external_ratio": len(external) / max(len(neighbors), 1),
-            "total_bytes": float(total_bytes)
-        }
+        return DetectionResult(
+            event_id=event.event_id,
+            timestamp=event.timestamp,
+            layer=event.layer,
+            src_entity=event.src_entity,
+            dst_entity=event.dst_entity,
+            if_score=float(if_score),
+            baseline_deviation=float(baseline_deviation),
+            graph_score=float(graph_score),
+            threat_type=threat_type,
+            confidence=float(classifier_confidence if is_attack else (1.0 - fused_score)),
+            severity=severity,
+            is_alert=is_alert,
+        )
 
-    def mark_compromised(self, entity: str) -> None:
-        if self.graph.has_node(entity):
-            self.graph.nodes[entity]["is_compromised"] = True
-            self.graph.nodes[entity]["risk_score"] = 1.0
 
-    def update_risk_score(self, entity: str, score: float) -> None:
-        if self.graph.has_node(entity):
-            current = self.graph.nodes[entity]["risk_score"]
-            # Exponential moving average — risk only goes up
-            self.graph.nodes[entity]["risk_score"] = max(current, score)
-
-    def _infer_node_type(self, entity: str, event: UnifiedEvent) -> str:
-        if entity.startswith("10.") or entity[0].isdigit():
-            return "ip"
-        if "@" in entity or event.layer == "application":
-            return "user"
-        if ".exe" in entity.lower():
-            return "process"
-        return "host"
-
-    def _infer_edge_type(self, event: UnifiedEvent) -> str:
-        if event.layer == "network":
-            return "connects_to"
-        if event.action == "exec":
-            return "executes"
-        if event.action in ["read", "write"]:
-            return event.action + "s"
-        return "interacts_with"
-
-    def export_cytoscape(self) -> dict:
-        """Export graph in Cytoscape.js format for frontend."""
-        nodes = []
-        for node_id, data in self.graph.nodes(data=True):
-            nodes.append({
-                "data": {
-                    "id": node_id,
-                    "label": node_id[-15:] if len(node_id) > 15 else node_id,
-                    "type": data.get("node_type", "host"),
-                    "risk_score": round(data.get("risk_score", 0.0), 2),
-                    "is_compromised": data.get("is_compromised", False),
-                    "event_count": data.get("event_count", 0),
-                    "is_internal": data.get("is_internal", True)
-                }
-            })
-            
-        edges = []
-        for src, dst, data in self.graph.edges(data=True):
-            edges.append({
-                "data": {
-                    "id": f"{src}_{dst}",
-                    "source": src,
-                    "target": dst,
-                    "edge_type": data.get("edge_type"),
-                    "frequency": data.get("frequency", 1),
-                    "is_anomalous": data.get("is_anomalous", False),
-                    "bytes_total": data.get("bytes_total", 0)
-                }
-            })
-            
-        return {"nodes": nodes, "edges": edges}
+# Preserve TemporalKnowledgeGraph alias for backwards compatibility
+__all__ = ["WeightedEvidenceFusion", "TemporalKnowledgeGraph"]

@@ -1,0 +1,815 @@
+{
+  "metadata": {
+    "timestamp": "2026-10-09T22:27:28.491553",
+    "dataset": "/Users/akashgpatil/major_project/AEGIS-ML/data/raw/combined_labeled.jsonl",
+    "dataset_provenance": "synthetic_scripted",
+    "total_events": 7051,
+    "train_samples": 5640,
+    "test_samples": 1411,
+    "class_distribution_train": {
+      "brute_force": 2400,
+      "benign": 1640,
+      "data_exfiltration": 1056,
+      "lateral_movement": 268,
+      "c2_beaconing": 276
+    },
+    "class_distribution_test": {
+      "brute_force": 600,
+      "benign": 411,
+      "data_exfiltration": 264,
+      "lateral_movement": 67,
+      "c2_beaconing": 69
+    },
+    "split_strategy": "80/20 stratified holdout",
+    "random_seed": 42,
+    "analyst_queue_size": 20,
+    "confidence_alert_min": 0.4,
+    "anomaly_threshold": 0.65,
+    "metric_definitions": {
+      "macro_f1": "Unweighted average F1 across all classes (preferred metric for imbalanced data)",
+      "fpr_benign": "Benign events misclassified as attack / Total actual benign events",
+      "alert_reduction_pct": "% fewer alerts in Config vs Baseline at similar recall",
+      "duplicate_reduction_pct": "% alerts suppressed by deduplication vs Config B",
+      "displayed_triage_reduction_pct": "% reduction in displayed triage items (raw alerts -> incident dossiers)"
+    },
+    "limitations": [
+      "Synthetic dataset: scripted attack scenarios; real-world generalization unconfirmed.",
+      "Baseline random split contains 48.6% duplicate feature content crossing train/test.",
+      "Group-aware holdout (zero duplicate overlap) exhibits Macro-F1 = 0.8591 vs 0.9823 baseline.",
+      "Incident correlation recall evaluated on controlled fixtures (12 scenarios); real-world cluster recall unmeasured.",
+      "Config D analyst queue is a priority queue simulation: covers top-N incidents."
+    ],
+    "reproduction_command": "python3 -m backend.evaluation.ablation_study --data /Users/akashgpatil/major_project/AEGIS-ML/data/raw/combined_labeled.jsonl"
+  },
+  "configurations": {
+    "A": {
+      "config_label": "A: Classifier Only",
+      "macro_f1": 0.9823491239454899,
+      "weighted_f1": 0.9957476966690291,
+      "fpr_benign": 0.0,
+      "per_class": {
+        "benign": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 411
+        },
+        "brute_force": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 600
+        },
+        "lateral_movement": {
+          "precision": 0.9552238805970149,
+          "recall": 0.9552238805970149,
+          "f1": 0.9552238805970149,
+          "support": 67
+        },
+        "data_exfiltration": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 264
+        },
+        "c2_beaconing": {
+          "precision": 0.9565217391304348,
+          "recall": 0.9565217391304348,
+          "f1": 0.9565217391304348,
+          "support": 69
+        }
+      },
+      "total_alerts_generated": 1000,
+      "total_samples": 1411,
+      "latency_ms_per_event": 0.0171
+    },
+    "B": {
+      "config_label": "B: +Anomaly Detection",
+      "macro_f1": 0.9823491239454899,
+      "weighted_f1": 0.9957476966690291,
+      "fpr_benign": 0.0,
+      "per_class": {
+        "benign": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 411
+        },
+        "brute_force": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 600
+        },
+        "lateral_movement": {
+          "precision": 0.9552238805970149,
+          "recall": 0.9552238805970149,
+          "f1": 0.9552238805970149,
+          "support": 67
+        },
+        "data_exfiltration": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 264
+        },
+        "c2_beaconing": {
+          "precision": 0.9565217391304348,
+          "recall": 0.9565217391304348,
+          "f1": 0.9565217391304348,
+          "support": 69
+        }
+      },
+      "total_alerts_generated": 1000,
+      "total_samples": 1411,
+      "anomaly_additions": 0,
+      "latency_ms_per_event": 0.6878
+    },
+    "C": {
+      "config_label": "C: +Correlation (Event Level)",
+      "macro_f1": 0.9823491239454899,
+      "weighted_f1": 0.9957476966690291,
+      "fpr_benign": 0.0,
+      "per_class": {
+        "benign": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 411
+        },
+        "brute_force": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 600
+        },
+        "lateral_movement": {
+          "precision": 0.9552238805970149,
+          "recall": 0.9552238805970149,
+          "f1": 0.9552238805970149,
+          "support": 67
+        },
+        "data_exfiltration": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 264
+        },
+        "c2_beaconing": {
+          "precision": 0.9565217391304348,
+          "recall": 0.9565217391304348,
+          "f1": 0.9565217391304348,
+          "support": 69
+        }
+      },
+      "total_alerts_generated": 1000,
+      "total_samples": 1411,
+      "raw_alerts_generated": 1000,
+      "deduped_alerts_suppressed": 124,
+      "retained_alerts": 876,
+      "grouped_into_incidents": 823,
+      "total_incidents_created": 52,
+      "latency_ms_per_event": 2.1966,
+      "duplicate_reduction_pct": 12.4,
+      "displayed_triage_reduction_pct": 94.8
+    },
+    "D": {
+      "config_label": "D: +Priority Queue (top-20)",
+      "macro_f1": 0.5795001958149035,
+      "weighted_f1": 0.6621209290341147,
+      "fpr_benign": 0.0,
+      "per_class": {
+        "benign": {
+          "precision": 0.46757679180887374,
+          "recall": 1.0,
+          "f1": 0.6372093023255814,
+          "support": 411
+        },
+        "brute_force": {
+          "precision": 1.0,
+          "recall": 0.4766666666666667,
+          "f1": 0.6455981941309256,
+          "support": 600
+        },
+        "lateral_movement": {
+          "precision": 1.0,
+          "recall": 0.16417910447761194,
+          "f1": 0.28205128205128205,
+          "support": 67
+        },
+        "data_exfiltration": {
+          "precision": 1.0,
+          "recall": 0.8068181818181818,
+          "f1": 0.8930817610062893,
+          "support": 264
+        },
+        "c2_beaconing": {
+          "precision": 0.9090909090909091,
+          "recall": 0.2898550724637681,
+          "f1": 0.43956043956043955,
+          "support": 69
+        }
+      },
+      "total_alerts_generated": 532,
+      "total_samples": 1411,
+      "incidents_in_analyst_queue": 20,
+      "events_covered_by_queue": 1064
+    }
+  },
+  "workload_reduction": {
+    "A_vs_C": {
+      "raw_alerts_generated": 1000,
+      "duplicate_alerts_suppressed": 124,
+      "retained_alerts": 876,
+      "incident_dossiers_created": 52,
+      "duplicate_suppression_pct": 12.4,
+      "displayed_triage_reduction_pct": 94.8,
+      "attack_recall_maintained": true
+    },
+    "A_vs_D": {
+      "config_a_attack_recall": 1.0,
+      "config_b_attack_recall": 0.532,
+      "config_a_alerts": 1000,
+      "config_b_alerts": 532,
+      "alert_reduction_pct": 46.8,
+      "recall_maintained": false
+    }
+  },
+  "leakage_resistant_evaluation": {
+    "duplicate_overlap_analysis": {
+      "total_events": 7051,
+      "unique_feature_fingerprints": 3687,
+      "duplicate_groups_count": 105,
+      "events_in_duplicate_groups": 3469,
+      "pct_events_in_duplicate_groups": 49.2,
+      "baseline_random_split_overlap_pct": 48.6
+    },
+    "group_aware_evaluation": {
+      "split_strategy": "group_aware_holdout (zero identical feature groups cross split)",
+      "train_samples": 5651,
+      "test_samples": 1400,
+      "class_distribution_train": {
+        "benign": 1641,
+        "brute_force": 2502,
+        "lateral_movement": 274,
+        "data_exfiltration": 961,
+        "c2_beaconing": 273
+      },
+      "class_distribution_test": {
+        "benign": 410,
+        "data_exfiltration": 359,
+        "c2_beaconing": 72,
+        "brute_force": 498,
+        "lateral_movement": 61
+      },
+      "group_overlap_count": 0,
+      "balanced_accuracy": 0.9317,
+      "macro_f1": 0.8591,
+      "weighted_f1": 0.9251,
+      "benign_fpr": 0.0,
+      "per_class": {
+        "benign": {
+          "precision": 1.0,
+          "recall": 0.9927,
+          "f1": 0.9963,
+          "support": 410
+        },
+        "brute_force": {
+          "precision": 0.996,
+          "recall": 1.0,
+          "f1": 0.998,
+          "support": 498
+        },
+        "lateral_movement": {
+          "precision": 0.3352,
+          "recall": 1.0,
+          "f1": 0.5021,
+          "support": 61
+        },
+        "data_exfiltration": {
+          "precision": 1.0,
+          "recall": 0.6657,
+          "f1": 0.7993,
+          "support": 359
+        },
+        "c2_beaconing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 72
+        }
+      },
+      "confusion_matrix": [
+        [
+          407,
+          2,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          498,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          61,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          120,
+          239,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          72
+        ]
+      ],
+      "classes": [
+        "benign",
+        "brute_force",
+        "lateral_movement",
+        "data_exfiltration",
+        "c2_beaconing"
+      ],
+      "phase10_feature_ablation": {
+        "A_baseline": {
+          "config_label": "A: Existing Baseline Features",
+          "n_features": 15,
+          "feature_names": [
+            "if_anomaly_score",
+            "baseline_deviation",
+            "graph_new_connections",
+            "failed_auth_rate",
+            "connection_frequency",
+            "bytes_sent_zscore",
+            "bytes_sent_log",
+            "bytes_ratio",
+            "conn_rate_zscore",
+            "dst_port_risk",
+            "is_new_destination",
+            "is_external_dst",
+            "hour_of_day_sin",
+            "hour_of_day_cos",
+            "cross_layer_match"
+          ],
+          "feature_generation_latency_ms": 0.0,
+          "inference_latency_ms_per_event": 0.0065,
+          "macro_f1": 0.8591,
+          "weighted_f1": 0.9251,
+          "balanced_accuracy": 0.9317,
+          "benign_fpr": 0.0,
+          "benign_fpr_denominator": 990,
+          "benign_fpr_numerator": 0,
+          "benign_fnr": 0.007317,
+          "benign_fnr_denominator": 410,
+          "benign_fnr_numerator": 3,
+          "binary_false_alarm_rate_on_benign": 0.007317,
+          "lateral_movement_precision": 0.3352,
+          "lateral_movement_recall": 1.0,
+          "lateral_movement_f1": 0.5021,
+          "lateral_movement_support": 61,
+          "per_class": {
+            "benign": {
+              "precision": 1.0,
+              "recall": 0.9927,
+              "f1": 0.9963,
+              "support": 410
+            },
+            "brute_force": {
+              "precision": 0.996,
+              "recall": 1.0,
+              "f1": 0.998,
+              "support": 498
+            },
+            "lateral_movement": {
+              "precision": 0.3352,
+              "recall": 1.0,
+              "f1": 0.5021,
+              "support": 61
+            },
+            "data_exfiltration": {
+              "precision": 1.0,
+              "recall": 0.6657,
+              "f1": 0.7993,
+              "support": 359
+            },
+            "c2_beaconing": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1": 1.0,
+              "support": 72
+            }
+          },
+          "confusion_matrix": [
+            [
+              407,
+              2,
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              498,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              61,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              120,
+              239,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              72
+            ]
+          ]
+        },
+        "B_temporal": {
+          "config_label": "B: Baseline + Temporal Features",
+          "n_features": 18,
+          "feature_names": [
+            "if_anomaly_score",
+            "baseline_deviation",
+            "graph_new_connections",
+            "failed_auth_rate",
+            "connection_frequency",
+            "bytes_sent_zscore",
+            "bytes_sent_log",
+            "bytes_ratio",
+            "conn_rate_zscore",
+            "dst_port_risk",
+            "is_new_destination",
+            "is_external_dst",
+            "hour_of_day_sin",
+            "hour_of_day_cos",
+            "cross_layer_match",
+            "inter_event_time_log",
+            "event_rate_1m",
+            "event_rate_5m"
+          ],
+          "feature_generation_latency_ms": 0.02,
+          "inference_latency_ms_per_event": 0.0066,
+          "macro_f1": 0.8554,
+          "weighted_f1": 0.9208,
+          "balanced_accuracy": 0.9317,
+          "benign_fpr": 0.0,
+          "benign_fpr_denominator": 990,
+          "benign_fpr_numerator": 0,
+          "benign_fnr": 0.007317,
+          "benign_fnr_denominator": 410,
+          "benign_fnr_numerator": 3,
+          "binary_false_alarm_rate_on_benign": 0.007317,
+          "lateral_movement_precision": 0.3697,
+          "lateral_movement_recall": 1.0,
+          "lateral_movement_f1": 0.5398,
+          "lateral_movement_support": 61,
+          "per_class": {
+            "benign": {
+              "precision": 1.0,
+              "recall": 0.9927,
+              "f1": 0.9963,
+              "support": 410
+            },
+            "brute_force": {
+              "precision": 0.9765,
+              "recall": 1.0,
+              "f1": 0.9881,
+              "support": 498
+            },
+            "lateral_movement": {
+              "precision": 0.3697,
+              "recall": 1.0,
+              "f1": 0.5398,
+              "support": 61
+            },
+            "data_exfiltration": {
+              "precision": 1.0,
+              "recall": 0.6657,
+              "f1": 0.7993,
+              "support": 359
+            },
+            "c2_beaconing": {
+              "precision": 0.9114,
+              "recall": 1.0,
+              "f1": 0.9536,
+              "support": 72
+            }
+          },
+          "confusion_matrix": [
+            [
+              407,
+              1,
+              1,
+              0,
+              1
+            ],
+            [
+              0,
+              498,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              61,
+              0,
+              0
+            ],
+            [
+              0,
+              11,
+              103,
+              239,
+              6
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              72
+            ]
+          ]
+        },
+        "C_relational": {
+          "config_label": "C: Baseline + Relational & Graph Features",
+          "n_features": 21,
+          "feature_names": [
+            "if_anomaly_score",
+            "baseline_deviation",
+            "graph_new_connections",
+            "failed_auth_rate",
+            "connection_frequency",
+            "bytes_sent_zscore",
+            "bytes_sent_log",
+            "bytes_ratio",
+            "conn_rate_zscore",
+            "dst_port_risk",
+            "is_new_destination",
+            "is_external_dst",
+            "hour_of_day_sin",
+            "hour_of_day_cos",
+            "cross_layer_match",
+            "distinct_dst_internal_5m",
+            "dst_diversity_ratio_5m",
+            "is_new_src_dst_pair",
+            "src_out_degree_5m",
+            "dst_in_degree_5m",
+            "pivot_chain_indicator"
+          ],
+          "feature_generation_latency_ms": 0.02,
+          "inference_latency_ms_per_event": 0.0065,
+          "macro_f1": 0.8685,
+          "weighted_f1": 0.9171,
+          "balanced_accuracy": 0.9317,
+          "benign_fpr": 0.0,
+          "benign_fpr_denominator": 990,
+          "benign_fpr_numerator": 0,
+          "benign_fnr": 0.007317,
+          "benign_fnr_denominator": 410,
+          "benign_fnr_numerator": 3,
+          "binary_false_alarm_rate_on_benign": 0.007317,
+          "lateral_movement_precision": 0.4094,
+          "lateral_movement_recall": 1.0,
+          "lateral_movement_f1": 0.581,
+          "lateral_movement_support": 61,
+          "per_class": {
+            "benign": {
+              "precision": 1.0,
+              "recall": 0.9927,
+              "f1": 0.9963,
+              "support": 410
+            },
+            "brute_force": {
+              "precision": 0.9343,
+              "recall": 1.0,
+              "f1": 0.9661,
+              "support": 498
+            },
+            "lateral_movement": {
+              "precision": 0.4094,
+              "recall": 1.0,
+              "f1": 0.581,
+              "support": 61
+            },
+            "data_exfiltration": {
+              "precision": 1.0,
+              "recall": 0.6657,
+              "f1": 0.7993,
+              "support": 359
+            },
+            "c2_beaconing": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1": 1.0,
+              "support": 72
+            }
+          },
+          "confusion_matrix": [
+            [
+              407,
+              2,
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              498,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              61,
+              0,
+              0
+            ],
+            [
+              0,
+              33,
+              87,
+              239,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              72
+            ]
+          ]
+        },
+        "D_temporal_relational": {
+          "config_label": "D: Baseline + Temporal & Relational/Graph Features",
+          "n_features": 24,
+          "feature_names": [
+            "if_anomaly_score",
+            "baseline_deviation",
+            "graph_new_connections",
+            "failed_auth_rate",
+            "connection_frequency",
+            "bytes_sent_zscore",
+            "bytes_sent_log",
+            "bytes_ratio",
+            "conn_rate_zscore",
+            "dst_port_risk",
+            "is_new_destination",
+            "is_external_dst",
+            "hour_of_day_sin",
+            "hour_of_day_cos",
+            "cross_layer_match",
+            "inter_event_time_log",
+            "event_rate_1m",
+            "event_rate_5m",
+            "distinct_dst_internal_5m",
+            "dst_diversity_ratio_5m",
+            "is_new_src_dst_pair",
+            "src_out_degree_5m",
+            "dst_in_degree_5m",
+            "pivot_chain_indicator"
+          ],
+          "feature_generation_latency_ms": 0.02,
+          "inference_latency_ms_per_event": 0.0068,
+          "macro_f1": 0.8685,
+          "weighted_f1": 0.9171,
+          "balanced_accuracy": 0.9317,
+          "benign_fpr": 0.0,
+          "benign_fpr_denominator": 990,
+          "benign_fpr_numerator": 0,
+          "benign_fnr": 0.007317,
+          "benign_fnr_denominator": 410,
+          "benign_fnr_numerator": 3,
+          "binary_false_alarm_rate_on_benign": 0.007317,
+          "lateral_movement_precision": 0.4094,
+          "lateral_movement_recall": 1.0,
+          "lateral_movement_f1": 0.581,
+          "lateral_movement_support": 61,
+          "per_class": {
+            "benign": {
+              "precision": 1.0,
+              "recall": 0.9927,
+              "f1": 0.9963,
+              "support": 410
+            },
+            "brute_force": {
+              "precision": 0.9343,
+              "recall": 1.0,
+              "f1": 0.9661,
+              "support": 498
+            },
+            "lateral_movement": {
+              "precision": 0.4094,
+              "recall": 1.0,
+              "f1": 0.581,
+              "support": 61
+            },
+            "data_exfiltration": {
+              "precision": 1.0,
+              "recall": 0.6657,
+              "f1": 0.7993,
+              "support": 359
+            },
+            "c2_beaconing": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1": 1.0,
+              "support": 72
+            }
+          },
+          "confusion_matrix": [
+            [
+              407,
+              2,
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              498,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              61,
+              0,
+              0
+            ],
+            [
+              0,
+              33,
+              87,
+              239,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              72
+            ]
+          ]
+        }
+      }
+    },
+    "temporal_split_analysis": {
+      "split_strategy": "chronological_80_20_cut",
+      "train_time_min": "2026-10-09T02:00:00",
+      "train_time_max": "2026-10-09T15:03:37.017683",
+      "test_time_min": "2026-10-09T15:03:37.622614",
+      "test_time_max": "2026-10-10T05:10:29.017683",
+      "train_samples": 5640,
+      "test_samples": 1411,
+      "train_class_distribution": {
+        "benign": 2051,
+        "brute_force": 2818,
+        "data_exfiltration": 275,
+        "c2_beaconing": 277,
+        "lateral_movement": 219
+      },
+      "test_class_distribution": {
+        "brute_force": 182,
+        "data_exfiltration": 1045,
+        "c2_beaconing": 68,
+        "lateral_movement": 116
+      },
+      "limitation_note": "In this dataset, all 2,051 benign background events occur before 2026-10-09T11:28:00. A pure chronological 80/20 holdout places zero benign events in the test partition, making benign FPR mathematically undefined (0/0) and skewing balanced accuracy. Therefore, group-aware holdout is the justified leakage-resistant evaluation design."
+    }
+  }
+}

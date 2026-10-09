@@ -93,6 +93,16 @@ export default memo(function AttackGraph() {
             'color': '#DC2626',
           },
         },
+        {
+          selector: 'edge[edge_type = "inferred_correlation"]',
+          style: {
+            'line-color': 'rgba(139, 92, 246, 0.7)',
+            'target-arrow-color': 'rgba(139, 92, 246, 0.9)',
+            'width': 2,
+            'line-style': 'dotted',
+            'color': '#8B5CF6',
+          },
+        },
       ],
       layout: { name: 'cose', animate: false },
       userZoomingEnabled: true, userPanningEnabled: true,
@@ -120,7 +130,7 @@ export default memo(function AttackGraph() {
       })
       // Add or update edges
       graphData.edges.forEach(e => { 
-        const edgeId = e.source + '-' + e.target
+        const edgeId = e.source + '-' + e.target + (e.edge_type ? '-' + e.edge_type : '')
         const existing = cy.getElementById(edgeId)
         if (!existing.length) {
           cy.add({ group: 'edges', data: { id: edgeId, ...e } })
@@ -171,9 +181,9 @@ export default memo(function AttackGraph() {
         {/* Soft UI Legend */}
         <div style={{ display: 'flex', gap: 16, background: 'var(--bg-page)', padding: '6px 16px', borderRadius: 20, border: '1px solid var(--border-light)' }}>
           {[
-            ['var(--accent-critical)', 'Critical Host'],
-            ['var(--accent-brand)', 'Entity'],
-            ['var(--accent-success)', 'Safe']
+            ['var(--accent-critical)', 'Compromised Host'],
+            ['var(--accent-brand)', 'Observed Flow'],
+            ['#8B5CF6', 'Inferred Pivot']
           ].map(([color, label]) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
               <div style={{ width: 8, height: 8, background: color, borderRadius: '50%', boxShadow: `0 0 8px ${color}44` }} />

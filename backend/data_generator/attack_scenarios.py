@@ -8,29 +8,17 @@ from backend.core.config import ATTACKER_IPS, C2_SERVER_IP, C2_PORT, INTERNAL_IP
 def generate_brute_force_attack(start_time: datetime) -> List[UnifiedEvent]:
     events = []
     
-<<<<<<< HEAD
-    # Generate 300 application-layer events
-    for i in range(300):
-        # Timestamps: spread across 60 seconds from start_time
-        time_offset = timedelta(seconds=(60.0 / 300.0) * i)
-=======
     # Generate random variance for brute force attempts (noise)
     attempts = random.randint(150, 450)
     for i in range(attempts):
         # Timestamps: spread with variance across 30 to 120 seconds
         time_offset = timedelta(seconds=(random.uniform(30.0, 120.0) / attempts) * i)
->>>>>>> 25e60573f5d432f432c5ea47233306c717440662
         event_time = start_time + time_offset
         
         src_ip = ATTACKER_IPS[i % len(ATTACKER_IPS)]
         
-<<<<<<< HEAD
-        # Determine status
-        if i == 298:
-=======
         # Determine status (allow random success or very late success)
         if i == attempts - random.randint(1, 5):
->>>>>>> 25e60573f5d432f432c5ea47233306c717440662
             status_code = 200
             auth_result = "success"
         else:
@@ -162,20 +150,12 @@ def generate_lateral_movement(start_time: datetime) -> List[UnifiedEvent]:
         attack_type="lateral_movement"
     ))
     
-<<<<<<< HEAD
-    # Network scan and connection attempts to 16 internal hosts
-    current_time = psexec_time + timedelta(seconds=1)
-    
-    for i in range(24, 40):
-        target_ip = f"10.0.0.{i}"
-=======
     # Network scan and connection attempts to internal hosts (noisy counts)
     current_time = psexec_time + timedelta(seconds=1)
     
     scan_count = random.randint(10, 30)
     for i in range(scan_count):
         target_ip = f"10.0.0.{random.randint(20, 200)}"
->>>>>>> 25e60573f5d432f432c5ea47233306c717440662
         
         events.append(UnifiedEvent(
             timestamp=current_time,
@@ -211,11 +191,7 @@ def generate_false_positive(start_time: datetime) -> List[UnifiedEvent]:
         file_name = f"C:\\Finance\\Q{random.randint(1,4)}_Report_{i}{file_ext}"
         
         events.append(UnifiedEvent(
-<<<<<<< HEAD
-            timestamp=start_time + timedelta(seconds=i*54), # Spread across 45 mins (2700s)
-=======
             timestamp=start_time + timedelta(seconds=i*54 + random.randint(-10, 10)), # Noise around interval
->>>>>>> 25e60573f5d432f432c5ea47233306c717440662
             layer="endpoint",
             src_entity="10.0.0.5",
             dst_entity="10.0.0.5",

@@ -1,0 +1,137 @@
+{
+  "metadata": {
+    "evaluation_type": "fixture_based_correlation_validation",
+    "timestamp": "2026-10-09T18:07:23.593688",
+    "scenarios_evaluated": 12,
+    "total_fixture_events": 34,
+    "disclaimer": "These results evaluate explicit correlation engine logic against controlled synthetic test fixtures. They validate algorithm correctness (merge prevention, pivot linking, deduplication) and must NOT be represented as real-world enterprise clustering accuracy."
+  },
+  "metrics": {
+    "pairwise_cluster_precision": 1.0,
+    "pairwise_cluster_recall": 1.0,
+    "pairwise_cluster_f1": 1.0,
+    "merge_errors_unrelated_merged": 0,
+    "split_errors_related_fragmented": 0,
+    "evidence_traceability_pct": 100.0,
+    "duplicate_risk_invariance_verified": true
+  },
+  "operational_metrics": {
+    "total_events_evaluated": 34,
+    "raw_alerts_generated": 34,
+    "duplicate_alerts_suppressed": 4,
+    "alerts_assigned_to_incidents": 30,
+    "unassigned_alerts": 0,
+    "incident_dossiers_created": 19,
+    "displayed_triage_reduction_pct": 44.12
+  },
+  "scenarios": [
+    {
+      "scenario_id": "SCENARIO_1_MULTI_STAGE_APT",
+      "description": "Multi-stage APT campaign: External brute force -> victim pivots laterally -> exfiltration",
+      "expected_incidents": 1,
+      "actual_incidents": 1,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 3
+    },
+    {
+      "scenario_id": "SCENARIO_2_SHARED_VICTIM_INDEPENDENT_ATTACKERS",
+      "description": "Two independent external attackers targeting the same victim server simultaneously",
+      "expected_incidents": 2,
+      "actual_incidents": 2,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 2
+    },
+    {
+      "scenario_id": "SCENARIO_3_SAME_ATTACKER_OUTSIDE_WINDOW",
+      "description": "Same attacker targeting same victim separated by 3 hours (exceeds 10m sliding window)",
+      "expected_incidents": 2,
+      "actual_incidents": 2,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 2
+    },
+    {
+      "scenario_id": "SCENARIO_4_INTERLEAVED_BENIGN_ADMIN",
+      "description": "Legitimate admin activity interleaved between attack campaign events",
+      "expected_incidents": 1,
+      "actual_incidents": 1,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 3
+    },
+    {
+      "scenario_id": "SCENARIO_5_DUPLICATE_REPLAY_FLOOD",
+      "description": "Duplicate telemetry events replayed within 20 seconds",
+      "expected_incidents": 1,
+      "actual_incidents": 1,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 5
+    },
+    {
+      "scenario_id": "SCENARIO_6_OUT_OF_ORDER_AND_MISSING_TIMESTAMPS",
+      "description": "Alerts arriving out of chronological order and with None timestamps",
+      "expected_incidents": 1,
+      "actual_incidents": 1,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 3
+    },
+    {
+      "scenario_id": "SCENARIO_7_CONCURRENT_SUBNET_INCIDENTS",
+      "description": "Two simultaneous attack campaigns interleaved across Subnet A and Subnet B",
+      "expected_incidents": 2,
+      "actual_incidents": 2,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 4
+    },
+    {
+      "scenario_id": "SCENARIO_8_ONE_ATTACKER_MULTIPLE_VICTIMS",
+      "description": "Single external attacker probing/attacking multiple internal victims in quick succession",
+      "expected_incidents": 1,
+      "actual_incidents": 1,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 3
+    },
+    {
+      "scenario_id": "SCENARIO_9_UNRELATED_EVENTS_SHARING_DESTINATION",
+      "description": "External brute force and internal workstation exfiltration sharing the same DMZ destination",
+      "expected_incidents": 2,
+      "actual_incidents": 2,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 2
+    },
+    {
+      "scenario_id": "SCENARIO_10_FALSE_PIVOT_REJECTION",
+      "description": "Host 10.0.0.99 (never compromised by attacker) initiates lateral activity; must not be grouped into 10.0.0.15's incident",
+      "expected_incidents": 2,
+      "actual_incidents": 2,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 2
+    },
+    {
+      "scenario_id": "SCENARIO_11_AMBIGUOUS_SEQUENCES",
+      "description": "Three distinct simultaneous attacks with disjoint entities and threat types; must not be merged",
+      "expected_incidents": 3,
+      "actual_incidents": 3,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 3
+    },
+    {
+      "scenario_id": "SCENARIO_12_INCOMPLETE_ENTITY_IDENTIFIERS",
+      "description": "Alerts with partial telemetry or missing ports gracefully handled and grouped by source attacker",
+      "expected_incidents": 1,
+      "actual_incidents": 1,
+      "merge_errors": 0,
+      "split_errors": 0,
+      "events": 2
+    }
+  ]
+}

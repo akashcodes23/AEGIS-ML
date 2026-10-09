@@ -1,0 +1,124 @@
+{
+  "timestamp": "2026-10-09T11:03:47.264262",
+  "random_seed": 42,
+  "split_strategy": "80/20 train/test holdout (stratified)",
+  "total_events": 7051,
+  "train_samples": 5640,
+  "test_samples": 1411,
+  "dummy_baseline_macro_f1": 0.20997667920808477,
+  "cv_macro_f1_scores": [
+    0.9925824175824175,
+    0.9816451965984676,
+    0.9963290393196935,
+    0.9963290393196935,
+    0.9926549865229111
+  ],
+  "cv_macro_f1_mean": 0.9919081358686366,
+  "test_metrics": {
+    "accuracy": 0.9950389794472005,
+    "balanced_accuracy": 0.9818625059406237,
+    "macro_f1": 0.9819389906927499,
+    "weighted_f1": 0.9950388428818818,
+    "false_positive_rate_benign": 0.0024330900243309003,
+    "fpr_definition": "Benign events misclassified as any attack / Total actual benign events",
+    "roc_auc_macro_ovr": 0.8098839732397154,
+    "inference_latency_ms": 0.016985000404882395,
+    "per_class": {
+      "benign": {
+        "precision": 1.0,
+        "recall": 0.9975669099756691,
+        "f1_score": 0.9987819732034104,
+        "support": 411
+      },
+      "brute_force": {
+        "precision": 0.9983361064891847,
+        "recall": 1.0,
+        "f1_score": 0.9991673605328892,
+        "support": 600
+      },
+      "lateral_movement": {
+        "precision": 0.9552238805970149,
+        "recall": 0.9552238805970149,
+        "f1_score": 0.9552238805970149,
+        "support": 67
+      },
+      "data_exfiltration": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 264
+      },
+      "c2_beaconing": {
+        "precision": 0.9565217391304348,
+        "recall": 0.9565217391304348,
+        "f1_score": 0.9565217391304348,
+        "support": 69
+      }
+    },
+    "confusion_matrix": {
+      "benign": {
+        "benign": 410,
+        "brute_force": 1,
+        "lateral_movement": 0,
+        "data_exfiltration": 0,
+        "c2_beaconing": 0
+      },
+      "brute_force": {
+        "benign": 0,
+        "brute_force": 600,
+        "lateral_movement": 0,
+        "data_exfiltration": 0,
+        "c2_beaconing": 0
+      },
+      "lateral_movement": {
+        "benign": 0,
+        "brute_force": 0,
+        "lateral_movement": 64,
+        "data_exfiltration": 0,
+        "c2_beaconing": 3
+      },
+      "data_exfiltration": {
+        "benign": 0,
+        "brute_force": 0,
+        "lateral_movement": 0,
+        "data_exfiltration": 264,
+        "c2_beaconing": 0
+      },
+      "c2_beaconing": {
+        "benign": 0,
+        "brute_force": 0,
+        "lateral_movement": 3,
+        "data_exfiltration": 0,
+        "c2_beaconing": 66
+      }
+    }
+  },
+  "dependencies": {
+    "sklearn": "1.7.2",
+    "numpy": "2.2.6",
+    "pandas": "2.3.3"
+  },
+  "feature_names": [
+    "if_anomaly_score",
+    "baseline_deviation",
+    "graph_new_connections",
+    "failed_auth_rate",
+    "connection_frequency",
+    "bytes_sent_zscore",
+    "bytes_sent_log",
+    "bytes_ratio",
+    "conn_rate_zscore",
+    "dst_port_risk",
+    "is_new_destination",
+    "is_external_dst",
+    "hour_of_day_sin",
+    "hour_of_day_cos",
+    "cross_layer_match"
+  ],
+  "artifact_paths": {
+    "threat_classifier": "/Users/akashgpatil/major_project/AEGIS-ML/data/models/threat_classifier.pkl",
+    "isolation_forest_network": "/Users/akashgpatil/major_project/AEGIS-ML/data/models/isolation_forest_network.pkl",
+    "isolation_forest_endpoint": "/Users/akashgpatil/major_project/AEGIS-ML/data/models/isolation_forest_endpoint.pkl",
+    "entity_baselines": "/Users/akashgpatil/major_project/AEGIS-ML/data/models/entity_baselines.pkl"
+  }
+}

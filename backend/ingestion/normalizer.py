@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from math import cos, pi, sin
+from math import cos, pi, sin, log
 from typing import Optional
 
 from backend.core.config import INTERNAL_IPS, PORT_RISK
@@ -82,13 +82,13 @@ class NormalizerPipeline:
         is_business: bool = 8 <= hour <= 18
 
         # ── 4. Traffic-volume derived fields ─────────────────────────────
-        bytes_sent: int = raw_event.get("bytes_sent", 0) or 0
-        bytes_recv: int = raw_event.get("bytes_received", 0) or 0
-        bytes_ratio: float = bytes_sent / (bytes_recv + 1)
+        bytes_sent: int = max(0, int(raw_event.get("bytes_sent", 0) or 0))
+        bytes_recv: int = max(0, int(raw_event.get("bytes_received", 0) or 0))
+        bytes_ratio: float = log(1.0 + bytes_sent) / log(2.0 + bytes_recv)
 
         # ── 5. Port-risk score ────────────────────────────────────────────
         dst_port = raw_event.get("dst_port")
-        port_risk: float = PORT_RISK.get(dst_port, 0.3) if dst_port else 0.0
+        port_risk: float = PORT_RISK.get(dst_port, 0.0) if dst_port else 0.0
 
         # ── 6. Entity resolution ──────────────────────────────────────────
         src_entity: str = (

@@ -1,0 +1,92 @@
+{
+  "benchmark_metadata": {
+    "name": "AEGIS-ML Dual-Telemetry Controlled Correlation Benchmark",
+    "benchmark_type": "Synthetic software-validation fixture evaluation",
+    "total_scenarios": 10,
+    "passed_scenarios": 10,
+    "pass_rate_pct": 100.0,
+    "disclaimer": "Measures correlation engine software correctness on controlled synthetic fixtures. Does not represent real-world detection accuracy."
+  },
+  "scenarios": [
+    {
+      "scenario_id": "SCENARIO_1_DIRECT_SOCKET_BINDING",
+      "description": "Endpoint process and network flow share verified socket_id on same host.",
+      "events_evaluated": 2,
+      "incidents_created": 1,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_2_FILE_ACCESS_NO_NETWORK",
+      "description": "Isolated file read without network socket; must not infer exfiltration.",
+      "events_evaluated": 1,
+      "incidents_created": 1,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_3_UNRELATED_NETWORK_SAME_HOST",
+      "description": "Concurrent archiving (PID 3300) and web browsing (PID 8800); must not attribute web socket to 7z.",
+      "events_evaluated": 2,
+      "incidents_created": 1,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_4_MULTIPLE_CONCURRENT_PROCESSES",
+      "description": "Multiple distinct processes executing simultaneously on same host.",
+      "events_evaluated": 2,
+      "incidents_created": 1,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_5_PID_REUSE_DISAMBIGUATION",
+      "description": "PID 1234 reused by different process instance; must reject process lineage match.",
+      "events_evaluated": 2,
+      "incidents_created": 1,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_6_IDENTICAL_PIDS_DIFFERENT_HOSTS",
+      "description": "Matching PID 2048 on two separate machines; must remain separate incidents.",
+      "events_evaluated": 2,
+      "incidents_created": 2,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_7_MISSING_GUID_AND_SOCKET",
+      "description": "Missing socket binding; must be tagged as hypothesis with missing_evidence.",
+      "events_evaluated": 2,
+      "incidents_created": 1,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_8_OUT_OF_ORDER_EVENTS",
+      "description": "Network connection processed before process launch; monotonically correlates.",
+      "events_evaluated": 2,
+      "incidents_created": 1,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_9_AMBIGUOUS_TIMESTAMPS",
+      "description": "Coincident timestamp across distinct entities; must stay in separate incidents.",
+      "events_evaluated": 2,
+      "incidents_created": 2,
+      "passed": true,
+      "failure_reasons": []
+    },
+    {
+      "scenario_id": "SCENARIO_10_LEGITIMATE_BACKUP",
+      "description": "Authorized robocopy backup archiving; must record alternative benign explanation.",
+      "events_evaluated": 1,
+      "incidents_created": 1,
+      "passed": true,
+      "failure_reasons": []
+    }
+  ]
+}

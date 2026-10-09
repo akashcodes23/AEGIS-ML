@@ -1,0 +1,417 @@
+{
+  "experiment_title": "AEGIS-ML Attribution-Aware Model Experiment",
+  "timestamp": "2026-10-09T16:54:52.549707",
+  "feature_availability_audit": {
+    "dataset_path": "/Users/akashgpatil/major_project/AEGIS-ML/data/raw/combined_labeled.jsonl",
+    "total_records": 7051,
+    "features": {
+      "socket_id": {
+        "populated_count": 0,
+        "total_count": 7051,
+        "availability_pct": 0.0,
+        "missingness_pct": 100.0,
+        "status": "absent"
+      },
+      "host_id": {
+        "populated_count": 0,
+        "total_count": 7051,
+        "availability_pct": 0.0,
+        "missingness_pct": 100.0,
+        "status": "absent"
+      },
+      "process_guid": {
+        "populated_count": 0,
+        "total_count": 7051,
+        "availability_pct": 0.0,
+        "missingness_pct": 100.0,
+        "status": "absent"
+      },
+      "connection_direction": {
+        "populated_count": 0,
+        "total_count": 7051,
+        "availability_pct": 0.0,
+        "missingness_pct": 100.0,
+        "status": "absent"
+      },
+      "process_start_time": {
+        "populated_count": 0,
+        "total_count": 7051,
+        "availability_pct": 0.0,
+        "missingness_pct": 100.0,
+        "status": "absent"
+      },
+      "process_end_time": {
+        "populated_count": 0,
+        "total_count": 7051,
+        "availability_pct": 0.0,
+        "missingness_pct": 100.0,
+        "status": "absent"
+      },
+      "pid": {
+        "populated_count": 0,
+        "total_count": 7051,
+        "availability_pct": 0.0,
+        "missingness_pct": 100.0,
+        "status": "absent"
+      },
+      "parent_pid": {
+        "populated_count": 0,
+        "total_count": 7051,
+        "availability_pct": 0.0,
+        "missingness_pct": 100.0,
+        "status": "absent"
+      },
+      "process_name": {
+        "populated_count": 230,
+        "total_count": 7051,
+        "availability_pct": 3.26,
+        "missingness_pct": 96.74,
+        "status": "sparse"
+      },
+      "user_account": {
+        "populated_count": 230,
+        "total_count": 7051,
+        "availability_pct": 3.26,
+        "missingness_pct": 96.74,
+        "status": "sparse"
+      },
+      "file_path": {
+        "populated_count": 50,
+        "total_count": 7051,
+        "availability_pct": 0.71,
+        "missingness_pct": 99.29,
+        "status": "sparse"
+      },
+      "parent_process": {
+        "populated_count": 30,
+        "total_count": 7051,
+        "availability_pct": 0.43,
+        "missingness_pct": 99.57,
+        "status": "sparse"
+      }
+    },
+    "dual_telemetry_viable": false
+  },
+  "baseline_configuration_c": {
+    "description": "15 baseline features + 6 relational temporal-graph features",
+    "feature_count": 21,
+    "seeds_evaluated": [
+      42,
+      1337,
+      2026
+    ],
+    "individual_seed_results": [
+      {
+        "seed": 42,
+        "macro_f1": 0.8685,
+        "weighted_f1": 0.9171,
+        "balanced_accuracy": 0.9317,
+        "benign_fpr": 0.0,
+        "benign_fpr_denominator": 990,
+        "benign_fpr_numerator": 0,
+        "benign_false_positives": 0,
+        "benign_fnr": 0.007317,
+        "benign_fnr_denominator": 410,
+        "benign_fnr_numerator": 3,
+        "benign_false_negatives": 3,
+        "binary_false_alarm_rate_on_benign": 0.007317,
+        "lateral_movement_errors": {
+          "false_positives": 88,
+          "false_negatives": 0
+        },
+        "data_exfiltration_errors": {
+          "false_positives": 0,
+          "false_negatives": 120
+        },
+        "confusion_matrix": [
+          [
+            407,
+            2,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            498,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            61,
+            0,
+            0
+          ],
+          [
+            0,
+            33,
+            87,
+            239,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            72
+          ]
+        ],
+        "per_class": {
+          "benign": {
+            "precision": 1.0,
+            "recall": 0.9927,
+            "f1": 0.9963,
+            "support": 410
+          },
+          "brute_force": {
+            "precision": 0.9343,
+            "recall": 1.0,
+            "f1": 0.9661,
+            "support": 498
+          },
+          "lateral_movement": {
+            "precision": 0.4094,
+            "recall": 1.0,
+            "f1": 0.581,
+            "support": 61
+          },
+          "data_exfiltration": {
+            "precision": 1.0,
+            "recall": 0.6657,
+            "f1": 0.7993,
+            "support": 359
+          },
+          "c2_beaconing": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 72
+          }
+        },
+        "test_sample_count": 1400,
+        "train_sample_count": 5651
+      },
+      {
+        "seed": 1337,
+        "macro_f1": 0.9215,
+        "weighted_f1": 0.9515,
+        "balanced_accuracy": 0.909,
+        "benign_fpr": 0.0,
+        "benign_fpr_denominator": 402,
+        "benign_fpr_numerator": 0,
+        "benign_false_positives": 0,
+        "benign_fnr": 0.0,
+        "benign_fnr_denominator": 410,
+        "benign_fnr_numerator": 0,
+        "benign_false_negatives": 0,
+        "binary_false_alarm_rate_on_benign": 0.0,
+        "lateral_movement_errors": {
+          "false_positives": 12,
+          "false_negatives": 7
+        },
+        "data_exfiltration_errors": {
+          "false_positives": 25,
+          "false_negatives": 0
+        },
+        "confusion_matrix": [
+          [
+            410,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            4,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            68,
+            7,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            240,
+            0
+          ],
+          [
+            0,
+            0,
+            12,
+            18,
+            53
+          ]
+        ],
+        "per_class": {
+          "benign": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 410
+          },
+          "brute_force": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 4
+          },
+          "lateral_movement": {
+            "precision": 0.85,
+            "recall": 0.9067,
+            "f1": 0.8774,
+            "support": 75
+          },
+          "data_exfiltration": {
+            "precision": 0.9057,
+            "recall": 1.0,
+            "f1": 0.9505,
+            "support": 240
+          },
+          "c2_beaconing": {
+            "precision": 1.0,
+            "recall": 0.6386,
+            "f1": 0.7794,
+            "support": 83
+          }
+        },
+        "test_sample_count": 812,
+        "train_sample_count": 6239
+      },
+      {
+        "seed": 2026,
+        "macro_f1": 0.9229,
+        "weighted_f1": 0.9632,
+        "balanced_accuracy": 0.905,
+        "benign_fpr": 0.0,
+        "benign_fpr_denominator": 914,
+        "benign_fpr_numerator": 0,
+        "benign_false_positives": 0,
+        "benign_fnr": 0.012195,
+        "benign_fnr_denominator": 410,
+        "benign_fnr_numerator": 5,
+        "benign_false_negatives": 5,
+        "binary_false_alarm_rate_on_benign": 0.012195,
+        "lateral_movement_errors": {
+          "false_positives": 6,
+          "false_negatives": 12
+        },
+        "data_exfiltration_errors": {
+          "false_positives": 37,
+          "false_negatives": 0
+        },
+        "confusion_matrix": [
+          [
+            405,
+            4,
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            500,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            63,
+            12,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            240,
+            0
+          ],
+          [
+            0,
+            0,
+            6,
+            24,
+            69
+          ]
+        ],
+        "per_class": {
+          "benign": {
+            "precision": 1.0,
+            "recall": 0.9878,
+            "f1": 0.9939,
+            "support": 410
+          },
+          "brute_force": {
+            "precision": 0.9921,
+            "recall": 1.0,
+            "f1": 0.996,
+            "support": 500
+          },
+          "lateral_movement": {
+            "precision": 0.913,
+            "recall": 0.84,
+            "f1": 0.875,
+            "support": 75
+          },
+          "data_exfiltration": {
+            "precision": 0.8664,
+            "recall": 1.0,
+            "f1": 0.9284,
+            "support": 240
+          },
+          "c2_beaconing": {
+            "precision": 1.0,
+            "recall": 0.697,
+            "f1": 0.8214,
+            "support": 99
+          }
+        },
+        "test_sample_count": 1324,
+        "train_sample_count": 5727
+      }
+    ],
+    "aggregate_metrics": {
+      "mean_macro_f1": 0.9043,
+      "mean_balanced_accuracy": 0.9152,
+      "mean_benign_fpr": 0.0,
+      "mean_benign_fnr": 0.006504
+    }
+  },
+  "experimental_configuration_status": {
+    "status": "NOT_COMPLETED",
+    "reason": "Genuine process-to-network attribution fields (socket_id, process_guid, host_id) are 0.0% populated in the combined_labeled.jsonl source dataset. In accordance with Phase 14 Safety Rules 6 & 10, real telemetry will not be fabricated. No predictive improvement is claimed without comparable measured real data.",
+    "reproducible_setup_harness": {
+      "required_schema_fields": [
+        "socket_id",
+        "process_guid",
+        "host_id",
+        "pid",
+        "process_start_time"
+      ],
+      "proposed_experimental_features": [
+        "has_verified_socket_binding (binary)",
+        "process_network_divergence_score (float)",
+        "cross_layer_co_occurrence_count (int)"
+      ],
+      "evaluation_protocol": "When dual-telemetry dataset is provided, evaluate identical group-aware holdout with seeds [42, 1337, 2026], reporting delta against Configuration C baseline."
+    }
+  },
+  "limitations": [
+    "Source dataset combined_labeled.jsonl lacks host OS socket table and process GUID attribution.",
+    "Synthetic correlation benchmarks validate software logic only, not real-world predictive ML generalization."
+  ]
+}

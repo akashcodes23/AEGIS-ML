@@ -1,33 +1,61 @@
 import asyncio
 import hashlib
 import math
+import os
 import time
-import random
-import numpy as np
-import pandas as pd
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 # ── Path resolution ───────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DATASET_DIR  = PROJECT_ROOT / "datasets"
+DATASET_DIR = PROJECT_ROOT / "datasets"
 
-# ── ML model imports ──────────────────────────────────────────────────────────
-MODELS_AVAILABLE = False
+# ── Core & ML imports ─────────────────────────────────────────────────────────
 try:
-    try:
-        from detection.isolation_forest  import IsolationForestDetector as _IFD
-        from detection.threat_classifier  import ThreatClassifier as _TC
-    except ModuleNotFoundError:
-        from backend.detection.isolation_forest  import IsolationForestDetector as _IFD
-        from backend.detection.threat_classifier  import ThreatClassifier as _TC
-    MODELS_AVAILABLE = True
-    print("[AEGIS] ML models imported successfully.")
-except Exception as e:
-    print(f"[AEGIS] ML model import failed: {e}")
+    from backend.core.config import (
+        CONFIDENCE_ALERT_MIN,
+        ANOMALY_THRESHOLD,
+        PORT_RISK,
+        RF_CLASSIFIER_PATH,
+        IF_NETWORK_PATH,
+        IF_ENDPOINT_PATH,
+        BASELINES_PATH,
+    )
+    from backend.core.schemas import UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry
+    from backend.detection.isolation_forest import IsolationForestDetector
+    from backend.detection.baseline_profiler import BehavioralBaselineProfiler
+    from backend.detection.threat_classifier import ThreatClassifier
+    from backend.detection.model_trainer import extract_features
+    from backend.correlation.weighted_fusion import WeightedEvidenceFusion
+    from backend.correlation.incident_correlator import IncidentCorrelator
+    from backend.explainability.explainer import LocalFeatureExplainer
+except ModuleNotFoundError:
+    from core.config import (
+        CONFIDENCE_ALERT_MIN,
+        ANOMALY_THRESHOLD,
+        PORT_RISK,
+        RF_CLASSIFIER_PATH,
+        IF_NETWORK_PATH,
+        IF_ENDPOINT_PATH,
+        BASELINES_PATH,
+    )
+    from core.schemas import UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry
+    from detection.isolation_forest import IsolationForestDetector
+    from detection.baseline_profiler import BehavioralBaselineProfiler
+    from detection.threat_classifier import ThreatClassifier
+    from detection.model_trainer import extract_features
+    from correlation.weighted_fusion import WeightedEvidenceFusion
+    from correlation.incident_correlator import IncidentCorrelator
+    from explainability.explainer import LocalFeatureExplainer
+
 
 
 # ── WebSocket Manager ─────────────────────────────────────────────────────────
@@ -54,234 +82,106 @@ class WebSocketManager:
             self.disconnect(ws)
 
 
-# ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="AEGIS Threat Detection API")
+# ── App Lifecycle ─────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """FastAPI lifespan handler: initializes state and starts dataset worker task."""
+    application.state.ws_manager = WebSocketManager()
+    application.state.alerts = []
+    application.state.incidents = []
+    application.state.total_events = 0
+    application.state.eps = 0.0
+    application.state.alerts_by_severity = {}
+    application.state.analysis_running = False
+    application.state._logged_errs = set()
+    application.state.isolated_ips = set()
+    _load_models_from_disk(application.state)
+    worker_task = asyncio.create_task(dataset_worker(application.state))
+    yield
+    # Shutdown: cancel background worker gracefully
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass
+
+
+# ── App & CORS Setup ──────────────────────────────────────────────────────────
+app = FastAPI(
+    title="AEGIS Threat Detection API",
+    description="Real-Time Network Threat Intelligence and ML Detection API",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Configurable CORS
+cors_env = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000")
+allowed_origins = [orig.strip() for orig in cors_env.split(",") if orig.strip()]
+if "*" in allowed_origins or os.getenv("AEGIS_ALLOW_ALL_ORIGINS", "false").lower() == "true":
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=True if allowed_origins != ["*"] else False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
 
-# ── CICIDS direct parser ──────────────────────────────────────────────────────
-LABEL_MAP = {
-    'BENIGN': 'benign',
-    'PortScan': 'reconnaissance',
-    'FTP-Patator': 'brute_force', 'SSH-Patator': 'brute_force',
-    'Infiltration': 'lateral_movement', 'Bot': 'c2_beaconing',
-    'Web Attack - Brute Force': 'web_exploit',
-    'Web Attack \x96 Brute Force': 'web_exploit',
-    'Web Attack - XSS': 'cross_site_scripting',
-    'Web Attack - Sql Injection': 'sql_injection',
-    'DDoS': 'denial_of_service', 'DoS Hulk': 'denial_of_service',
-    'DoS GoldenEye': 'denial_of_service', 'DoS Slowhttptest': 'denial_of_service',
-    'DoS slowloris': 'denial_of_service', 'Heartbleed': 'data_exfiltration',
-}
-
+# ── MITRE ATT&CK & Kill Chain Mappings ─────────────────────────────────────────
 KILL_CHAIN_STAGES = {
-    'reconnaissance': 'Recon',
-    'brute_force': 'Weaponize',
-    'web_exploit': 'Delivery',
-    'cross_site_scripting': 'Exploit',
-    'sql_injection': 'Exploit',
-    'lateral_movement': 'Install',
-    'c2_beaconing': 'C2',
-    'data_exfiltration': 'Exfiltrate',
-    'denial_of_service': 'Exploit'
+    "brute_force": "Weaponize",
+    "lateral_movement": "Install",
+    "c2_beaconing": "C2",
+    "data_exfiltration": "Exfiltrate",
+    "benign": "None",
 }
 
 NEXT_STAGE = {
-    'Recon': 'Weaponize',
-    'Weaponize': 'Delivery',
-    'Delivery': 'Exploit',
-    'Exploit': 'Install',
-    'Install': 'C2',
-    'C2': 'Exfiltrate',
-    'Exfiltrate': 'Impact',
-    'Impact': 'Impact'
+    "Recon": "Weaponize",
+    "Weaponize": "Delivery",
+    "Delivery": "Exploit",
+    "Exploit": "Install",
+    "Install": "C2",
+    "C2": "Exfiltrate",
+    "Exfiltrate": "Impact",
+    "Impact": "Impact",
+    "None": "None",
 }
 
-THREAT_SEV = {
-    'brute_force': 'medium', 'lateral_movement': 'high',
-    'data_exfiltration': 'critical', 'c2_beaconing': 'high',
-    'reconnaissance': 'low', 'web_exploit': 'high',
-    'cross_site_scripting': 'medium', 'sql_injection': 'critical',
-    'denial_of_service': 'high'
+DEFAULT_SEVERITY = {
+    "brute_force": "medium",
+    "lateral_movement": "high",
+    "c2_beaconing": "high",
+    "data_exfiltration": "critical",
+    "benign": None,
 }
 
-# Subnet pools for synthetic but stable IPs
-_ATTACKER_POOL = [f"185.220.{i}.{j}" for i in range(100,103) for j in range(1,11)]
-_VICTIM_POOL   = [f"10.0.{i}.{j}"    for i in range(0, 5)   for j in range(1,21)]
 
-
-def _stable_ip(key: str, pool: list) -> str:
-    """Deterministic IP from a string key — same flow always gets same IP."""
-    idx = int(hashlib.md5(key.encode()).hexdigest(), 16) % len(pool)
-    return pool[idx]
-
-
-def _parse_cicids_csv(csv_path: Path, max_rows: int = 2000, state=None):
-    """
-    Parse a CICIDS CSV and return a list of dicts ready for analysis.
-    CICIDS has no IP columns — we synthesise realistic ones from flow metadata.
-    """
-    try:
-        df = pd.read_csv(csv_path, low_memory=False, nrows=max_rows * 3)
-    except Exception as e:
-        print(f"[AEGIS] CSV read error {csv_path.name}: {e}")
-        return []
-
-    df.columns = df.columns.str.strip()
-
-    # Strip whitespace from Label
-    label_col = 'Label' if 'Label' in df.columns else None
-    if label_col:
-        df[label_col] = df[label_col].str.strip()
-
-    # Rename key columns (case-insensitive)
-    col_lower = {c.lower(): c for c in df.columns}
-    rename = {}
-    for alias, target in [
-        ('destination port', 'dst_port'),
-        ('flow duration', 'duration_us'),
-        ('total fwd packets', 'fwd_pkts'),
-        ('total backward packets', 'bwd_pkts'),
-        ('total length of fwd packets', 'bytes_sent'),
-        ('total length of bwd packets', 'bytes_recv'),
-        ('flow bytes/s', 'bytes_per_sec'),
-        ('label', 'attack_type'),
-    ]:
-        if alias in col_lower:
-            rename[col_lower[alias]] = target
-    df = df.rename(columns=rename)
-
-    if 'attack_type' in df.columns:
-        df['attack_type'] = df['attack_type'].map(
-            lambda x: LABEL_MAP.get(str(x).strip(), 'benign'))
-
-    # Sample: balance classes, keep up to max_rows total
-    if 'attack_type' in df.columns:
-        benign = df[df['attack_type'] == 'benign'].head(max_rows // 2)
-        attacks = df[df['attack_type'] != 'benign'].head(max_rows // 2)
-        df = pd.concat([benign, attacks]).reset_index(drop=True)
-    else:
-        df = df.head(max_rows)
-
-    rows = []
-    
-    for i, row in df.iterrows():
-        dst_port = int(row.get('dst_port', 0) or 0)
-        threat   = str(row.get('attack_type', 'benign'))
-        is_attack = threat != 'benign'
-
-        if state is not None:
-            if is_attack:
-                state.total_attacks_seen += 1
-
-            # ARTIFICIAL THREAT INJECTION: Keep around 50s odd number of threats globally for the entire sequence
-            if not is_attack and state.total_attacks_seen < state.target_total_attacks and random.random() < 0.05:
-                is_attack = True
-                state.total_attacks_seen += 1
-
-        # Inject more severe simulated threats into anything marked as an attack
-        if is_attack:
-            r = random.random()
-            if r < 0.3:
-                threat = 'data_exfiltration'
-            elif r < 0.5:
-                threat = 'lateral_movement'
-            elif r < 0.7:
-                threat = 'c2_beaconing'
-            elif r < 0.85:
-                threat = 'sql_injection'
-            else:
-                threat = 'brute_force'
-
-        # Synthesise stable IPs — attackers have external range, victims internal
-        flow_key = f"{csv_path.stem}-{i}-{dst_port}"
-        if is_attack:
-            src_ip = _stable_ip(flow_key + 's', _ATTACKER_POOL)
-            dst_ip = _stable_ip(flow_key + 'd', _VICTIM_POOL)
-        else:
-            src_ip = _stable_ip(flow_key + 's', _VICTIM_POOL)
-            dst_ip = _stable_ip(flow_key + 'd', _VICTIM_POOL)
-
-        duration_ms = int((row.get('duration_us') or 0) / 1000)
-        bytes_sent  = int(row.get('bytes_sent') or 0)
-        bytes_recv  = int(row.get('bytes_recv') or 0)
-        fwd_pkts    = int(row.get('fwd_pkts') or 0)
-        bwd_pkts    = int(row.get('bwd_pkts') or 0)
-
-        rows.append({
-            'src_ip': src_ip,
-            'dst_ip': dst_ip,
-            'src_entity': src_ip,
-            'dst_entity': dst_ip,
-            'dst_port': dst_port,
-            'bytes_sent': bytes_sent,
-            'bytes_recv': bytes_recv,
-            'fwd_pkts': fwd_pkts,
-            'bwd_pkts': bwd_pkts,
-            'duration_ms': duration_ms,
-            'attack_type': threat,
-            'is_attack': is_attack,
-            'src_internal': not is_attack,
-            'dst_internal': True,
-        })
-    return rows
-
-
-def _extract_raw_features(row: dict) -> list:
-    """Extract a numeric feature vector from a parsed CICIDS row."""
-    dst_port  = row.get('dst_port', 0) or 0
-    bytes_sent = row.get('bytes_sent', 0) or 0
-    bytes_recv = row.get('bytes_recv', 0) or 0
-    dur_ms    = row.get('duration_ms', 0) or 0
-    fwd_pkts  = row.get('fwd_pkts', 0) or 0
-    bwd_pkts  = row.get('bwd_pkts', 0) or 0
-
-    port_risk_map = {22:0.6, 23:0.9, 445:0.7, 3389:0.8, 4444:1.0, 8080:0.5, 443:0.1, 80:0.1, 53:0.0}
-    port_risk = port_risk_map.get(dst_port, 0.3)
-
-    total_pkts = max(fwd_pkts + bwd_pkts, 1)
-    bytes_ratio = math.log1p(bytes_sent) / math.log1p(bytes_recv + 1)
-
-    hour = datetime.now().hour
-    return [
-        math.log1p(bytes_sent),          # 0
-        math.log1p(bytes_recv),          # 1
-        math.log1p(dur_ms),              # 2
-        port_risk,                       # 3
-        fwd_pkts / total_pkts,           # 4 packet asymmetry
-        bytes_ratio,                     # 5
-        1.0 if not row['src_internal'] else 0.0,   # 6 external src
-        math.sin(2 * math.pi * hour / 24),         # 7
-        math.cos(2 * math.pi * hour / 24),         # 8
-        float(dst_port > 1024),          # 9 high port
-    ]
-
-
-def _build_graph(alerts: list) -> dict:
-    """Build Cytoscape graph from accumulated alerts."""
+def _build_graph(alerts: list, incidents: Optional[list] = None) -> dict:
+    """Build Cytoscape graph structure distinguishing observed telemetry flows from inferred correlation hypotheses."""
     nodes_map: dict = {}
-    edges: list = []
+    edges_map: dict = {}
     risk_map = {"critical": 0.95, "high": 0.80, "medium": 0.55, "low": 0.30}
 
-    for a in alerts[-150:]:
-        src  = a.get("src_entity", "")
-        dst  = a.get("dst_entity", "")
-        sev  = a.get("severity", "low")
-        conf = a.get("confidence", 0.5)
+    # 1. Observed telemetry edges from processed alerts
+    for a in alerts[-200:]:
+        src = a.get("src_entity", "")
+        dst = a.get("dst_entity", "")
+        sev = a.get("severity", "low")
+        conf = float(a.get("classifier_probability") or a.get("confidence") or 0.5)
         risk = risk_map.get(sev, conf)
+        ts = a.get("timestamp") or a.get("created_at")
+        ev_id = a.get("event_id") or a.get("alert_id")
 
         for entity, is_attacker in [(src, True), (dst, False)]:
             if not entity or entity == "unknown":
                 continue
             if entity not in nodes_map:
                 nodes_map[entity] = {
-                    "id": entity, "label": entity,
+                    "id": entity,
+                    "label": entity,
                     "type": "ip",
                     "risk_score": risk if is_attacker else 0.1,
                     "event_count": 0,
@@ -290,326 +190,651 @@ def _build_graph(alerts: list) -> dict:
             nodes_map[entity]["event_count"] += 1
             if is_attacker:
                 nodes_map[entity]["risk_score"] = max(nodes_map[entity]["risk_score"], risk)
-                nodes_map[entity]["is_compromised"] = sev in ("critical", "high")
+                nodes_map[entity]["is_compromised"] = nodes_map[entity]["is_compromised"] or (sev in ("critical", "high"))
 
         if src and dst and src != "unknown" and dst != "unknown":
-            edges.append({
-                "source": src, "target": dst,
-                "threat_type": a.get("threat_type", "anomaly"),
-                "is_anomalous": sev in ("critical", "high"),
-                "frequency": 1,
-            })
+            edge_key = (src, dst, "observed_telemetry")
+            if edge_key not in edges_map:
+                edges_map[edge_key] = {
+                    "source": src,
+                    "target": dst,
+                    "threat_type": a.get("threat_type", "anomaly"),
+                    "is_anomalous": sev in ("critical", "high"),
+                    "frequency": 0,
+                    "edge_type": "observed_telemetry",
+                    "claim_type": "observation",
+                    "relationship_reason": f"Observed {a.get('layer', 'network')} flow: {a.get('threat_type', 'activity')}",
+                    "supporting_event_ids": [],
+                    "last_timestamp": str(ts) if ts else None,
+                }
+            edges_map[edge_key]["frequency"] += 1
+            if ev_id and ev_id not in edges_map[edge_key]["supporting_event_ids"]:
+                edges_map[edge_key]["supporting_event_ids"].append(ev_id)
+            if ts:
+                edges_map[edge_key]["last_timestamp"] = str(ts)
+            if sev in ("critical", "high"):
+                edges_map[edge_key]["is_anomalous"] = True
 
-    return {"nodes": list(nodes_map.values()), "edges": edges}
+    # 2. Inferred correlation hypotheses from multi-stage incidents
+    if incidents:
+        for inc in incidents:
+            rel_ev = getattr(inc, "relationship_evidence", []) or []
+            if isinstance(rel_ev, list):
+                for rel in rel_ev:
+                    r_src = rel.get("source_entity")
+                    r_dst = rel.get("target_entity")
+                    r_type = rel.get("relationship_type", "observed_telemetry")
+                    if r_src and r_dst and r_type == "pivot_lateral_movement" and r_src != "unknown" and r_dst != "unknown":
+                        edge_key = (r_src, r_dst, "inferred_correlation")
+                        if edge_key not in edges_map:
+                            edges_map[edge_key] = {
+                                "source": r_src,
+                                "target": r_dst,
+                                "threat_type": "lateral_pivot",
+                                "is_anomalous": True,
+                                "frequency": 1,
+                                "edge_type": "inferred_correlation",
+                                "claim_type": "hypothesis",
+                                "relationship_reason": rel.get("reason", "Inferred lateral movement campaign pivot"),
+                                "supporting_event_ids": rel.get("supporting_event_ids", []),
+                                "last_timestamp": rel.get("timestamp"),
+                            }
+
+    return {"nodes": list(nodes_map.values()), "edges": list(edges_map.values())}
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def _load_models_from_disk(state):
-    if not MODELS_AVAILABLE:
-        return False
+def _load_models_from_disk(state) -> bool:
+    """Safely initialize ML detection models and correlation engine from serialized artifacts."""
     try:
-        state.if_detector = _IFD(); state.if_detector.load()
-        state.classifier  = _TC();  state.classifier.load()
-        fitted = state.classifier.is_fitted
-        print(f"[AEGIS] Models loaded from disk — classifier fitted={fitted}")
+        state.if_detector = IsolationForestDetector()
+        state.if_detector.load()
+
+        state.profiler = BehavioralBaselineProfiler()
+        state.profiler.load()
+
+        state.classifier = ThreatClassifier()
+        clf_loaded = state.classifier.load()
+
+        state.fusion_engine = WeightedEvidenceFusion()
+
+        # Initialize incident correlation and local explainer
+        state.correlator = IncidentCorrelator(time_window_seconds=600, dedup_window_seconds=60)
+        feature_names = (
+            state.classifier.FEATURE_NAMES
+            if (clf_loaded and hasattr(state.classifier, "FEATURE_NAMES"))
+            else [
+                "bytes_sent", "bytes_received", "duration_ms", "hour_of_day",
+                "is_business_hours", "bytes_ratio", "port_risk_score",
+                "connections_per_minute", "src_internal", "dst_internal",
+                "if_score", "baseline_deviation", "graph_degree",
+                "graph_external_ratio", "failed_auth_rate"
+            ]
+        )
+        state.explainer = LocalFeatureExplainer(feature_names=feature_names)
+
+        fitted = clf_loaded and state.classifier.is_fitted
+        logger.info(f"[AEGIS] Models loaded from disk — classifier fitted={fitted}, correlator initialized")
         return fitted
     except Exception as e:
-        print(f"[AEGIS] Model load error: {e}")
+        logger.error(f"[AEGIS] Model load error: {e}")
         return False
 
 
-# ── Dataset streaming worker ──────────────────────────────────────────────────
+def _discover_dataset_files() -> List[Path]:
+    """Discover dataset files across datasets/ and data/raw/."""
+    DATASET_DIR.mkdir(parents=True, exist_ok=True)
+    discovered = []
+    seen_names = set()
+    # 1. Check datasets/
+    for p in sorted(DATASET_DIR.glob("*.*")):
+        if p.suffix.lower() in [".csv", ".jsonl", ".json"] and p.name != ".gitkeep":
+            discovered.append(p)
+            seen_names.add(p.name)
+    # 2. Check data/raw/
+    raw_dir = PROJECT_ROOT / "data" / "raw"
+    if raw_dir.exists():
+        for p in sorted(raw_dir.glob("*.*")):
+            if p.suffix.lower() in [".csv", ".jsonl", ".json"] and p.name != ".gitkeep":
+                if p.name not in seen_names:
+                    discovered.append(p)
+                    seen_names.add(p.name)
+    return discovered
+
+
+# ── Dataset Streaming Worker ──────────────────────────────────────────────────
 async def dataset_worker(state):
+    """
+    Streaming worker that processes datasets and generates alerts and incidents
+    based on the real ML pipeline output without artificial threat injection.
+    """
+    import pandas as pd
+
     while True:
         if not state.analysis_running:
             await asyncio.sleep(0.2)
             continue
 
-        csv_files = sorted(DATASET_DIR.glob("*.csv")) if DATASET_DIR.exists() else []
-        if not csv_files:
-            print(f"[AEGIS] No CSVs found in {DATASET_DIR}")
+        stream_files = _discover_dataset_files()
+        if not stream_files:
+            logger.info("[AEGIS] No dataset files found for streaming analysis.")
             state.analysis_running = False
             continue
 
-        for csv_path in csv_files:
+        for file_path in stream_files:
             if not state.analysis_running:
                 break
+
+            is_synthetic = (
+                file_path.suffix.lower() == ".jsonl" or
+                "synthetic" in file_path.name.lower() or
+                "combined_labeled" in file_path.name.lower()
+            )
 
             await state.ws_manager.broadcast({
                 "type": "stats_update",
                 "data": {
-                    "current_file": csv_path.name,
+                    "current_file": file_path.name,
+                    "is_synthetic": is_synthetic,
                     "total_events": state.total_events,
                     "total_alerts": len(state.alerts),
+                    "total_incidents": len(state.correlator.incidents) if hasattr(state, "correlator") else len(state.incidents),
                     "events_per_second": state.eps,
-                    "false_positive_rate": 0.0,
+                    "false_positive_rate": None,  # Ground-truth unlabelled stream: represented as null (N/A)
                     "alerts_by_severity": state.alerts_by_severity,
                     "analysis_complete": False,
                 }
             })
 
-            rows = _parse_cicids_csv(csv_path, max_rows=2000, state=state)
-            if not rows:
+            from backend.detection.model_trainer import load_flexible_dataset
+            events, _ = load_flexible_dataset(str(file_path), max_rows=1500)
+            if not events:
                 continue
 
             t0 = time.time()
-            for row in rows:
+            for event in events:
                 if not state.analysis_running:
                     break
-                
-                # Check isolation Kill Switch
-                isolated = getattr(state, 'isolated_ips', set())
-                if row.get('src_entity') in isolated or row.get('dst_entity') in isolated:
+
+                # Kill switch check
+                isolated = getattr(state, "isolated_ips", set())
+                if event.src_entity in isolated or event.dst_entity in isolated:
                     continue
 
                 state.total_events += 1
                 elapsed = time.time() - t0
                 state.eps = round(state.total_events / max(elapsed, 0.001), 1)
 
-                threat    = row['attack_type']
-                is_attack = row['is_attack']
+                # Deduplication check
+                fp = state.correlator.compute_event_fingerprint(event) if hasattr(state, "correlator") else None
+                if fp and state.correlator.is_duplicate(fp, event.timestamp):
+                    continue
 
-                # --- classification path ---
-                alert_dict = None
+                alert_obj: Optional[Alert] = None
 
-                # Path 1: Use trained classifier on raw features
-                if MODELS_AVAILABLE and getattr(state, 'classifier', None) is not None:
+                # Production ML detection path
+                if hasattr(state, "classifier") and state.classifier.is_fitted:
                     try:
-                        features  = _extract_raw_features(row)
-                        # Pad or trim to match the trained model's expected feature count
-                        expected  = getattr(state.classifier, 'N_FEATURES', len(features))
-                        if len(features) < expected:
-                            features += [0.0] * (expected - len(features))
-                        else:
-                            features = features[:expected]
+                        if_score = state.if_detector.predict(event)
+                        base_dev = state.profiler.compute_deviation_score(event)
+                        failed_auth = 1.0 if (event.status_code == 401 or event.auth_result == "failure") else 0.0
+
+                        features = extract_features(
+                            event=event,
+                            if_score=if_score,
+                            baseline_deviation=base_dev,
+                            profiler=state.profiler,
+                            failed_auth_rate=failed_auth
+                        )
 
                         prediction = state.classifier.predict(features)
-                        
-                        # Only trigger an ML-generated alert if it aligns with an actual attack, or has extreme confidence
-                        if prediction.threat_type != 'benign' and (is_attack or prediction.confidence > 0.95):
-                            alert_dict = {
-                                "event_id":    f"{csv_path.stem}-{state.total_events}",
-                                "timestamp":   str(datetime.now()),
-                                "threat_type": threat if is_attack else prediction.threat_type,
-                                "severity":    THREAT_SEV.get(threat if is_attack else prediction.threat_type, prediction.severity),
-                                "confidence":  round(random.uniform(0.85, 0.99) if is_attack else prediction.confidence, 4),
-                                "src_entity":  row['src_entity'],
-                                "dst_entity":  row['dst_entity'],
-                                "layer":       "network",
-                                "source_file": csv_path.name,
-                                "feature_importance": prediction.feature_importances if hasattr(prediction, "feature_importances") else {},
-                                "current_kill_chain_stage": KILL_CHAIN_STAGES.get(threat if is_attack else prediction.threat_type, "Recon"),
-                                "predicted_next_stage": NEXT_STAGE.get(KILL_CHAIN_STAGES.get(threat if is_attack else prediction.threat_type, "Recon"), "Impact"),
-                            }
+
+                        local_explanations = {}
+                        if hasattr(state, "explainer"):
+                            local_explanations = state.explainer.explain(
+                                features,
+                                global_importances=prediction.feature_importances,
+                                entity_profile=state.profiler.profiles.get(event.src_entity)
+                            )
+
+                        is_threat = prediction.threat_type != "benign"
+                        is_anomalous = if_score >= ANOMALY_THRESHOLD or base_dev >= 0.70
+
+                        ev_raw = event.dict()
+
+                        if is_threat and prediction.confidence >= CONFIDENCE_ALERT_MIN:
+                            stage = KILL_CHAIN_STAGES.get(prediction.threat_type, "Weaponize")
+                            alert_obj = Alert(
+                                event_id=event.event_id,
+                                timestamp=event.timestamp,
+                                created_at=datetime.utcnow(),
+                                threat_type=prediction.threat_type,
+                                severity=prediction.severity or "medium",
+                                confidence=round(prediction.confidence, 4),
+                                classifier_probability=round(prediction.confidence, 4),
+                                anomaly_score=round(if_score, 4),
+                                baseline_deviation=round(base_dev, 4),
+                                src_entity=event.src_entity,
+                                dst_entity=event.dst_entity,
+                                layer=event.layer,
+                                source_file=file_path.name,
+                                is_synthetic=is_synthetic,
+                                feature_importance=local_explanations,
+                                global_feature_importances=prediction.feature_importances,
+                                current_kill_chain_stage=stage,
+                                predicted_next_stage=NEXT_STAGE.get(stage, "Impact"),
+                                fingerprint=fp,
+                                raw_event=ev_raw,
+                                is_false_positive=None,
+                            )
+                        elif is_anomalous:
+                            # Genuine statistical anomaly alert without forcing supervised class
+                            alert_obj = Alert(
+                                event_id=event.event_id,
+                                timestamp=event.timestamp,
+                                created_at=datetime.utcnow(),
+                                threat_type="statistical_anomaly",
+                                severity="high" if (if_score >= 0.85 or base_dev >= 0.85) else "medium",
+                                confidence=round(if_score, 4),
+                                classifier_probability=None,
+                                anomaly_score=round(if_score, 4),
+                                baseline_deviation=round(base_dev, 4),
+                                src_entity=event.src_entity,
+                                dst_entity=event.dst_entity,
+                                layer=event.layer,
+                                source_file=file_path.name,
+                                is_synthetic=is_synthetic,
+                                feature_importance=local_explanations,
+                                global_feature_importances=prediction.feature_importances,
+                                current_kill_chain_stage="Anomaly",
+                                predicted_next_stage="Investigation",
+                                fingerprint=fp,
+                                raw_event=ev_raw,
+                                is_false_positive=None,
+                            )
                     except Exception as exc:
-                        exc_key = type(exc).__name__
-                        if not hasattr(state, '_logged_errs'):
+                        if not hasattr(state, "_logged_errs"):
                             state._logged_errs = set()
-                        if exc_key not in state._logged_errs:
-                            print(f"[AEGIS] Classifier error ({exc_key}): {exc}")
-                            state._logged_errs.add(exc_key)
+                        err_key = type(exc).__name__
+                        if err_key not in state._logged_errs:
+                            logger.error(f"[AEGIS] Real detection pipeline error ({err_key}): {exc}")
+                            state._logged_errs.add(err_key)
 
-                # Path 2: Fallback — use ground-truth label from CICIDS CSV
-                if alert_dict is None and is_attack:
-                    sev = THREAT_SEV.get(threat, 'medium')
-                    alert_dict = {
-                        "event_id":    f"{csv_path.stem}-{state.total_events}",
-                        "timestamp":   str(datetime.now()),
-                        "threat_type": threat,
-                        "severity":    sev,
-                        "confidence":  0.85,
-                        "src_entity":  row['src_entity'],
-                        "dst_entity":  row['dst_entity'],
-                        "layer":       "network",
-                        "source_file": csv_path.name,
-                        "feature_importance": {},
-                        "current_kill_chain_stage": KILL_CHAIN_STAGES.get(threat, "Recon"),
-                        "predicted_next_stage": NEXT_STAGE.get(KILL_CHAIN_STAGES.get(threat, "Recon"), "Impact"),
-                    }
+                if alert_obj:
+                    # Incrementally correlate alert into incident
+                    incident, is_new = state.correlator.correlate_alert(alert_obj, raw_event=event)
+                    
+                    alert_dict = alert_obj.dict()
+                    alert_dict["event_id"] = alert_obj.event_id
+                    alert_dict["incident_id"] = incident.incident_id
+                    alert_dict["timestamp"] = alert_obj.timestamp.isoformat() if alert_obj.timestamp else datetime.utcnow().isoformat()
+                    alert_dict["created_at"] = alert_obj.created_at.isoformat()
 
-                if alert_dict:
                     state.alerts.append(alert_dict)
                     sev = alert_dict["severity"]
                     state.alerts_by_severity[sev] = state.alerts_by_severity.get(sev, 0) + 1
+
+                    inc_dict = incident.dict()
+                    inc_dict["created_at"] = incident.created_at.isoformat()
+                    inc_dict["updated_at"] = incident.updated_at.isoformat()
+                    for t in inc_dict.get("timeline", []):
+                        if isinstance(t.get("timestamp"), datetime):
+                            t["timestamp"] = t["timestamp"].isoformat()
+
+                    # Synchronize incident state
+                    inc_idx = next((i for i, inc in enumerate(state.incidents) if inc.get("incident_id") == incident.incident_id), None)
+                    if inc_idx is not None:
+                        state.incidents[inc_idx] = inc_dict
+                    else:
+                        state.incidents.append(inc_dict)
+
+                    # Stream incident and alert over WebSocket
+                    if is_new:
+                        await state.ws_manager.broadcast({"type": "new_incident", "data": inc_dict})
+                    else:
+                        await state.ws_manager.broadcast({"type": "incident_update", "data": inc_dict})
+
                     await state.ws_manager.broadcast({"type": "new_alert", "data": alert_dict})
 
-                # Broadcast stats every 100 events
+                # Periodic stats update
                 if state.total_events % 100 == 0:
                     await state.ws_manager.broadcast({
                         "type": "stats_update",
                         "data": {
-                            "current_file":      csv_path.name,
-                            "total_events":      state.total_events,
-                            "total_alerts":      len(state.alerts),
+                            "current_file": file_path.name,
+                            "is_synthetic": is_synthetic,
+                            "total_events": state.total_events,
+                            "total_alerts": len(state.alerts),
+                            "total_incidents": len(state.correlator.incidents),
                             "events_per_second": state.eps,
-                            "false_positive_rate": 0.0,
+                            "false_positive_rate": None,
                             "alerts_by_severity": state.alerts_by_severity,
                             "analysis_complete": False,
                         }
                     })
 
-                # Broadcast graph every 5 new alerts or on the very first alert
+                # Broadcast graph periodically
                 if len(state.alerts) == 1 or (len(state.alerts) > 0 and len(state.alerts) % 5 == 0):
+                    inc_list = state.correlator.get_all_incidents() if hasattr(state, "correlator") else []
                     await state.ws_manager.broadcast({
                         "type": "graph_update",
-                        "data": _build_graph(state.alerts)
+                        "data": _build_graph(state.alerts, inc_list)
                     })
 
-                await asyncio.sleep(0.01)   # ~100 events/sec
+                await asyncio.sleep(0.01)
 
-        # Done
         state.analysis_running = False
-        await state.ws_manager.broadcast({
-            "type": "graph_update",
-            "data": _build_graph(state.alerts)
-        })
+        final_incs = state.correlator.get_all_incidents() if hasattr(state, "correlator") else []
+        await state.ws_manager.broadcast({"type": "graph_update", "data": _build_graph(state.alerts, final_incs)})
         await state.ws_manager.broadcast({
             "type": "stats_update",
             "data": {
-                "current_file":      None,
-                "total_events":      state.total_events,
-                "total_alerts":      len(state.alerts),
+                "current_file": None,
+                "is_synthetic": False,
+                "total_events": state.total_events,
+                "total_alerts": len(state.alerts),
+                "total_incidents": len(state.correlator.incidents) if hasattr(state, "correlator") else len(state.incidents),
                 "events_per_second": 0,
-                "false_positive_rate": 0.0,
+                "false_positive_rate": None,
                 "alerts_by_severity": state.alerts_by_severity,
                 "analysis_complete": True,
             }
         })
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    app.state.ws_manager         = WebSocketManager()
-    app.state.alerts             = []
-    app.state.incidents          = []
-    app.state.total_events       = 0
-    app.state.eps                = 0.0
-    app.state.alerts_by_severity = {}
-    app.state.analysis_running   = False
-    app.state._logged_errs       = set()
-    app.state.target_total_attacks = random.choice([51, 53, 55, 57, 59])
-    app.state.total_attacks_seen = 0
-    app.state.isolated_ips       = set()
-    _load_models_from_disk(app.state)
-    asyncio.create_task(dataset_worker(app.state))
 
 
-# ── REST Routes ───────────────────────────────────────────────────────────────
+# ── REST API Endpoints ─────────────────────────────────────────────────────────
 @app.get("/health")
 def health_check():
     fitted = getattr(getattr(app.state, "classifier", None), "is_fitted", False)
-    return {"status": "ok", "models_loaded": MODELS_AVAILABLE,
-            "classifier_fitted": fitted,
-            "dataset_dir": str(DATASET_DIR),
-            "csv_count": len(list(DATASET_DIR.glob("*.csv"))) if DATASET_DIR.exists() else 0}
+    csv_count = len(list(DATASET_DIR.glob("*.csv"))) if DATASET_DIR.exists() else 0
+    return {
+        "status": "ok",
+        "models_loaded": hasattr(app.state, "classifier"),
+        "classifier_fitted": fitted,
+        "dataset_dir": str(DATASET_DIR),
+        "csv_count": csv_count,
+    }
+
 
 @app.get("/api/alerts")
 def get_alerts():
     return app.state.alerts[-100:]
 
+
 @app.get("/api/incidents")
 def get_incidents():
+    if hasattr(app.state, "correlator") and app.state.correlator.incidents:
+        return [
+            {
+                **inc.dict(),
+                "created_at": inc.created_at.isoformat() if hasattr(inc.created_at, "isoformat") else str(inc.created_at),
+                "updated_at": inc.updated_at.isoformat() if hasattr(inc.updated_at, "isoformat") else str(inc.updated_at),
+                "timeline": [
+                    {
+                        **t.dict(),
+                        "timestamp": t.timestamp.isoformat() if hasattr(t.timestamp, "isoformat") else str(t.timestamp)
+                    }
+                    for t in inc.timeline
+                ]
+            }
+            for inc in app.state.correlator.get_all_incidents()
+        ]
     return app.state.incidents
+
+
+@app.get("/api/incident/{incident_id}")
+def get_incident(incident_id: str):
+    inc = None
+    if hasattr(app.state, "correlator"):
+        inc = app.state.correlator.get_incident(incident_id)
+        if not inc:
+            for candidate in app.state.correlator.get_all_incidents():
+                if incident_id in candidate.alert_ids or any(e.get("event_id") == incident_id for e in candidate.supporting_events):
+                    inc = candidate
+                    break
+
+    if not inc:
+        for i in app.state.incidents:
+            if i.get("incident_id") == incident_id or incident_id in i.get("alert_ids", []):
+                return i
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    return {
+        **inc.dict(),
+        "created_at": inc.created_at.isoformat() if hasattr(inc.created_at, "isoformat") else str(inc.created_at),
+        "updated_at": inc.updated_at.isoformat() if hasattr(inc.updated_at, "isoformat") else str(inc.updated_at),
+        "timeline": [
+            {
+                **t.dict(),
+                "timestamp": t.timestamp.isoformat() if hasattr(t.timestamp, "isoformat") else str(t.timestamp)
+            }
+            for t in inc.timeline
+        ]
+    }
+
 
 @app.get("/api/stats/summary")
 def get_stats_summary():
-    files = [f.name for f in sorted(DATASET_DIR.glob("*.csv"))] if DATASET_DIR.exists() else []
+    discovered = _discover_dataset_files()
+    files = [f.name for f in discovered]
     return {
-        "total_events":       app.state.total_events,
-        "total_alerts":       len(app.state.alerts),
-        "total_incidents":    len(app.state.incidents),
-        "analysis_running":   app.state.analysis_running,
-        "dataset_files":      files,
+        "total_events": app.state.total_events,
+        "total_alerts": len(app.state.alerts),
+        "total_incidents": len(app.state.correlator.incidents) if hasattr(app.state, "correlator") else len(app.state.incidents),
+        "false_positive_rate": None,
+        "analysis_running": app.state.analysis_running,
+        "dataset_files": files,
         "alerts_by_severity": app.state.alerts_by_severity,
     }
 
+
 @app.get("/api/analysis/files")
 def list_dataset_files():
-    if not DATASET_DIR.exists():
-        return {"files": [], "error": f"datasets/ not found at {DATASET_DIR}"}
-    files = [{"name": f.name, "size_mb": round(f.stat().st_size / 1e6, 1)}
-             for f in sorted(DATASET_DIR.glob("*.csv"))]
+    discovered = _discover_dataset_files()
+    files = []
+    for f in discovered:
+        is_synth = f.suffix.lower() == ".jsonl" or "synthetic" in f.name.lower() or "combined_labeled" in f.name.lower()
+        files.append({
+            "name": f.name,
+            "size_mb": round(f.stat().st_size / 1e6, 2),
+            "is_synthetic": is_synth,
+            "source_type": "Synthetic Benchmark" if is_synth else "Real Network PCAP Capture",
+        })
     return {"files": files, "count": len(files)}
+
 
 @app.post("/api/analysis/start")
 def start_analysis():
     if app.state.analysis_running:
         return {"status": "already_running"}
-    # Reset state
-    app.state.alerts             = []
-    app.state.incidents          = []
-    app.state.total_events       = 0
-    app.state.eps                = 0.0
+    # Reset stream state
+    app.state.alerts = []
+    app.state.incidents = []
+    if hasattr(app.state, "correlator"):
+        app.state.correlator = IncidentCorrelator(time_window_seconds=600, dedup_window_seconds=60)
+    app.state.total_events = 0
+    app.state.eps = 0.0
     app.state.alerts_by_severity = {}
-    app.state._logged_errs       = set()
-    app.state.target_total_attacks = random.choice([51, 53, 55, 57, 59])
-    app.state.total_attacks_seen = 0
-    app.state.isolated_ips       = set()
-    # Reload models fresh from pkl
+    app.state._logged_errs = set()
+    app.state.isolated_ips = set()
+
     fitted = _load_models_from_disk(app.state)
-    if MODELS_AVAILABLE and not fitted:
-        print("[AEGIS] Classifier not fitted — will use CICIDS ground-truth labels as fallback")
     app.state.analysis_running = True
     return {"status": "analysis_started", "classifier_fitted": fitted}
+
 
 @app.post("/api/analysis/stop")
 def stop_analysis():
     app.state.analysis_running = False
     return {"status": "analysis_stopped"}
 
+
 @app.post("/api/simulation/start")
-def start_simulation(): return start_analysis()
+def start_simulation():
+    return start_analysis()
+
 
 @app.post("/api/simulation/stop")
-def stop_simulation(): return stop_analysis()
+def stop_simulation():
+    return stop_analysis()
 
 
-@app.post("/api/incident/{event_id}/remediate")
-async def remediate_incident(event_id: str):
+@app.post("/api/incident/{incident_id}/remediate")
+async def remediate_incident(incident_id: str):
+    found_inc = None
+    if hasattr(app.state, "correlator"):
+        found_inc = app.state.correlator.get_incident(incident_id)
+        if not found_inc:
+            for inc in app.state.correlator.get_all_incidents():
+                if incident_id in inc.alert_ids or any(e.get("event_id") == incident_id for e in inc.supporting_events):
+                    found_inc = inc
+                    break
+
+    if found_inc:
+        found_inc.status = "resolved"
+        # Update corresponding alerts
+        for a in app.state.alerts:
+            if a.get("incident_id") == found_inc.incident_id or a.get("event_id") in found_inc.alert_ids:
+                a["status"] = "resolved"
+
+        inc_dict = found_inc.model_dump() if hasattr(found_inc, "model_dump") else found_inc.dict()
+        inc_dict["created_at"] = found_inc.created_at.isoformat()
+        inc_dict["updated_at"] = found_inc.updated_at.isoformat()
+        for t in inc_dict.get("timeline", []):
+            if isinstance(t.get("timestamp"), datetime):
+                t["timestamp"] = t["timestamp"].isoformat()
+
+        await app.state.ws_manager.broadcast({
+            "type": "incident_update",
+            "data": {**inc_dict, "status": "resolved", "action_taken": "playbook_executed (simulated)"}
+        })
+        return {"status": "success", "message": f"Incident {found_inc.incident_id} marked resolved (simulated)."}
+
+    # Fallback to direct alert match
     for a in app.state.alerts:
-        if a.get("event_id") == event_id:
+        if a.get("event_id") == incident_id or a.get("alert_id") == incident_id:
             a["status"] = "resolved"
             await app.state.ws_manager.broadcast({
                 "type": "incident_update",
-                "data": {"event_id": event_id, "status": "resolved", "action_taken": "playbook_executed"}
+                "data": {"incident_id": incident_id, "event_id": incident_id, "status": "resolved", "action_taken": "playbook_executed (simulated)"}
             })
-            return {"status": "success", "message": "Playbook executed successfully."}
+            return {"status": "success", "message": "Playbook executed successfully (simulated)."}
+
     return {"status": "not_found", "message": "Incident not found in active stream."}
 
-@app.post("/api/incident/{event_id}/isolate")
-async def isolate_host(event_id: str):
+
+@app.post("/api/incident/{incident_id}/isolate")
+async def isolate_host(incident_id: str):
+    found_inc = None
+    if hasattr(app.state, "correlator"):
+        found_inc = app.state.correlator.get_incident(incident_id)
+        if not found_inc:
+            for inc in app.state.correlator.get_all_incidents():
+                if incident_id in inc.alert_ids or any(e.get("event_id") == incident_id for e in inc.supporting_events):
+                    found_inc = inc
+                    break
+
+    if found_inc:
+        found_inc.status = "isolated"
+        attacker = found_inc.primary_attacker
+        if attacker:
+            if not hasattr(app.state, "isolated_ips"):
+                app.state.isolated_ips = set()
+            app.state.isolated_ips.add(attacker)
+
+        for a in app.state.alerts:
+            if a.get("incident_id") == found_inc.incident_id or a.get("event_id") in found_inc.alert_ids:
+                a["status"] = "isolated"
+
+        inc_dict = found_inc.model_dump() if hasattr(found_inc, "model_dump") else found_inc.dict()
+        inc_dict["created_at"] = found_inc.created_at.isoformat()
+        inc_dict["updated_at"] = found_inc.updated_at.isoformat()
+        for t in inc_dict.get("timeline", []):
+            if isinstance(t.get("timestamp"), datetime):
+                t["timestamp"] = t["timestamp"].isoformat()
+
+        await app.state.ws_manager.broadcast({
+            "type": "incident_update",
+            "data": {**inc_dict, "status": "isolated", "action_taken": f"Host {attacker} isolated (Simulated: memory-blocked in stream filter; no firewall integration active)"}
+        })
+        return {"status": "success", "message": f"Host {attacker} marked as isolated (Simulated)."}
+
+    # Fallback alert match
     for a in app.state.alerts:
-        if a.get("event_id") == event_id:
+        if a.get("event_id") == incident_id or a.get("alert_id") == incident_id:
             a["status"] = "isolated"
-            # Act as a true kill switch by purging all future events from this IP
             src = a.get("src_entity")
             if src:
-                if not hasattr(app.state, 'isolated_ips'):
+                if not hasattr(app.state, "isolated_ips"):
                     app.state.isolated_ips = set()
                 app.state.isolated_ips.add(src)
 
             await app.state.ws_manager.broadcast({
                 "type": "incident_update",
-                "data": {"event_id": event_id, "status": "isolated", "action_taken": f"Host {src} isolated at network level"}
+                "data": {"incident_id": incident_id, "event_id": incident_id, "status": "isolated", "action_taken": f"Host {src} isolated (Simulated)"}
             })
-            return {"status": "success", "message": "Host isolated securely."}
+            return {"status": "success", "message": "Host isolated securely (Simulated)."}
+
     return {"status": "not_found", "message": "Incident not found in active stream."}
 
 
-# ── WebSocket ─────────────────────────────────────────────────────────────────
+
+@app.post("/api/detect", response_model=DetectionResult)
+def detect_single_event(event: UnifiedEvent):
+    """
+    Direct synchronous prediction endpoint for a single UnifiedEvent.
+    Executes the genuine 15-feature ML pipeline and evidence fusion.
+    """
+    if not hasattr(app.state, "classifier") or not app.state.classifier.is_fitted:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Threat detection models are not loaded or fitted."
+        )
+
+    try:
+        if_score = app.state.if_detector.predict(event)
+        base_dev = app.state.profiler.compute_deviation_score(event)
+        features = extract_features(
+            event=event,
+            if_score=if_score,
+            baseline_deviation=base_dev,
+            profiler=app.state.profiler,
+            failed_auth_rate=0.0
+        )
+        prediction = app.state.classifier.predict(features)
+
+        result = app.state.fusion_engine.fuse(
+            event=event,
+            if_score=if_score,
+            baseline_deviation=base_dev,
+            graph_score=0.0,
+            threat_type=prediction.threat_type,
+            classifier_confidence=prediction.confidence,
+            severity=prediction.severity
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Prediction failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error executing threat prediction."
+        )
+
+
+# ── WebSocket Endpoint ────────────────────────────────────────────────────────
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
     await app.state.ws_manager.connect(websocket)
     try:
         while True:
             try:
-                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                msg = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
             except asyncio.TimeoutError:
                 continue
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"[WS] Client exception: {exc}")
     finally:
         app.state.ws_manager.disconnect(websocket)

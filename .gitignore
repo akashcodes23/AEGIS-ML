@@ -1,54 +1,44 @@
-<<<<<<< HEAD
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.pyo
 .env
 venv/
 .venv/
-# Data files (too large for git)
+env/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data files (large datasets not committed)
 data/raw/*.jsonl
 data/raw/*.csv
 data/processed/*.jsonl
-# ML Models (large binary files)
-data/models/*.pkl
-data/models/*.pt
-# Node
-node_modules/
-frontend/dist/
-frontend/.env
-# OS
-.DS_Store
-*.log
-=======
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-.env
-venv/
-.venv/
-# Data files (too large for git)
-data/raw/*.jsonl
-data/raw/*.csv
-data/processed/*.jsonl
-# ML Models (large binary files)
+datasets/
+
+# ML Models (keep directory structure with .gitkeep)
 data/models/*.pkl
 data/models/*.pt
 data/models/*.joblib
-# Node
+!data/models/.gitkeep
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Evaluation output logs
+*.log
+
+# Node & Frontend
 node_modules/
 frontend/dist/
 frontend/.env
-# OS
+frontend/.env.*
+
+# OS files
 .DS_Store
-*.log
-# Evaluation & training output files
-train_output.txt
-eval_output.txt
-# Real-world datasets (large CSVs)
-datasets/
-# Misc scratch files
-run_eval.py
-evaluate_holdout.py
->>>>>>> 25e60573f5d432f432c5ea47233306c717440662
+Thumbs.db
+
+# Scratch and temporary scripts
+scratch/
+

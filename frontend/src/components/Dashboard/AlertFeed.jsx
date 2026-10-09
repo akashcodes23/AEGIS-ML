@@ -77,15 +77,28 @@ function AlertRow({ alert, index }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-          {alert.source_file && (
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Database size={12} />
-              {alert.source_file.replace('.pcap_ISCX.csv', '')}
-            </div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
+            {alert.source_file && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Database size={12} />
+                {alert.source_file.replace('.pcap_ISCX.csv', '')}
+              </span>
+            )}
+            {alert.is_synthetic && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8,
+                background: 'rgba(147, 51, 234, 0.1)', color: '#9333ea',
+                border: '1px solid rgba(147, 51, 234, 0.2)'
+              }}>
+                Synthetic
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: 11, color: 'var(--accent-info)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
             <Shield size={12} />
-            {((alert.confidence || 0) * 100).toFixed(0)}% Confidence
+            {alert.classifier_probability != null
+              ? `${Math.round(alert.classifier_probability * 100)}% Consensus`
+              : (alert.anomaly_score ? `Score ${Number(alert.anomaly_score).toFixed(2)}` : `${Math.round((alert.confidence || 0) * 100)}% Risk`)}
           </div>
         </div>
       </div>

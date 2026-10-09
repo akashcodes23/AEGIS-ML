@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import useAlertStore from '../store/alertStore'
 
-const WS_URL = 'ws://localhost:8000/ws/live'
-const RECONNECT_DELAY_MS = 3000
-const MAX_RECONNECT_ATTEMPTS = 10
+const getDefaultWsUrl = () => {
+  if (import.meta.env?.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL
+  }
+  if (typeof window !== 'undefined') {
+    // Use the current page hostname or 127.0.0.1 to avoid macOS IPv6 connection refused issues
+    const host = window.location.hostname || '127.0.0.1'
+    return `ws://${host}:8000/ws/live`
+  }
+  return 'ws://127.0.0.1:8000/ws/live'
+}
 
-const useWebSocket = (url = WS_URL) => {
+const RECONNECT_DELAY_MS = 2000
+const MAX_RECONNECT_ATTEMPTS = 15
+
+const useWebSocket = (url = null) => {
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState(null)
 
@@ -58,7 +69,17 @@ const useWebSocket = (url = WS_URL) => {
     }
 
     try {
-      const ws = new WebSocket(url)
+      let targetUrl = url || getDefaultWsUrl()
+      // If previous attempt failed, alternate between localhost and 127.0.0.1 to handle dual-stack IPv4/IPv6
+      if (attemptsRef.current > 0 && !url) {
+        if (attemptsRef.current % 2 === 1) {
+          targetUrl = targetUrl.replace('localhost', '127.0.0.1')
+        } else {
+          targetUrl = targetUrl.replace('127.0.0.1', 'localhost')
+        }
+      }
+
+      const ws = new WebSocket(targetUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -66,7 +87,7 @@ const useWebSocket = (url = WS_URL) => {
         attemptsRef.current = 0
         setConnected(true)
         setError(null)
-        console.log('[WS] Connected to', url)
+        console.log('[WS] Connected to', targetUrl)
       }
 
       ws.onmessage = handleMessage
