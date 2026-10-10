@@ -636,9 +636,15 @@ class DataOrchestrator:
         target_file = Path(output_path)
         target_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Write to output file (preserving Phase 19 schema serialization)
+        _post_p19_fields = {
+            "event_type", "ingestion_timestamp", "packets_sent", "packets_received",
+            "source_system", "schema_version", "provenance", "missing_fields",
+            "clock_skew_detected", "is_late_arriving", "dedup_fingerprint"
+        }
         with open(target_file, "w", encoding="utf-8") as f:
             for event in events:
-                f.write(event.model_dump_json() + "\n")
+                f.write(event.model_dump_json(exclude=_post_p19_fields) + "\n")
 
         # Compute SHA-256 hash
         hasher = hashlib.sha256()

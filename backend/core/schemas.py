@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 class UnifiedEvent(BaseModel):
@@ -65,6 +65,49 @@ class UnifiedEvent(BaseModel):
     # Training labels (None in demo mode)
     raw_label: Optional[str] = None
     attack_type: Optional[str] = None
+
+    # Phase 25 Canonical Telemetry & Ingestion Fields
+    event_type: Optional[str] = None
+    ingestion_timestamp: Optional[datetime] = None
+    packets_sent: Optional[int] = None
+    packets_received: Optional[int] = None
+    source_system: Optional[str] = None
+    schema_version: str = "25.0.0"
+    provenance: Optional[Dict[str, Any]] = None
+    missing_fields: List[str] = Field(default_factory=list)
+    clock_skew_detected: Optional[bool] = None
+    is_late_arriving: Optional[bool] = None
+    dedup_fingerprint: Optional[str] = None
+
+    @field_validator("timestamp", "ingestion_timestamp", "process_start_time", "process_end_time", mode="before")
+    @classmethod
+    def normalize_timestamp(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            if v > 1e14:  # microseconds
+                v = v / 1e6
+            elif v > 1e11:  # milliseconds
+                v = v / 1e3
+            return datetime.utcfromtimestamp(v)
+        if isinstance(v, str):
+            v_str = v.strip()
+            if not v_str or v_str.lower() in ("none", "null", "nan"):
+                return None
+            try:
+                dt = datetime.fromisoformat(v_str.replace("Z", "+00:00"))
+            except Exception:
+                import dateutil.parser
+                dt = dateutil.parser.parse(v_str)
+            if dt.tzinfo is not None:
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        if isinstance(v, datetime):
+            if v.tzinfo is not None:
+                return v.astimezone(timezone.utc).replace(tzinfo=None)
+            return v
+        return v
+
 
 
 class DetectionResult(BaseModel):
@@ -174,4 +217,46 @@ class Incident(BaseModel):
     relationship_evidence: List[Dict[str, Any]] = []
     uncertainty_notes: List[str] = []
     priority_calculation_breakdown: Dict[str, Any] = {}
+
+
+# ── Phase 25 Ingestion & Streaming Schemas ───────────────────────────────────
+
+class IngestionEventRequest(BaseModel):
+    raw_event: Dict[str, Any]
+    source_system: Optional[str] = None
+    schema_version: Optional[str] = "25.0.0"
+
+
+class IngestionBatchRequest(BaseModel):
+    events: List[Dict[str, Any]]
+    source_system: Optional[str] = None
+    schema_version: Optional[str] = "25.0.0"
+
+
+class IngestionItemResult(BaseModel):
+    event_id: Optional[str] = None
+    status: Literal["accepted", "duplicate", "rejected"]
+    reason: Optional[str] = None
+    is_late_arriving: bool = False
+    clock_skew_detected: bool = False
+    event: Optional[UnifiedEvent] = None
+
+
+class IngestionBatchResponse(BaseModel):
+    total_received: int
+    accepted_count: int
+    duplicate_count: int
+    rejected_count: int
+    results: List[IngestionItemResult]
+
+
+class StreamingIngestionStats(BaseModel):
+    total_ingested: int
+    total_duplicates: int
+    total_rejected: int
+    total_late_arriving: int
+    total_clock_skew: int
+    watermark_timestamp: Optional[datetime] = None
+    active_hosts_tracked: int
+
 

@@ -7,7 +7,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -29,7 +29,11 @@ try:
         IF_ENDPOINT_PATH,
         BASELINES_PATH,
     )
-    from backend.core.schemas import UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry
+    from backend.core.schemas import (
+        UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry,
+        IngestionEventRequest, IngestionBatchRequest, IngestionItemResult,
+        IngestionBatchResponse, StreamingIngestionStats,
+    )
     from backend.detection.isolation_forest import IsolationForestDetector
     from backend.detection.baseline_profiler import BehavioralBaselineProfiler
     from backend.detection.threat_classifier import ThreatClassifier
@@ -40,6 +44,8 @@ try:
     from backend.correlation.weighted_fusion import WeightedEvidenceFusion
     from backend.correlation.incident_correlator import IncidentCorrelator
     from backend.explainability.explainer import LocalFeatureExplainer
+    from backend.ingestion.streaming_ingestion import StreamingIngestionManager
+    from backend.ingestion.normalizer import NormalizerPipeline, NormalizationError
 except ModuleNotFoundError:
     from core.config import (
         CONFIDENCE_ALERT_MIN,
@@ -50,7 +56,11 @@ except ModuleNotFoundError:
         IF_ENDPOINT_PATH,
         BASELINES_PATH,
     )
-    from core.schemas import UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry
+    from core.schemas import (
+        UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry,
+        IngestionEventRequest, IngestionBatchRequest, IngestionItemResult,
+        IngestionBatchResponse, StreamingIngestionStats,
+    )
     from detection.isolation_forest import IsolationForestDetector
     from detection.baseline_profiler import BehavioralBaselineProfiler
     from detection.threat_classifier import ThreatClassifier
@@ -61,6 +71,8 @@ except ModuleNotFoundError:
     from correlation.weighted_fusion import WeightedEvidenceFusion
     from correlation.incident_correlator import IncidentCorrelator
     from explainability.explainer import LocalFeatureExplainer
+    from ingestion.streaming_ingestion import StreamingIngestionManager
+    from ingestion.normalizer import NormalizerPipeline, NormalizationError
 
 
 
@@ -260,6 +272,10 @@ def _load_models_from_disk(state) -> bool:
 
         state.graph_tracker = CausalTemporalGraphTracker()
         state.sequence_tracker = CausalSequenceTracker(window_seconds=300.0)
+        state.ingestion_manager = StreamingIngestionManager(
+            sequence_tracker=state.sequence_tracker,
+            graph_tracker=state.graph_tracker,
+        )
 
         # Initialize ModelLifecycleManager and load versioned/calibrated model
         state.lifecycle_manager = ModelLifecycleManager()
@@ -882,6 +898,66 @@ def detect_single_event(event: UnifiedEvent):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error executing threat prediction."
         )
+
+
+def _get_ingestion_manager(state) -> StreamingIngestionManager:
+    """Helper to lazily retrieve or initialize StreamingIngestionManager."""
+    if not hasattr(state, "ingestion_manager") or state.ingestion_manager is None:
+        seq_tracker = getattr(state, "sequence_tracker", None)
+        graph_tracker = getattr(state, "graph_tracker", None)
+        state.ingestion_manager = StreamingIngestionManager(
+            sequence_tracker=seq_tracker,
+            graph_tracker=graph_tracker,
+        )
+    return state.ingestion_manager
+
+
+# ── Phase 25 Ingestion Endpoints ──────────────────────────────────────────────
+
+@app.post("/api/ingest/event", response_model=IngestionItemResult)
+def ingest_single_event(request: Union[IngestionEventRequest, Dict[str, Any]]):
+    """
+    Ingest, validate, normalize, and deduplicate a single telemetry event.
+    Returns structured IngestionItemResult with accepted, duplicate, or rejected status.
+    """
+    mgr = _get_ingestion_manager(app.state)
+    raw_ev = request.raw_event if isinstance(request, IngestionEventRequest) else request
+    src_sys = request.source_system if isinstance(request, IngestionEventRequest) else None
+    return mgr.ingest_event(raw_ev, source_system=src_sys)
+
+
+@app.post("/api/ingest/batch", response_model=IngestionBatchResponse)
+def ingest_batch_events(request: IngestionBatchRequest):
+    """
+    Ingest, validate, normalize, and deduplicate a batch of telemetry events.
+    Enforces maximum batch size (500 events) and handles partial batch failures.
+    """
+    if len(request.events) > 500:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Batch size {len(request.events)} exceeds maximum permitted limit of 500 events."
+        )
+    mgr = _get_ingestion_manager(app.state)
+    return mgr.ingest_batch(
+        events=request.events,
+        source_system=request.source_system,
+        max_batch_size=500,
+    )
+
+
+@app.get("/api/ingest/stats", response_model=StreamingIngestionStats)
+def get_ingestion_stats():
+    """Get streaming ingestion metrics, counters, and high-watermark timestamp."""
+    mgr = _get_ingestion_manager(app.state)
+    return mgr.stats
+
+
+@app.post("/api/ingest/reset")
+def reset_ingestion():
+    """Reset ingestion buffers, watermark, and tracker histories."""
+    mgr = _get_ingestion_manager(app.state)
+    mgr.reset()
+    return {"status": "success", "message": "Streaming ingestion state and trackers reset."}
 
 
 def _sanitize_artifact_filename(filename: str) -> str:
