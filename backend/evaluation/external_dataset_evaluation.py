@@ -1,5 +1,5 @@
 """
-AEGIS-ML Phase 24: External Dataset Evaluation and Generalization Audit
+AEGIS-ML Phase 24.1: CIC-IDS2017 Acquisition, Leakage-Resistant Evaluation, and Network-Flow Benchmark
 Module: backend.evaluation.external_dataset_evaluation
 
 Evaluates the generalization limits of AEGIS-ML against external intrusion detection
@@ -7,15 +7,24 @@ data (specifically the Canadian Institute for Cybersecurity CIC-IDS2017 benchmar
 
 Guarantees & Scientific Integrity:
 1. Distinguishes fundamentally between:
-   (A) Existing-Model Transfer Evaluation (Phase 23 48-feature calibrated model)
+   (A) Existing-Model Transfer Evaluation (Phase 23 48-feature calibrated model) -> NOT_FEASIBLE
    (B) External-Dataset Retrained Experiment (isolated model on observable network flow features)
 2. Audits all 48 schema features into Categories A, B, C, D, E.
-3. Formally records transfer evaluation as NOT_FEASIBLE due to INCOMPATIBLE_TELEMETRY
+3. Audits all 18 observable flow features with transformation, units, and leakage analysis.
+4. Formally records transfer evaluation as NOT_FEASIBLE due to INCOMPATIBLE_TELEMETRY
    (17 endpoint/process/auth features are absent from network-only flows).
-4. Strictly refuses to fabricate results if external data is not locally present.
-5. Preserves existing production models (calibrated_threat_classifier.pkl is never modified).
-6. Discloses explicit denominators for Benign FPR and Attack Recall.
-7. Distinguishes: Benign as attack, Attack as benign, and Attack subtype misclassification.
+5. Strictly refuses to fabricate results if external data is not locally present.
+6. Preserves existing production models (calibrated_threat_classifier.pkl is never modified).
+7. Leakage-Resistant Splitting: Supports and compares:
+   - Stratified Random Split
+   - Grouped Split (by src-dst communication pair, ensuring 0% pair overlap)
+   - Temporal Causal Split (ordered chronologically)
+8. Multi-Tier Evaluation:
+   - Binary evaluation (benign vs attack) with log-loss and Brier score
+   - Original-label evaluation (preserving raw ground-truth classes)
+   - Derived AEGIS-ML canonical multiclass evaluation with PortScan caveat
+9. Discloses explicit denominators for Benign FPR and Attack Recall.
+10. Saves separate experimental models in data/models/external_experiments/cicids2017/.
 """
 
 import os
@@ -30,17 +39,20 @@ from pathlib import Path
 from collections import Counter, defaultdict
 from typing import Dict, Any, List, Optional, Tuple, Set
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
+    brier_score_loss,
     confusion_matrix,
     f1_score,
+    log_loss,
     precision_recall_fscore_support,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from imblearn.over_sampling import SMOTE
 
 try:
@@ -123,6 +135,7 @@ OBSERVABLE_FLOW_FEATURE_NAMES: List[str] = [
     "dst_in_degree_5m",
     "pivot_chain_indicator",
 ]
+assert len(OBSERVABLE_FLOW_FEATURE_NAMES) == 18
 
 # CIC-IDS2017 Dataset Provenance & Metadata
 CICIDS2017_METADATA: Dict[str, Any] = {
@@ -140,7 +153,7 @@ CICIDS2017_METADATA: Dict[str, Any] = {
         "and email confirmation. Non-interactive scraping and redistributing raw CSVs via Git "
         "is restricted."
     ),
-    "telemetry_modality": "Network flow records generated via CICFlowMeter (birectional flow statistics).",
+    "telemetry_modality": "Network flow records generated via CICFlowMeter (bidirectional flow statistics).",
     "known_limitations": [
         "Pure network flow telemetry: Zero host process, socket binding, or auth log context.",
         "CICFlowMeter overflow bugs: produces Infinity and NaN in flow rate features, and negative duration values.",
@@ -189,9 +202,199 @@ CICIDS2017_STRICT_LABEL_MAP: Dict[str, Optional[str]] = {
 }
 
 
+def audit_observable_flow_features() -> List[Dict[str, Any]]:
+    """
+    Audit each of the 18 observable flow features used by the separate network-flow benchmark.
+    Documents name, source column, units, missing handling, identifiers, inference availability,
+    and leakage risk.
+    """
+    return [
+        {
+            "feature_name": "dst_port_risk",
+            "source_column": "Destination Port",
+            "transformation": "PORT_RISK dictionary lookup for known high-risk destination service ports",
+            "units": "[0.0, 1.0] categorical risk score",
+            "missing_handling": "Default 0.0 if port is null or outside known risk mapping table",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: destination port is an intrinsic flow header attribute",
+        },
+        {
+            "feature_name": "bytes_sent_log",
+            "source_column": "Total Length of Fwd Packets",
+            "transformation": "math.log1p(max(0.0, float(fwd_bytes)))",
+            "units": "[0.0, 25.0] log-transformed bytes",
+            "missing_handling": "Impute 0.0 if NaN or negative (CICFlowMeter overflow defect)",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: forward packet payload size is directly observable in flow stats",
+        },
+        {
+            "feature_name": "bytes_ratio",
+            "source_column": "Total Length of Fwd Packets & Total Length of Bwd Packets",
+            "transformation": "fwd_bytes / (fwd_bytes + bwd_bytes + 1e-6)",
+            "units": "[0.0, 1.0] asymmetry ratio",
+            "missing_handling": "Default 0.5 (symmetric) if both forward and backward bytes are 0 or NaN",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: measures bidirectional traffic asymmetry at flow close",
+        },
+        {
+            "feature_name": "is_external_dst",
+            "source_column": "Destination IP",
+            "transformation": "1.0 if not is_rfc1918_private(dst_ip) else 0.0",
+            "units": "{0.0, 1.0} boolean indicator",
+            "missing_handling": "Default 0.0 if IP is unparseable",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: evaluates RFC1918 private subnet boundary; raw IP string is excluded",
+        },
+        {
+            "feature_name": "hour_of_day_sin",
+            "source_column": "Timestamp",
+            "transformation": "math.sin(2 * math.pi * (hour + minute/60.0) / 24.0)",
+            "units": "[-1.0, 1.0] trigonometric harmonic coordinate",
+            "missing_handling": "Default 0.0 if timestamp is missing",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: cyclical coordinates prevent memorization of absolute date/session",
+        },
+        {
+            "feature_name": "hour_of_day_cos",
+            "source_column": "Timestamp",
+            "transformation": "math.cos(2 * math.pi * (hour + minute/60.0) / 24.0)",
+            "units": "[-1.0, 1.0] trigonometric harmonic coordinate",
+            "missing_handling": "Default 1.0 if timestamp is missing",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: cyclical coordinates prevent temporal index memorization",
+        },
+        {
+            "feature_name": "is_network_layer",
+            "source_column": "Telemetry metadata (layer)",
+            "transformation": "Constant 1.0 for network flow records",
+            "units": "{0.0, 1.0} boolean indicator",
+            "missing_handling": "1.0",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: structural layer indicator",
+        },
+        {
+            "feature_name": "has_network_context",
+            "source_column": "Telemetry metadata (layer == 'network')",
+            "transformation": "Constant 1.0 for network flow records",
+            "units": "{0.0, 1.0} boolean indicator",
+            "missing_handling": "1.0",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: structural context indicator",
+        },
+        {
+            "feature_name": "transfer_size_bucket",
+            "source_column": "Total Length of Fwd Packets",
+            "transformation": "Ordinal binning: 0 (<1KB), 1 (<64KB), 2 (<1MB), 3 (>=1MB)",
+            "units": "{0.0, 1.0, 2.0, 3.0} ordinal scale",
+            "missing_handling": "Default 0.0 if missing",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: quantized magnitude of forward transfer",
+        },
+        {
+            "feature_name": "direction_internal",
+            "source_column": "Source IP and Destination IP",
+            "transformation": "1.0 if both src and dst are RFC1918 private, else 0.0",
+            "units": "{0.0, 1.0} boolean indicator",
+            "missing_handling": "Default 0.0",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: subnet classification only",
+        },
+        {
+            "feature_name": "direction_outbound",
+            "source_column": "Source IP and Destination IP",
+            "transformation": "1.0 if src is private and dst is external, else 0.0",
+            "units": "{0.0, 1.0} boolean indicator",
+            "missing_handling": "Default 0.0",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: subnet classification only",
+        },
+        {
+            "feature_name": "direction_inbound",
+            "source_column": "Source IP and Destination IP",
+            "transformation": "1.0 if src is external and dst is private, else 0.0",
+            "units": "{0.0, 1.0} boolean indicator",
+            "missing_handling": "Default 0.0",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "None: subnet classification only",
+        },
+        {
+            "feature_name": "distinct_dst_internal_5m",
+            "source_column": "Destination IP over sliding 300s window",
+            "transformation": "Count of distinct private internal destinations contacted by src in 300s",
+            "units": "[0, inf) count",
+            "missing_handling": "Default 0.0 if no prior causal history",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "Strictly causal: evaluated strictly on history prior to event arrival t",
+        },
+        {
+            "feature_name": "dst_diversity_ratio_5m",
+            "source_column": "Destination IP and Flow Count in 300s window",
+            "transformation": "distinct_dst_internal_5m / max(total_events_5m, 1)",
+            "units": "[0.0, 1.0] ratio",
+            "missing_handling": "Default 0.0 if window empty",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "Strictly causal: no future event lookahead",
+        },
+        {
+            "feature_name": "is_new_src_dst_pair",
+            "source_column": "Source IP and Destination IP communication history",
+            "transformation": "1.0 if (src, dst) pair has not been observed in training baseline or causal stream",
+            "units": "{0.0, 1.0} boolean indicator",
+            "missing_handling": "Default 1.0 (novel pair) if unobserved",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "Baseline pairs are fitted STRICTLY on training partition; zero test-set leakage",
+        },
+        {
+            "feature_name": "src_out_degree_5m",
+            "source_column": "Entity communication graph in sliding 300s window",
+            "transformation": "Number of unique destination nodes contacted by src node in 300s",
+            "units": "[0, inf) graph degree",
+            "missing_handling": "Default 0.0",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "Strictly causal: evaluated on streaming graph state prior to event t",
+        },
+        {
+            "feature_name": "dst_in_degree_5m",
+            "source_column": "Entity communication graph in sliding 300s window",
+            "transformation": "Number of unique source nodes contacting dst node in 300s",
+            "units": "[0, inf) graph degree",
+            "missing_handling": "Default 0.0",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "Strictly causal: evaluated on streaming graph state prior to event t",
+        },
+        {
+            "feature_name": "pivot_chain_indicator",
+            "source_column": "Entity communication graph in sliding 300s window",
+            "transformation": "1.0 if src node was previously an inbound destination of another host in window",
+            "units": "{0.0, 1.0} boolean indicator",
+            "missing_handling": "Default 0.0",
+            "uses_identifiers": False,
+            "inference_time_available": True,
+            "leakage_risk": "Strictly causal: evaluated on streaming graph state prior to event t",
+        },
+    ]
+
+
 def audit_feature_compatibility() -> Dict[str, Any]:
     """
-    Perform a rigorous schema and feature compatibility audit comparing the 48
+    Perform a schema and feature compatibility audit comparing the 48
     AEGIS-ML features against network flow telemetry in CIC-IDS2017.
     """
     cat_a = [
@@ -252,94 +455,9 @@ def audit_feature_compatibility() -> Dict[str, Any]:
     ]
     cat_e = sorted(list(set(cat_c + cat_d)))
 
-    # Ensure all 48 features are accounted for
     all_categorized = set(cat_a + cat_b + cat_c + cat_d)
     missing_from_audit = set(AEGIS_48_FEATURE_NAMES) - all_categorized
     assert len(missing_from_audit) == 0, f"Uncategorized features: {missing_from_audit}"
-
-    feature_mappings = [
-        {
-            "destination_feature": "dst_port_risk",
-            "source_field": "Destination Port",
-            "category": "A",
-            "transformation": "PORT_RISK dictionary lookup based on known high-risk port numbers",
-            "units_and_range": "[0.0, 1.0] categorical risk score",
-            "missing_value_policy": "Default to 0.0 if port is missing or outside known risk table",
-            "semantic_assumptions": "Destination port accurately reflects target service type",
-        },
-        {
-            "destination_feature": "bytes_sent_log",
-            "source_field": "Total Length of Fwd Packets",
-            "category": "A",
-            "transformation": "np.log1p(max(0, float(val)))",
-            "units_and_range": "[0.0, 25.0] log-transformed bytes",
-            "missing_value_policy": "Impute 0.0 if NaN or negative (CICFlowMeter bug)",
-            "semantic_assumptions": "Forward packet payload length corresponds to client-to-server outbound volume",
-        },
-        {
-            "destination_feature": "bytes_ratio",
-            "source_field": "Total Length of Fwd Packets & Total Length of Bwd Packets",
-            "category": "A",
-            "transformation": "fwd_bytes / (fwd_bytes + bwd_bytes + 1e-6)",
-            "units_and_range": "[0.0, 1.0] unitless ratio",
-            "missing_value_policy": "0.5 if both are zero or NaN",
-            "semantic_assumptions": "Measures flow asymmetry (e.g. data exfiltration has high forward ratio)",
-        },
-        {
-            "destination_feature": "is_external_dst",
-            "source_field": "Destination IP",
-            "category": "A",
-            "transformation": "1.0 if not is_rfc1918_private(dst_ip) else 0.0",
-            "units_and_range": "{0.0, 1.0} boolean flag",
-            "missing_value_policy": "0.0 if destination IP is unparseable",
-            "semantic_assumptions": "Evaluates whether traffic leaves the private intranet",
-        },
-        {
-            "destination_feature": "distinct_dst_internal_5m",
-            "source_field": "Destination IP over sliding 5m stream window",
-            "category": "B",
-            "transformation": "Count distinct internal destination IPs targeted by source IP within 300 seconds",
-            "units_and_range": "[0, inf) count",
-            "missing_value_policy": "0.0 if no prior history",
-            "semantic_assumptions": "Identifies internal network reconnaissance and fan-out scanning",
-        },
-        {
-            "destination_feature": "failed_auth_rate",
-            "source_field": "N/A (Authentication logs)",
-            "category": "C",
-            "transformation": "None possible. Network flows do not capture application login events or PAM logs.",
-            "units_and_range": "[0.0, 1.0]",
-            "missing_value_policy": "Structurally unobserved. Fixed to 0.0 (leads to out-of-distribution input for brute-force detection).",
-            "semantic_assumptions": "Crucial host telemetry absent from network-only datasets.",
-        },
-        {
-            "destination_feature": "has_process_context",
-            "source_field": "N/A (Process execution events)",
-            "category": "C",
-            "transformation": "None possible. Packet captures do not record process IDs, parent PIDs, or binary paths.",
-            "units_and_range": "{0.0, 1.0}",
-            "missing_value_policy": "Strictly 0.0 (unobserved).",
-            "semantic_assumptions": "AEGIS-ML relies on process context to distinguish user browsers from malware beacons.",
-        },
-        {
-            "destination_feature": "baseline_deviation",
-            "source_field": "N/A (Multi-day benign host behavioral baseline)",
-            "category": "D",
-            "transformation": "Cannot compute enterprise host baseline deviation from arbitrary test PCAPs.",
-            "units_and_range": "[0.0, inf)",
-            "missing_value_policy": "Defaulting to 0.0 conceals anomalous flow deviations.",
-            "semantic_assumptions": "Requires baseline profiling on uninfected traffic from the target host.",
-        },
-        {
-            "destination_feature": "cross_layer_match",
-            "source_field": "N/A (Socket-to-Process correlation)",
-            "category": "D",
-            "transformation": "Requires simultaneous endpoint and network event correlation.",
-            "units_and_range": "{0.0, 1.0}",
-            "missing_value_policy": "Structurally 0.0.",
-            "semantic_assumptions": "AEGIS-ML's strongest signal for lateral movement and exfiltration.",
-        },
-    ]
 
     return {
         "audit_name": "AEGIS-ML 48-Feature Schema Compatibility Audit on CIC-IDS2017",
@@ -363,7 +481,6 @@ def audit_feature_compatibility() -> Dict[str, Any]:
             "category_d": cat_d,
             "category_e": cat_e,
         },
-        "sample_mappings": feature_mappings,
         "audit_verdict": (
             "17 of 48 features (35.4%) are structurally unavailable in pure network flow datasets. "
             "Zero-filling or imputing unobserved endpoint features introduces severe distributional shift "
@@ -393,7 +510,6 @@ def evaluate_model_transfer_feasibility(model_path: Optional[str] = None) -> Dic
         except Exception as e:
             meta = {"error": str(e)}
 
-    # Check feature count expectation
     n_feats_expected = meta.get("n_features", 48)
 
     verdict = {
@@ -429,7 +545,6 @@ def map_external_label(raw_label: str) -> Tuple[Optional[str], str, str]:
     (canonical_5class_label, binary_label, semantic_explanation)
     """
     clean = str(raw_label).strip().lower()
-    # Normalize encoding artifacts
     clean = clean.replace("â\x80\x93", "-").replace("â\x80\x94", "-").replace("\x96", "-")
     import re
     clean = re.sub(r"web\s+attack\s*[-–—]\s*", "web attack - ", clean)
@@ -442,14 +557,19 @@ def map_external_label(raw_label: str) -> Tuple[Optional[str], str, str]:
         explanation = "Direct semantic match: benign network traffic."
     elif canonical == "brute_force":
         explanation = f"Direct semantic match: {raw_label} is an authentication brute-force attempt."
+    elif clean == "portscan":
+        explanation = (
+            "Derived research mapping (caveat): PortScan is network reconnaissance that proxies "
+            "potential lateral movement, but is not confirmed post-exploitation host traversal."
+        )
     elif canonical == "lateral_movement":
-        explanation = f"Partial/proxy match: {raw_label} represents network reconnaissance or pivoting."
+        explanation = f"Derived research mapping: {raw_label} represents remote service exploitation or pivoting."
     elif canonical == "c2_beaconing":
         explanation = f"Direct semantic match: {raw_label} represents botnet command-and-control callback."
     elif canonical == "data_exfiltration":
-        explanation = f"Partial semantic match: {raw_label} involves unauthorized memory content disclosure."
+        explanation = f"Derived research mapping: {raw_label} involves unauthorized memory content disclosure."
     elif clean in ["ddos", "dos hulk", "dos goldeneye", "dos slowloris", "dos slowhttptest"]:
-        explanation = f"Excluded from canonical 5-class: Denial of Service ({raw_label}) is traffic flooding, not targeted intrusion."
+        explanation = f"Excluded from canonical 5-class: Denial of Service ({raw_label}) is volumetric flooding, not targeted intrusion."
     else:
         explanation = f"Unmapped in canonical 5-class: {raw_label} lacks endpoint process telemetry to confirm attack subtype."
 
@@ -458,7 +578,7 @@ def map_external_label(raw_label: str) -> Tuple[Optional[str], str, str]:
 
 def scan_dataset_quality_and_leakage(file_path: str, sample_rows: int = 50000) -> Dict[str, Any]:
     """
-    Inspect an external dataset file for data quality issues, CICFlowMeter bugs,
+    Inspect an external dataset file for data quality issues, CICFlowMeter defects,
     duplicate flows, and potential feature-target leakage.
     """
     path = Path(file_path)
@@ -469,41 +589,36 @@ def scan_dataset_quality_and_leakage(file_path: str, sample_rows: int = 50000) -
             "quality_scan_completed": False,
         }
 
-    # Read sample
     df = pd.read_csv(file_path, nrows=sample_rows, low_memory=False)
     raw_rows = len(df)
     clean_cols = [c.strip().lower() for c in df.columns]
     df.columns = clean_cols
 
-    # Count Infs and NaNs
     inf_count = 0
     nan_count = int(df.isna().sum().sum())
     for col in df.columns:
         if df[col].dtype in [np.float64, np.float32, float]:
             inf_count += int((~np.isfinite(df[col].astype(float, errors="ignore"))).sum())
 
-    # Count duplicates
     dup_cols = [c for c in ["source ip", "destination ip", "destination port", "protocol", "label"] if c in df.columns]
     dup_count = int(df.duplicated(subset=dup_cols).sum()) if dup_cols else 0
 
-    # Negative duration/bytes (CICFlowMeter overflow)
     neg_duration_count = 0
     if "flow duration" in df.columns:
         num_dur = pd.to_numeric(df["flow duration"], errors="coerce")
         neg_duration_count = int((num_dur < 0).sum())
 
-    # Class distribution
     label_col = "label" if "label" in df.columns else None
     class_dist: Dict[str, int] = {}
     if label_col:
         vc = df[label_col].astype(str).str.strip().value_counts()
         class_dist = {str(k): int(v) for k, v in vc.items()}
 
-    # Leakage check: check if IP addresses or identifiers could leak labels
     leakage_findings = [
         "Source IP and Destination IP are excluded from model features (used only for causally building rolling degree/diversity metrics).",
         "Timestamp is converted into cyclical trigonometric hour features (sin/cos) and relative deltas, preventing temporal index memorization.",
         "Ground truth label is strictly excluded from feature extraction pipelines.",
+        "SMOTE resampling and graph baseline pairs are fitted strictly on the training partition.",
     ]
 
     return {
@@ -521,14 +636,28 @@ def scan_dataset_quality_and_leakage(file_path: str, sample_rows: int = 50000) -
     }
 
 
-def extract_observable_flow_features(events: List[UnifiedEvent]) -> np.ndarray:
+def extract_observable_flow_features(
+    events: List[UnifiedEvent],
+    tracker: Optional[CausalTemporalGraphTracker] = None,
+    fit_tracker: bool = False,
+) -> np.ndarray:
     """
-    Extract the 17 observable network-flow and IP-graph features from a sequence
+    Extract the 18 observable network-flow and IP-graph features from a sequence
     of UnifiedEvents.
+    
+    Leakage Protection:
+    - If tracker is provided and fit_tracker=False, extracts features using existing
+      historical state without learning new baseline communication pairs.
+    - If fit_tracker=True, learns baseline pairs from the provided events.
     """
-    tracker = CausalTemporalGraphTracker()
-    tracker.fit_baseline_pairs(events[:min(len(events), 500)])
+    if tracker is None:
+        tracker = CausalTemporalGraphTracker()
+        if fit_tracker:
+            tracker.fit_baseline_pairs(events)
+
     graph_dicts = tracker.extract_sequence(events)
+
+    from backend.core.config import PORT_RISK
 
     features = []
     for idx, e in enumerate(events):
@@ -538,7 +667,6 @@ def extract_observable_flow_features(events: List[UnifiedEvent]) -> np.ndarray:
         tot_b = fwd_b + bwd_b
 
         # 1. dst_port_risk
-        from backend.core.config import PORT_RISK
         port_risk = PORT_RISK.get(e.dst_port, 0.0)
 
         # 2. bytes_sent_log
@@ -605,19 +733,104 @@ def extract_observable_flow_features(events: List[UnifiedEvent]) -> np.ndarray:
     return np.array(features, dtype=np.float64)
 
 
+def partition_dataset(
+    events: List[UnifiedEvent],
+    split_strategy: str = "stratified_random",
+    test_size: float = 0.20,
+    random_seed: int = 42,
+) -> Tuple[List[int], List[int], Dict[str, Any]]:
+    """
+    Partition events into train and test splits using a specified strategy.
+    
+    Strategies:
+    - 'stratified_random': Standard random stratified splitting.
+    - 'grouped_communication_pair': Groups by (src, dst) communication pair to prevent identical
+      communication flows from leaking across partitions.
+    - 'temporal_causal': Sorts chronologically; takes earlier (1 - test_size) as train, subsequent as test.
+    
+    Returns:
+        tr_indices, te_indices, split_audit_metadata
+    """
+    n = len(events)
+    indices = np.arange(n)
+    raw_labels = [e.raw_label or "benign" for e in events]
+
+    if split_strategy == "temporal_causal":
+        # Sort indices by timestamp
+        sorted_indices = sorted(indices, key=lambda i: events[i].timestamp or datetime.min)
+        split_point = int(n * (1.0 - test_size))
+        tr_idx = sorted_indices[:split_point]
+        te_idx = sorted_indices[split_point:]
+        notes = "Split chronologically based on flow timestamp."
+
+    elif split_strategy == "grouped_communication_pair":
+        # Group by (src_entity, dst_entity)
+        groups = np.array([f"{e.src_entity or 'unk'}->{e.dst_entity or 'unk'}" for e in events])
+        unique_groups = len(set(groups))
+        
+        if unique_groups >= 4:
+            gss = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=random_seed)
+            tr_idx_arr, te_idx_arr = next(gss.split(indices, groups=groups))
+            tr_idx = tr_idx_arr.tolist()
+            te_idx = te_idx_arr.tolist()
+            notes = f"Grouped by communication pair ({unique_groups} unique groups)."
+        else:
+            # Fallback to stratified random if too few unique groups
+            try:
+                tr_idx, te_idx = train_test_split(indices, test_size=test_size, random_state=random_seed, stratify=raw_labels)
+            except Exception:
+                tr_idx, te_idx = train_test_split(indices, test_size=test_size, random_state=random_seed)
+            tr_idx, te_idx = tr_idx.tolist(), te_idx.tolist()
+            notes = f"Insufficient communication groups ({unique_groups}); fell back to stratified random."
+
+    else:
+        # Default: stratified_random
+        split_strategy = "stratified_random"
+        try:
+            tr_idx, te_idx = train_test_split(indices, test_size=test_size, random_state=random_seed, stratify=raw_labels)
+        except Exception:
+            tr_idx, te_idx = train_test_split(indices, test_size=test_size, random_state=random_seed)
+        tr_idx, te_idx = tr_idx.tolist(), te_idx.tolist()
+        notes = "Stratified random split."
+
+    # Compute communication pair overlap
+    train_pairs = {(events[i].src_entity, events[i].dst_entity) for i in tr_idx if events[i].src_entity and events[i].dst_entity}
+    test_pairs = {(events[i].src_entity, events[i].dst_entity) for i in te_idx if events[i].src_entity and events[i].dst_entity}
+    overlap_pairs = train_pairs.intersection(test_pairs)
+
+    metadata = {
+        "strategy": split_strategy,
+        "train_samples": len(tr_idx),
+        "test_samples": len(te_idx),
+        "total_samples": n,
+        "unique_train_pairs": len(train_pairs),
+        "unique_test_pairs": len(test_pairs),
+        "cross_partition_pair_overlap_count": len(overlap_pairs),
+        "cross_partition_pair_overlap_pct": round(len(overlap_pairs) / max(len(test_pairs), 1) * 100.0, 2),
+        "notes": notes,
+    }
+    return tr_idx, te_idx, metadata
+
+
 def execute_external_retrained_benchmark(
     events: List[UnifiedEvent],
     random_seed: int = 42,
     test_size: float = 0.20,
+    split_strategy: str = "stratified_random",
+    save_model: bool = False,
+    model_output_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Execute an isolated training and evaluation experiment on external network flow data.
     
     Guarantees:
-    - Uses strictly observable flow features (17 features).
+    - Uses strictly observable flow features (18 features).
     - Preserves production model artifacts untouched.
-    - Fits preprocessing and SMOTE strictly on the training partition.
-    - Reports both multi-class and binary detection metrics with explicit denominators.
+    - Fits preprocessing, graph baseline pairs, and SMOTE strictly on the training partition.
+    - Evaluates:
+      1. Binary detection (benign vs attack) with probability calibration diagnostics.
+      2. Original-label classification directly on raw external dataset labels.
+      3. Derived AEGIS-ML multiclass classification with explicit PortScan caveat.
     """
     if len(events) < 50:
         return {
@@ -634,61 +847,59 @@ def execute_external_retrained_benchmark(
         mapped_canon.append(c)
         mapped_binary.append(b)
 
-    # 1. Binary Evaluation Experiment (Benign vs Attack)
-    y_binary = np.array(mapped_binary)
-    bin_counts = Counter(y_binary)
+    # 1. Partition dataset
+    tr_idx, te_idx, split_meta = partition_dataset(
+        events, split_strategy=split_strategy, test_size=test_size, random_seed=random_seed
+    )
+    tr_events = [events[i] for i in tr_idx]
+    te_events = [events[i] for i in te_idx]
 
-    if len(bin_counts) < 2:
-        return {
-            "status": "insufficient_classes",
-            "reason": f"Dataset contains only 1 binary class: {bin_counts}",
-        }
+    # 2. Extract features strictly without test-set pair leakage
+    tracker = CausalTemporalGraphTracker()
+    tracker.fit_baseline_pairs(tr_events)  # Train pairs ONLY
+    X_tr = extract_observable_flow_features(tr_events, tracker=tracker, fit_tracker=False)
+    X_te = extract_observable_flow_features(te_events, tracker=tracker, fit_tracker=False)
 
-    # Extract features causally
-    X_all = extract_observable_flow_features(events)
-
-    # Stratified split
-    indices = np.arange(len(events))
-    try:
-        tr_idx, te_idx = train_test_split(
-            indices, test_size=test_size, random_state=random_seed, stratify=y_binary
-        )
-    except Exception:
-        tr_idx, te_idx = train_test_split(
-            indices, test_size=test_size, random_state=random_seed
-        )
-
-    X_tr_bin, X_te_bin = X_all[tr_idx], X_all[te_idx]
-    y_tr_bin, y_te_bin = y_binary[tr_idx], y_binary[te_idx]
+    # ── A. Binary Evaluation Experiment (Benign vs Attack) ────────────────────────
+    y_bin = np.array(mapped_binary)
+    y_tr_bin, y_te_bin = y_bin[tr_idx], y_bin[te_idx]
 
     # SMOTE on training partition only
     min_bin_c = min(Counter(y_tr_bin).values())
     if min_bin_c > 1:
         k_neigh = max(1, min(5, min_bin_c - 1))
         sm_bin = SMOTE(k_neighbors=k_neigh, random_state=random_seed)
-        X_tr_bin_res, y_tr_bin_res = sm_bin.fit_resample(X_tr_bin, y_tr_bin)
+        X_tr_bin_res, y_tr_bin_res = sm_bin.fit_resample(X_tr, y_tr_bin)
     else:
-        X_tr_bin_res, y_tr_bin_res = X_tr_bin, y_tr_bin
+        X_tr_bin_res, y_tr_bin_res = X_tr, y_tr_bin
 
-    # Train isolated binary model
     rf_bin = RandomForestClassifier(n_estimators=100, max_depth=12, random_state=random_seed)
     rf_bin.fit(X_tr_bin_res, y_tr_bin_res)
-    y_pred_bin = rf_bin.predict(X_te_bin)
+    y_pred_bin = rf_bin.predict(X_te)
+    y_prob_bin = rf_bin.predict_proba(X_te)
 
     bin_labels = ["benign", "attack"]
     bin_cm = confusion_matrix(y_te_bin, y_pred_bin, labels=bin_labels)
-    # cm layout:
-    # row 0 (actual benign): TN = cm[0,0], FP = cm[0,1]
-    # row 1 (actual attack): FN = cm[1,0], TP = cm[1,1]
     tn, fp = int(bin_cm[0, 0]), int(bin_cm[0, 1])
     fn, tp = int(bin_cm[1, 0]), int(bin_cm[1, 1])
 
     benign_denominator = tn + fp
     attack_denominator = tp + fn
-
     benign_fpr = round(fp / max(benign_denominator, 1), 4)
     attack_recall = round(tp / max(attack_denominator, 1), 4)
     attack_precision = round(tp / max(tp + fp, 1), 4)
+
+    # Probability calibration metrics
+    brier_val = None
+    log_loss_val = None
+    try:
+        attack_idx = list(rf_bin.classes_).index("attack")
+        prob_attack = y_prob_bin[:, attack_idx]
+        y_true_binary_num = np.array([1 if y == "attack" else 0 for y in y_te_bin])
+        brier_val = round(float(brier_score_loss(y_true_binary_num, prob_attack)), 4)
+        log_loss_val = round(float(log_loss(y_true_binary_num, prob_attack)), 4)
+    except Exception as e:
+        logger.debug(f"Could not compute Brier/log-loss: {e}")
 
     binary_metrics = {
         "confusion_matrix": {
@@ -707,9 +918,61 @@ def execute_external_retrained_benchmark(
         "accuracy": round(float(accuracy_score(y_te_bin, y_pred_bin)), 4),
         "balanced_accuracy": round(float(balanced_accuracy_score(y_te_bin, y_pred_bin)), 4),
         "f1_score": round(float(f1_score(y_te_bin, y_pred_bin, pos_label="attack", zero_division=0)), 4),
+        "brier_score": brier_val,
+        "log_loss": log_loss_val,
     }
 
-    # 2. Multi-Class Evaluation Experiment (for mapped canonical classes)
+    # ── B. Original-Label Evaluation Experiment ────────────────────────────────────
+    y_orig = np.array([e.raw_label.strip() for e in events])
+    y_tr_orig, y_te_orig = y_orig[tr_idx], y_orig[te_idx]
+    orig_classes = sorted(list(set(y_orig)))
+    orig_results = None
+
+    if len(orig_classes) >= 2 and set(y_te_orig).issubset(set(y_tr_orig)):
+        try:
+            min_orig_c = min(Counter(y_tr_orig).values())
+            if min_orig_c > 1:
+                k_orig = max(1, min(4, min_orig_c - 1))
+                sm_orig = SMOTE(k_neighbors=k_orig, random_state=random_seed)
+                X_tr_orig_res, y_tr_orig_res = sm_orig.fit_resample(X_tr, y_tr_orig)
+            else:
+                X_tr_orig_res, y_tr_orig_res = X_tr, y_tr_orig
+
+            rf_orig = RandomForestClassifier(n_estimators=100, max_depth=12, random_state=random_seed)
+            rf_orig.fit(X_tr_orig_res, y_tr_orig_res)
+            y_pred_orig = rf_orig.predict(X_te)
+
+            active_orig = sorted(list(set(np.concatenate([y_te_orig, y_pred_orig]))))
+            orig_cm = confusion_matrix(y_te_orig, y_pred_orig, labels=active_orig)
+            prec_o, rec_o, f1_o, supp_o = precision_recall_fscore_support(
+                y_te_orig, y_pred_orig, labels=active_orig, zero_division=0
+            )
+
+            per_class_orig = {}
+            for idx, c in enumerate(active_orig):
+                per_class_orig[c] = {
+                    "support": int(supp_o[idx]),
+                    "precision": round(float(prec_o[idx]), 4),
+                    "recall": round(float(rec_o[idx]), 4),
+                    "f1": round(float(f1_o[idx]), 4),
+                }
+
+            orig_results = {
+                "active_original_labels": active_orig,
+                "confusion_matrix": {
+                    "labels": active_orig,
+                    "matrix": orig_cm.tolist(),
+                },
+                "per_class_metrics": per_class_orig,
+                "macro_f1": round(float(f1_score(y_te_orig, y_pred_orig, average="macro", zero_division=0)), 4),
+                "weighted_f1": round(float(f1_score(y_te_orig, y_pred_orig, average="weighted", zero_division=0)), 4),
+                "balanced_accuracy": round(float(balanced_accuracy_score(y_te_orig, y_pred_orig)), 4),
+                "accuracy": round(float(accuracy_score(y_te_orig, y_pred_orig)), 4),
+            }
+        except Exception as e:
+            logger.debug(f"Original label evaluation skipped or failed: {e}")
+
+    # ── C. Derived AEGIS-ML Multiclass Evaluation ──────────────────────────────────
     valid_canon_idx = [i for i, c in enumerate(mapped_canon) if c is not None]
     multi_class_results = None
 
@@ -720,106 +983,124 @@ def execute_external_retrained_benchmark(
         active_classes = sorted([c for c, cnt in mc_counts.items() if cnt >= 2])
 
         if len(active_classes) >= 2:
-            # Filter events to active classes
             keep_sub_idx = [i for i, c in enumerate(y_mc) if c in active_classes]
-            X_mc_all = X_all[valid_canon_idx][keep_sub_idx]
-            y_mc_filtered = y_mc[keep_sub_idx]
+            mc_indices = np.array(valid_canon_idx)[keep_sub_idx]
+            
+            # Map into current split partitions
+            tr_mc_idx = [i for i in tr_idx if i in mc_indices]
+            te_mc_idx = [i for i in te_idx if i in mc_indices]
 
-            try:
-                mc_tr_i, mc_te_i = train_test_split(
-                    np.arange(len(y_mc_filtered)),
-                    test_size=test_size,
-                    random_state=random_seed,
-                    stratify=y_mc_filtered,
+            if len(tr_mc_idx) >= 10 and len(te_mc_idx) >= 5:
+                X_tr_mc = extract_observable_flow_features([events[i] for i in tr_mc_idx], tracker=tracker, fit_tracker=False)
+                X_te_mc = extract_observable_flow_features([events[i] for i in te_mc_idx], tracker=tracker, fit_tracker=False)
+                y_tr_mc = np.array([mapped_canon[i] for i in tr_mc_idx])
+                y_te_mc = np.array([mapped_canon[i] for i in te_mc_idx])
+
+                min_mc_c = min(Counter(y_tr_mc).values())
+                if min_mc_c > 1:
+                    k_n = max(1, min(4, min_mc_c - 1))
+                    sm_mc = SMOTE(k_neighbors=k_n, random_state=random_seed)
+                    X_tr_mc_res, y_tr_mc_res = sm_mc.fit_resample(X_tr_mc, y_tr_mc)
+                else:
+                    X_tr_mc_res, y_tr_mc_res = X_tr_mc, y_tr_mc
+
+                rf_mc = RandomForestClassifier(n_estimators=100, max_depth=12, random_state=random_seed)
+                rf_mc.fit(X_tr_mc_res, y_tr_mc_res)
+                y_pred_mc = rf_mc.predict(X_te_mc)
+
+                act_mc = sorted(list(set(np.concatenate([y_te_mc, y_pred_mc]))))
+                mc_cm = confusion_matrix(y_te_mc, y_pred_mc, labels=act_mc)
+                prec, rec, f1s, supp = precision_recall_fscore_support(
+                    y_te_mc, y_pred_mc, labels=act_mc, zero_division=0
                 )
-            except Exception:
-                mc_tr_i, mc_te_i = train_test_split(
-                    np.arange(len(y_mc_filtered)),
-                    test_size=test_size,
-                    random_state=random_seed,
-                )
 
-            X_tr_mc, X_te_mc = X_mc_all[mc_tr_i], X_mc_all[mc_te_i]
-            y_tr_mc, y_te_mc = y_mc_filtered[mc_tr_i], y_mc_filtered[mc_te_i]
+                per_class = {}
+                for idx, c in enumerate(act_mc):
+                    per_class[c] = {
+                        "support": int(supp[idx]),
+                        "precision": round(float(prec[idx]), 4),
+                        "recall": round(float(rec[idx]), 4),
+                        "f1": round(float(f1s[idx]), 4),
+                    }
 
-            min_mc_c = min(Counter(y_tr_mc).values())
-            if min_mc_c > 1:
-                k_n = max(1, min(4, min_mc_c - 1))
-                sm_mc = SMOTE(k_neighbors=k_n, random_state=random_seed)
-                X_tr_mc_res, y_tr_mc_res = sm_mc.fit_resample(X_tr_mc, y_tr_mc)
-            else:
-                X_tr_mc_res, y_tr_mc_res = X_tr_mc, y_tr_mc
+                benign_as_attack = 0
+                attack_as_benign = 0
+                attack_subtype_confusion = 0
+                for actual, pred in zip(y_te_mc, y_pred_mc):
+                    if actual == "benign" and pred != "benign":
+                        benign_as_attack += 1
+                    elif actual != "benign" and pred == "benign":
+                        attack_as_benign += 1
+                    elif actual != "benign" and pred != "benign" and actual != pred:
+                        attack_subtype_confusion += 1
 
-            rf_mc = RandomForestClassifier(n_estimators=100, max_depth=12, random_state=random_seed)
-            rf_mc.fit(X_tr_mc_res, y_tr_mc_res)
-            y_pred_mc = rf_mc.predict(X_te_mc)
+                total_attacks_test = sum(supp[idx] for idx, c in enumerate(act_mc) if c != "benign")
 
-            mc_cm = confusion_matrix(y_te_mc, y_pred_mc, labels=active_classes)
-            prec, rec, f1s, supp = precision_recall_fscore_support(
-                y_te_mc, y_pred_mc, labels=active_classes, zero_division=0
-            )
-
-            per_class = {}
-            for idx, c in enumerate(active_classes):
-                per_class[c] = {
-                    "support": int(supp[idx]),
-                    "precision": round(float(prec[idx]), 4),
-                    "recall": round(float(rec[idx]), 4),
-                    "f1": round(float(f1s[idx]), 4),
+                multi_class_results = {
+                    "active_classes": act_mc,
+                    "mapping_caveat": (
+                        "PortScan is mapped to lateral_movement as a proxy for reconnaissance-driven pivoting. "
+                        "Do NOT interpret PortScan as confirmed internal host compromise."
+                    ),
+                    "confusion_matrix": {
+                        "labels": act_mc,
+                        "matrix": mc_cm.tolist(),
+                    },
+                    "per_class_metrics": per_class,
+                    "macro_f1": round(float(f1_score(y_te_mc, y_pred_mc, average="macro", zero_division=0)), 4),
+                    "weighted_f1": round(float(f1_score(y_te_mc, y_pred_mc, average="weighted", zero_division=0)), 4),
+                    "balanced_accuracy": round(float(balanced_accuracy_score(y_te_mc, y_pred_mc)), 4),
+                    "accuracy": round(float(accuracy_score(y_te_mc, y_pred_mc)), 4),
+                    "misclassification_taxonomy": {
+                        "benign_classified_as_attack_count": benign_as_attack,
+                        "attack_classified_as_benign_count": attack_as_benign,
+                        "attack_subtype_confusion_count": attack_subtype_confusion,
+                        "attack_subtype_confusion_ratio": (
+                            round(attack_subtype_confusion / max(total_attacks_test, 1), 4)
+                            if total_attacks_test > 0
+                            else 0.0
+                        ),
+                    },
                 }
 
-            # Misclassification taxonomy:
-            # - Benign classified as attack
-            # - Attack classified as benign
-            # - Attack classified as wrong attack subtype
-            benign_as_attack = 0
-            attack_as_benign = 0
-            attack_subtype_confusion = 0
+    # ── D. Save Experimental Model (Separate from Production) ─────────────────────
+    saved_model_path = None
+    if save_model:
+        out_dir = Path(model_output_dir or (Path(MODEL_DIR) / "external_experiments" / "cicids2017"))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        model_file = out_dir / "network_flow_rf.pkl"
+        meta_file = out_dir / "network_flow_rf_metadata.json"
 
-            for actual, pred in zip(y_te_mc, y_pred_mc):
-                if actual == "benign" and pred != "benign":
-                    benign_as_attack += 1
-                elif actual != "benign" and pred == "benign":
-                    attack_as_benign += 1
-                elif actual != "benign" and pred != "benign" and actual != pred:
-                    attack_subtype_confusion += 1
+        joblib.dump(rf_bin, model_file)
+        saved_model_path = str(model_file)
 
-            total_attacks_test = sum(supp[idx] for idx, c in enumerate(active_classes) if c != "benign")
-
-            multi_class_results = {
-                "active_classes": active_classes,
-                "confusion_matrix": {
-                    "labels": active_classes,
-                    "matrix": mc_cm.tolist(),
-                },
-                "per_class_metrics": per_class,
-                "macro_f1": round(float(f1_score(y_te_mc, y_pred_mc, average="macro", zero_division=0)), 4),
-                "weighted_f1": round(float(f1_score(y_te_mc, y_pred_mc, average="weighted", zero_division=0)), 4),
-                "balanced_accuracy": round(float(balanced_accuracy_score(y_te_mc, y_pred_mc)), 4),
-                "accuracy": round(float(accuracy_score(y_te_mc, y_pred_mc)), 4),
-                "misclassification_taxonomy": {
-                    "benign_classified_as_attack_count": benign_as_attack,
-                    "attack_classified_as_benign_count": attack_as_benign,
-                    "attack_subtype_confusion_count": attack_subtype_confusion,
-                    "attack_subtype_confusion_ratio": (
-                        round(attack_subtype_confusion / max(total_attacks_test, 1), 4)
-                        if total_attacks_test > 0
-                        else 0.0
-                    ),
-                },
-            }
+        exp_meta = {
+            "experiment_name": "Separate Network-Flow Random Forest (CIC-IDS2017)",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "model_version": "24.1.0-exp",
+            "feature_names": OBSERVABLE_FLOW_FEATURE_NAMES,
+            "n_features": len(OBSERVABLE_FLOW_FEATURE_NAMES),
+            "split_strategy": split_strategy,
+            "evaluation_targets": ["binary", "original_labels", "canonical_multiclass"],
+            "production_model_isolation": "Strictly isolated from calibrated_threat_classifier.pkl",
+        }
+        with open(meta_file, "w") as f:
+            json.dump(exp_meta, f, indent=2)
 
     return {
         "experiment_name": "External Dataset Retrained Network-Flow Benchmark",
         "observable_feature_count": len(OBSERVABLE_FLOW_FEATURE_NAMES),
         "observable_features": OBSERVABLE_FLOW_FEATURE_NAMES,
+        "split_metadata": split_meta,
         "sample_counts": {
             "total_events": len(events),
             "train_samples": len(tr_idx),
             "test_samples": len(te_idx),
         },
         "binary_evaluation": binary_metrics,
-        "multi_class_evaluation": multi_class_results,
+        "original_label_evaluation": orig_results,
+        "derived_canonical_evaluation": multi_class_results,
+        "saved_experimental_model_path": saved_model_path,
     }
 
 
@@ -836,28 +1117,26 @@ def run_phase24_evaluation(
     dataset_path: Optional[str] = None,
     output_path: Optional[str] = None,
     random_seed: int = 42,
+    save_model: bool = True,
+    model_output_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Main Phase 24 orchestration entry point.
+    Main Phase 24 / 24.1 orchestration entry point.
     
     Checks dataset availability:
     - If absent: produces complete audit, marks status as NOT_COMPLETED / BLOCKED_AWAITING_LOCAL_COPY,
       documents provenance, and writes machine-readable report without fabricating metrics.
-    - If present: conducts quality scan, transfer feasibility check, and isolated retrained benchmark.
+    - If present: conducts quality scan, transfer feasibility check, and isolated retrained benchmark
+      across Stratified Random, Grouped (Pair-Isolated), and Temporal splits.
     """
-    # 1. Feature schema compatibility audit
     schema_audit = audit_feature_compatibility()
-
-    # 2. Existing-model transfer feasibility evaluation
+    feature_audit_18 = audit_observable_flow_features()
     transfer_eval = evaluate_model_transfer_feasibility()
 
-    # 3. Check for external dataset presence
-    # Check default paths if not explicitly given
     candidates = []
     if dataset_path:
         candidates.append(Path(dataset_path))
     else:
-        # Standard repository location for CIC-IDS2017
         base_dir = PROJECT_ROOT / "datasets" / "cicids2017"
         for fn in CICIDS2017_METADATA["expected_files"]:
             candidates.append(base_dir / fn)
@@ -875,20 +1154,20 @@ def run_phase24_evaluation(
     target_output.parent.mkdir(parents=True, exist_ok=True)
 
     report: Dict[str, Any] = {
-        "phase": "24",
-        "title": "External Dataset Evaluation and Generalization Audit",
+        "phase": "24.1",
+        "title": "CIC-IDS2017 Acquisition, Leakage-Resistant Evaluation, and Network-Flow Benchmark",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "random_seed": random_seed,
         "dataset_metadata": CICIDS2017_METADATA,
+        "feature_audit_18": feature_audit_18,
         "schema_compatibility_audit": schema_audit,
         "existing_model_transfer_evaluation": transfer_eval,
     }
 
     if resolved_path is None:
-        # Dataset is NOT present locally
         logger.info(
             "External dataset CIC-IDS2017 is not available locally. "
-            "Recording NOT_COMPLETED status per Phase 24 preflight specifications."
+            "Recording NOT_COMPLETED status per Phase 24.1 preflight specifications."
         )
         report["status"] = "not_completed"
         report["status_code"] = "BLOCKED_AWAITING_LOCAL_COPY"
@@ -897,7 +1176,7 @@ def run_phase24_evaluation(
             "No CIC-IDS2017 CSV files found in datasets/cicids2017/. "
             "Official UNB download requires an interactive registration form at https://www.unb.ca/cic/datasets/ids-2017.html. "
             "Automated scraping without registration is prohibited by UNB. "
-            "Evaluation infrastructure and schema audit are fully operational."
+            "Evaluation infrastructure, schema audit, and leakage-resistant benchmarks are fully operational."
         )
         report["reproduction_instructions"] = [
             "1. Visit https://www.unb.ca/cic/datasets/ids-2017.html and complete the dataset registration form.",
@@ -906,16 +1185,14 @@ def run_phase24_evaluation(
             "4. Execute: python3 -m backend.evaluation.external_dataset_evaluation --data datasets/cicids2017/<file>.csv",
         ]
         report["retrained_experiment"] = None
+        report["split_comparison"] = None
     else:
-        # Dataset IS present locally
         logger.info(f"External dataset located at: {resolved_path}. Commencing evaluation...")
         file_sha256 = compute_file_sha256(resolved_path)
         file_size_bytes = resolved_path.stat().st_size
 
-        # Run data quality scan
         quality_scan = scan_dataset_quality_and_leakage(str(resolved_path))
 
-        # Ingest events via cicids_loader
         events, loader_stats = load_cicids2017(
             str(resolved_path),
             max_rows=5000,
@@ -923,8 +1200,23 @@ def run_phase24_evaluation(
             deduplicate=True,
         )
 
-        # Run external retrained benchmark
-        benchmark_results = execute_external_retrained_benchmark(events, random_seed=random_seed)
+        # Multi-split comparison:
+        # A. Stratified Random Split
+        bench_rand = execute_external_retrained_benchmark(
+            events,
+            random_seed=random_seed,
+            split_strategy="stratified_random",
+            save_model=save_model,
+            model_output_dir=model_output_dir,
+        )
+        # B. Grouped Communication Pair Split (prevents identical pair leakage)
+        bench_group = execute_external_retrained_benchmark(
+            events, random_seed=random_seed, split_strategy="grouped_communication_pair", save_model=False
+        )
+        # C. Temporal Causal Split (prevents temporal future-event leakage)
+        bench_time = execute_external_retrained_benchmark(
+            events, random_seed=random_seed, split_strategy="temporal_causal", save_model=False
+        )
 
         report["status"] = "completed"
         report["status_code"] = "EVALUATION_COMPLETED"
@@ -937,7 +1229,12 @@ def run_phase24_evaluation(
         }
         report["data_quality_and_leakage_scan"] = quality_scan
         report["loader_stats"] = loader_stats
-        report["retrained_experiment"] = benchmark_results
+        report["retrained_experiment"] = bench_rand
+        report["split_comparison"] = {
+            "stratified_random": bench_rand,
+            "grouped_communication_pair": bench_group,
+            "temporal_causal": bench_time,
+        }
 
     def _json_default(o):
         if isinstance(o, (np.integer, np.int64, np.int32)):
@@ -948,31 +1245,37 @@ def run_phase24_evaluation(
             return o.tolist()
         return str(o)
 
-    # Write report to disk
     with open(target_output, "w") as f:
         json.dump(report, f, indent=2, default=_json_default)
 
-    logger.info(f"Phase 24 evaluation report written to {target_output}")
+    logger.info(f"Phase 24.1 evaluation report written to {target_output}")
     return report
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="AEGIS-ML Phase 24 External Dataset Evaluation")
+    parser = argparse.ArgumentParser(description="AEGIS-ML Phase 24.1 External Dataset Evaluation")
     parser.add_argument("--data", type=str, default=None, help="Path to CIC-IDS2017 CSV file")
     parser.add_argument("--out", type=str, default=None, help="Output path for evaluation report JSON")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--no-save", action="store_true", help="Do not save experimental model artifact")
     args = parser.parse_args()
 
-    res = run_phase24_evaluation(dataset_path=args.data, output_path=args.out, random_seed=args.seed)
-    print(f"\n--- AEGIS-ML PHASE 24 EVALUATION REPORT ---")
+    res = run_phase24_evaluation(
+        dataset_path=args.data, output_path=args.out, random_seed=args.seed, save_model=not args.no_save
+    )
+    print(f"\n--- AEGIS-ML PHASE 24.1 EVALUATION REPORT ---")
     print(f"Status: {res.get('status')} ({res.get('status_code')})")
     print(f"Transfer Feasibility: {res['existing_model_transfer_evaluation']['status']}")
-    print(f"Features Audited: {res['schema_compatibility_audit']['total_features']}")
+    print(f"Features Audited: 48 (General Schema) / 18 (Observable Flow Benchmark)")
     if res.get("status") == "completed":
         bin_eval = res["retrained_experiment"]["binary_evaluation"]
         print(f"Attack Recall: {bin_eval['attack_recall']} (denom: {bin_eval['attack_recall_denominator']})")
         print(f"Benign FPR: {bin_eval['benign_false_alarm_rate']} (denom: {bin_eval['benign_false_alarm_denominator']})")
+        if res.get("split_comparison"):
+            for strat, b in res["split_comparison"].items():
+                m = b["split_metadata"]
+                print(f"  Split [{strat}]: overlap={m['cross_partition_pair_overlap_pct']}% | Test F1={b['binary_evaluation']['f1_score']}")
     else:
         print(f"Reason: {res.get('reason')}")

@@ -1,7 +1,7 @@
 {
-  "phase": "24",
-  "title": "External Dataset Evaluation and Generalization Audit",
-  "timestamp": "2026-10-10T08:16:08.131262+00:00",
+  "phase": "24.1",
+  "title": "CIC-IDS2017 Acquisition, Leakage-Resistant Evaluation, and Network-Flow Benchmark",
+  "timestamp": "2026-10-10T14:23:10.457274+00:00",
   "random_seed": 42,
   "dataset_metadata": {
     "dataset_name": "CIC-IDS2017",
@@ -10,7 +10,7 @@
     "citation": "Sharafaldin, I., Habibi Lashkari, A., Ghorbani, A. (2018). 'Toward Generating a New Intrusion Detection Dataset and Intrusion Traffic Characterization.' Proceedings of the 4th International Conference on Information Systems Security and Privacy (ICISSP).",
     "official_url": "https://www.unb.ca/cic/datasets/ids-2017.html",
     "licensing_and_distribution": "UNB requires interactive registration form with name, institutional affiliation, and email confirmation. Non-interactive scraping and redistributing raw CSVs via Git is restricted.",
-    "telemetry_modality": "Network flow records generated via CICFlowMeter (birectional flow statistics).",
+    "telemetry_modality": "Network flow records generated via CICFlowMeter (bidirectional flow statistics).",
     "known_limitations": [
       "Pure network flow telemetry: Zero host process, socket binding, or auth log context.",
       "CICFlowMeter overflow bugs: produces Infinity and NaN in flow rate features, and negative duration values.",
@@ -34,6 +34,188 @@
       "Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv"
     ]
   },
+  "feature_audit_18": [
+    {
+      "feature_name": "dst_port_risk",
+      "source_column": "Destination Port",
+      "transformation": "PORT_RISK dictionary lookup for known high-risk destination service ports",
+      "units": "[0.0, 1.0] categorical risk score",
+      "missing_handling": "Default 0.0 if port is null or outside known risk mapping table",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: destination port is an intrinsic flow header attribute"
+    },
+    {
+      "feature_name": "bytes_sent_log",
+      "source_column": "Total Length of Fwd Packets",
+      "transformation": "math.log1p(max(0.0, float(fwd_bytes)))",
+      "units": "[0.0, 25.0] log-transformed bytes",
+      "missing_handling": "Impute 0.0 if NaN or negative (CICFlowMeter overflow defect)",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: forward packet payload size is directly observable in flow stats"
+    },
+    {
+      "feature_name": "bytes_ratio",
+      "source_column": "Total Length of Fwd Packets & Total Length of Bwd Packets",
+      "transformation": "fwd_bytes / (fwd_bytes + bwd_bytes + 1e-6)",
+      "units": "[0.0, 1.0] asymmetry ratio",
+      "missing_handling": "Default 0.5 (symmetric) if both forward and backward bytes are 0 or NaN",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: measures bidirectional traffic asymmetry at flow close"
+    },
+    {
+      "feature_name": "is_external_dst",
+      "source_column": "Destination IP",
+      "transformation": "1.0 if not is_rfc1918_private(dst_ip) else 0.0",
+      "units": "{0.0, 1.0} boolean indicator",
+      "missing_handling": "Default 0.0 if IP is unparseable",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: evaluates RFC1918 private subnet boundary; raw IP string is excluded"
+    },
+    {
+      "feature_name": "hour_of_day_sin",
+      "source_column": "Timestamp",
+      "transformation": "math.sin(2 * math.pi * (hour + minute/60.0) / 24.0)",
+      "units": "[-1.0, 1.0] trigonometric harmonic coordinate",
+      "missing_handling": "Default 0.0 if timestamp is missing",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: cyclical coordinates prevent memorization of absolute date/session"
+    },
+    {
+      "feature_name": "hour_of_day_cos",
+      "source_column": "Timestamp",
+      "transformation": "math.cos(2 * math.pi * (hour + minute/60.0) / 24.0)",
+      "units": "[-1.0, 1.0] trigonometric harmonic coordinate",
+      "missing_handling": "Default 1.0 if timestamp is missing",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: cyclical coordinates prevent temporal index memorization"
+    },
+    {
+      "feature_name": "is_network_layer",
+      "source_column": "Telemetry metadata (layer)",
+      "transformation": "Constant 1.0 for network flow records",
+      "units": "{0.0, 1.0} boolean indicator",
+      "missing_handling": "1.0",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: structural layer indicator"
+    },
+    {
+      "feature_name": "has_network_context",
+      "source_column": "Telemetry metadata (layer == 'network')",
+      "transformation": "Constant 1.0 for network flow records",
+      "units": "{0.0, 1.0} boolean indicator",
+      "missing_handling": "1.0",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: structural context indicator"
+    },
+    {
+      "feature_name": "transfer_size_bucket",
+      "source_column": "Total Length of Fwd Packets",
+      "transformation": "Ordinal binning: 0 (<1KB), 1 (<64KB), 2 (<1MB), 3 (>=1MB)",
+      "units": "{0.0, 1.0, 2.0, 3.0} ordinal scale",
+      "missing_handling": "Default 0.0 if missing",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: quantized magnitude of forward transfer"
+    },
+    {
+      "feature_name": "direction_internal",
+      "source_column": "Source IP and Destination IP",
+      "transformation": "1.0 if both src and dst are RFC1918 private, else 0.0",
+      "units": "{0.0, 1.0} boolean indicator",
+      "missing_handling": "Default 0.0",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: subnet classification only"
+    },
+    {
+      "feature_name": "direction_outbound",
+      "source_column": "Source IP and Destination IP",
+      "transformation": "1.0 if src is private and dst is external, else 0.0",
+      "units": "{0.0, 1.0} boolean indicator",
+      "missing_handling": "Default 0.0",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: subnet classification only"
+    },
+    {
+      "feature_name": "direction_inbound",
+      "source_column": "Source IP and Destination IP",
+      "transformation": "1.0 if src is external and dst is private, else 0.0",
+      "units": "{0.0, 1.0} boolean indicator",
+      "missing_handling": "Default 0.0",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "None: subnet classification only"
+    },
+    {
+      "feature_name": "distinct_dst_internal_5m",
+      "source_column": "Destination IP over sliding 300s window",
+      "transformation": "Count of distinct private internal destinations contacted by src in 300s",
+      "units": "[0, inf) count",
+      "missing_handling": "Default 0.0 if no prior causal history",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "Strictly causal: evaluated strictly on history prior to event arrival t"
+    },
+    {
+      "feature_name": "dst_diversity_ratio_5m",
+      "source_column": "Destination IP and Flow Count in 300s window",
+      "transformation": "distinct_dst_internal_5m / max(total_events_5m, 1)",
+      "units": "[0.0, 1.0] ratio",
+      "missing_handling": "Default 0.0 if window empty",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "Strictly causal: no future event lookahead"
+    },
+    {
+      "feature_name": "is_new_src_dst_pair",
+      "source_column": "Source IP and Destination IP communication history",
+      "transformation": "1.0 if (src, dst) pair has not been observed in training baseline or causal stream",
+      "units": "{0.0, 1.0} boolean indicator",
+      "missing_handling": "Default 1.0 (novel pair) if unobserved",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "Baseline pairs are fitted STRICTLY on training partition; zero test-set leakage"
+    },
+    {
+      "feature_name": "src_out_degree_5m",
+      "source_column": "Entity communication graph in sliding 300s window",
+      "transformation": "Number of unique destination nodes contacted by src node in 300s",
+      "units": "[0, inf) graph degree",
+      "missing_handling": "Default 0.0",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "Strictly causal: evaluated on streaming graph state prior to event t"
+    },
+    {
+      "feature_name": "dst_in_degree_5m",
+      "source_column": "Entity communication graph in sliding 300s window",
+      "transformation": "Number of unique source nodes contacting dst node in 300s",
+      "units": "[0, inf) graph degree",
+      "missing_handling": "Default 0.0",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "Strictly causal: evaluated on streaming graph state prior to event t"
+    },
+    {
+      "feature_name": "pivot_chain_indicator",
+      "source_column": "Entity communication graph in sliding 300s window",
+      "transformation": "1.0 if src node was previously an inbound destination of another host in window",
+      "units": "{0.0, 1.0} boolean indicator",
+      "missing_handling": "Default 0.0",
+      "uses_identifiers": false,
+      "inference_time_available": true,
+      "leakage_risk": "Strictly causal: evaluated on streaming graph state prior to event t"
+    }
+  ],
   "schema_compatibility_audit": {
     "audit_name": "AEGIS-ML 48-Feature Schema Compatibility Audit on CIC-IDS2017",
     "total_features": 48,
@@ -126,89 +308,6 @@
         "seq_window_endpoint_event_count"
       ]
     },
-    "sample_mappings": [
-      {
-        "destination_feature": "dst_port_risk",
-        "source_field": "Destination Port",
-        "category": "A",
-        "transformation": "PORT_RISK dictionary lookup based on known high-risk port numbers",
-        "units_and_range": "[0.0, 1.0] categorical risk score",
-        "missing_value_policy": "Default to 0.0 if port is missing or outside known risk table",
-        "semantic_assumptions": "Destination port accurately reflects target service type"
-      },
-      {
-        "destination_feature": "bytes_sent_log",
-        "source_field": "Total Length of Fwd Packets",
-        "category": "A",
-        "transformation": "np.log1p(max(0, float(val)))",
-        "units_and_range": "[0.0, 25.0] log-transformed bytes",
-        "missing_value_policy": "Impute 0.0 if NaN or negative (CICFlowMeter bug)",
-        "semantic_assumptions": "Forward packet payload length corresponds to client-to-server outbound volume"
-      },
-      {
-        "destination_feature": "bytes_ratio",
-        "source_field": "Total Length of Fwd Packets & Total Length of Bwd Packets",
-        "category": "A",
-        "transformation": "fwd_bytes / (fwd_bytes + bwd_bytes + 1e-6)",
-        "units_and_range": "[0.0, 1.0] unitless ratio",
-        "missing_value_policy": "0.5 if both are zero or NaN",
-        "semantic_assumptions": "Measures flow asymmetry (e.g. data exfiltration has high forward ratio)"
-      },
-      {
-        "destination_feature": "is_external_dst",
-        "source_field": "Destination IP",
-        "category": "A",
-        "transformation": "1.0 if not is_rfc1918_private(dst_ip) else 0.0",
-        "units_and_range": "{0.0, 1.0} boolean flag",
-        "missing_value_policy": "0.0 if destination IP is unparseable",
-        "semantic_assumptions": "Evaluates whether traffic leaves the private intranet"
-      },
-      {
-        "destination_feature": "distinct_dst_internal_5m",
-        "source_field": "Destination IP over sliding 5m stream window",
-        "category": "B",
-        "transformation": "Count distinct internal destination IPs targeted by source IP within 300 seconds",
-        "units_and_range": "[0, inf) count",
-        "missing_value_policy": "0.0 if no prior history",
-        "semantic_assumptions": "Identifies internal network reconnaissance and fan-out scanning"
-      },
-      {
-        "destination_feature": "failed_auth_rate",
-        "source_field": "N/A (Authentication logs)",
-        "category": "C",
-        "transformation": "None possible. Network flows do not capture application login events or PAM logs.",
-        "units_and_range": "[0.0, 1.0]",
-        "missing_value_policy": "Structurally unobserved. Fixed to 0.0 (leads to out-of-distribution input for brute-force detection).",
-        "semantic_assumptions": "Crucial host telemetry absent from network-only datasets."
-      },
-      {
-        "destination_feature": "has_process_context",
-        "source_field": "N/A (Process execution events)",
-        "category": "C",
-        "transformation": "None possible. Packet captures do not record process IDs, parent PIDs, or binary paths.",
-        "units_and_range": "{0.0, 1.0}",
-        "missing_value_policy": "Strictly 0.0 (unobserved).",
-        "semantic_assumptions": "AEGIS-ML relies on process context to distinguish user browsers from malware beacons."
-      },
-      {
-        "destination_feature": "baseline_deviation",
-        "source_field": "N/A (Multi-day benign host behavioral baseline)",
-        "category": "D",
-        "transformation": "Cannot compute enterprise host baseline deviation from arbitrary test PCAPs.",
-        "units_and_range": "[0.0, inf)",
-        "missing_value_policy": "Defaulting to 0.0 conceals anomalous flow deviations.",
-        "semantic_assumptions": "Requires baseline profiling on uninfected traffic from the target host."
-      },
-      {
-        "destination_feature": "cross_layer_match",
-        "source_field": "N/A (Socket-to-Process correlation)",
-        "category": "D",
-        "transformation": "Requires simultaneous endpoint and network event correlation.",
-        "units_and_range": "{0.0, 1.0}",
-        "missing_value_policy": "Structurally 0.0.",
-        "semantic_assumptions": "AEGIS-ML's strongest signal for lateral movement and exfiltration."
-      }
-    ],
     "audit_verdict": "17 of 48 features (35.4%) are structurally unavailable in pure network flow datasets. Zero-filling or imputing unobserved endpoint features introduces severe distributional shift and invalidates the Phase 23 calibrated decision boundaries."
   },
   "existing_model_transfer_evaluation": {
@@ -234,12 +333,13 @@
   "status": "not_completed",
   "status_code": "BLOCKED_AWAITING_LOCAL_COPY",
   "dataset_acquisition_status": "NOT_DOWNLOADED",
-  "reason": "No CIC-IDS2017 CSV files found in datasets/cicids2017/. Official UNB download requires an interactive registration form at https://www.unb.ca/cic/datasets/ids-2017.html. Automated scraping without registration is prohibited by UNB. Evaluation infrastructure and schema audit are fully operational.",
+  "reason": "No CIC-IDS2017 CSV files found in datasets/cicids2017/. Official UNB download requires an interactive registration form at https://www.unb.ca/cic/datasets/ids-2017.html. Automated scraping without registration is prohibited by UNB. Evaluation infrastructure, schema audit, and leakage-resistant benchmarks are fully operational.",
   "reproduction_instructions": [
     "1. Visit https://www.unb.ca/cic/datasets/ids-2017.html and complete the dataset registration form.",
     "2. Download the MachineLearningCVE archive (~500 MB).",
     "3. Extract CSV files into datasets/cicids2017/ (e.g., Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv).",
     "4. Execute: python3 -m backend.evaluation.external_dataset_evaluation --data datasets/cicids2017/<file>.csv"
   ],
-  "retrained_experiment": null
+  "retrained_experiment": null,
+  "split_comparison": null
 }

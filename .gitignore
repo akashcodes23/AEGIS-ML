@@ -20,9 +20,13 @@ datasets/
 
 # ML Models (keep directory structure with .gitkeep)
 data/models/*.pkl
+data/models/**/*.pkl
 data/models/*.pt
+data/models/**/*.pt
 data/models/*.joblib
+data/models/**/*.joblib
 !data/models/.gitkeep
+!data/models/external_experiments/.gitkeep
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
