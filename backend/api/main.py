@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -826,13 +826,20 @@ def detect_single_event(event: UnifiedEvent):
     try:
         if_score = app.state.if_detector.predict(event)
         base_dev = app.state.profiler.compute_deviation_score(event)
-        if getattr(app.state.classifier, "n_features", 15) == 48 and hasattr(app.state, "graph_tracker") and hasattr(app.state, "sequence_tracker"):
+        failed_auth = 1.0 if (event.status_code == 401 or str(event.auth_result or "").strip().lower() == "failure") else 0.0
+
+        if getattr(app.state.classifier, "n_features", 15) == 48:
+            if not (hasattr(app.state, "graph_tracker") and hasattr(app.state, "sequence_tracker")):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Required temporal graph and sequence trackers are uninitialized."
+                )
             features = extract_full_causal_features(
                 event=event,
                 if_score=if_score,
                 baseline_deviation=base_dev,
                 profiler=app.state.profiler,
-                failed_auth_rate=0.0,
+                failed_auth_rate=failed_auth,
                 graph_tracker=app.state.graph_tracker,
                 sequence_tracker=app.state.sequence_tracker,
             )
@@ -842,7 +849,7 @@ def detect_single_event(event: UnifiedEvent):
                 if_score=if_score,
                 baseline_deviation=base_dev,
                 profiler=app.state.profiler,
-                failed_auth_rate=0.0
+                failed_auth_rate=failed_auth
             )
         prediction = app.state.classifier.predict(features)
 
@@ -861,6 +868,14 @@ def detect_single_event(event: UnifiedEvent):
             confidence_qualification=prediction.confidence_qualification,
         )
         return result
+    except ValueError as ve:
+        logger.warning(f"Detection request rejected due to invalid input: {ve}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid feature inputs: {str(ve)}"
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Prediction failed: {e}")
         raise HTTPException(
@@ -869,8 +884,25 @@ def detect_single_event(event: UnifiedEvent):
         )
 
 
+def _sanitize_artifact_filename(filename: str) -> str:
+    """Validate that artifact filename contains no directory traversal elements."""
+    cleaned = str(filename).strip()
+    if not cleaned or ".." in cleaned or "/" in cleaned or "\\" in cleaned or Path(cleaned).name != cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid artifact filename: path traversal characters are prohibited."
+        )
+    return cleaned
+
+
 class ArtifactValidationRequest(BaseModel):
     artifact_filename: str
+    expected_sha256: Optional[str] = None
+
+
+class ModelReloadRequest(BaseModel):
+    artifact_filename: str
+    expected_sha256: Optional[str] = None
 
 
 @app.get("/api/model/lifecycle")
@@ -892,8 +924,12 @@ def validate_model_artifact(req: ArtifactValidationRequest):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model lifecycle manager is uninitialized."
         )
-    target_path = app.state.lifecycle_manager.models_dir / req.artifact_filename
-    is_valid, msg, meta = app.state.lifecycle_manager.validate_artifact_file(target_path)
+    safe_name = _sanitize_artifact_filename(req.artifact_filename)
+    target_path = app.state.lifecycle_manager.models_dir / safe_name
+    is_valid, msg, meta = app.state.lifecycle_manager.validate_artifact_file(
+        target_path,
+        expected_sha256=req.expected_sha256
+    )
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -903,6 +939,65 @@ def validate_model_artifact(req: ArtifactValidationRequest):
         "valid": True,
         "message": msg,
         "metadata": meta,
+    }
+
+
+@app.post("/api/model/reload")
+def reload_model_artifact(
+    req: ModelReloadRequest,
+    x_aegis_admin_key: Optional[str] = Header(None, alias="X-AEGIS-Admin-Key")
+):
+    """
+    Safely validate and activate a candidate model artifact.
+    Preserves currently active model if validation or activation fails.
+    """
+    configured_key = os.environ.get("AEGIS_ADMIN_KEY")
+    if configured_key:
+        if not x_aegis_admin_key or x_aegis_admin_key != configured_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized: invalid or missing admin authorization key."
+            )
+    else:
+        logger.warning("[Security] /api/model/reload executed without AEGIS_ADMIN_KEY configured.")
+
+    if not hasattr(app.state, "lifecycle_manager"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model lifecycle manager is uninitialized."
+        )
+
+    safe_name = _sanitize_artifact_filename(req.artifact_filename)
+    target_path = app.state.lifecycle_manager.models_dir / safe_name
+
+    # Pre-validation
+    is_valid, msg, meta = app.state.lifecycle_manager.validate_artifact_file(
+        target_path,
+        expected_sha256=req.expected_sha256
+    )
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Candidate artifact failed pre-activation validation: {msg}"
+        )
+
+    # Safe activation
+    success = app.state.lifecycle_manager.load_artifact(
+        target_path,
+        expected_sha256=req.expected_sha256
+    )
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to activate candidate artifact; active model was preserved."
+        )
+
+    app.state.classifier = app.state.lifecycle_manager.active_classifier
+    logger.info(f"[Lifecycle] Successfully activated new model artifact: {safe_name}")
+    return {
+        "status": "activated",
+        "message": f"Successfully activated artifact {safe_name}",
+        "lifecycle": app.state.lifecycle_manager.get_lifecycle_status()
     }
 
 

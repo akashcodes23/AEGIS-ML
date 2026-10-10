@@ -374,7 +374,7 @@ def test_phase23_uncalibrated_model_never_misrepresented():
 # ── Test 15: Invalid or missing inputs handled safely ─────────────────────────
 
 def test_phase23_nan_and_inf_handled_safely():
-    """Verify NaN and Inf in features do not raise unhandled exceptions."""
+    """Verify NaN and Inf in features are explicitly rejected with ValueError rather than silently coerced."""
     mgr = ModelLifecycleManager()
     mgr.load_artifact()
     clf = mgr.active_classifier
@@ -384,22 +384,34 @@ def test_phase23_nan_and_inf_handled_safely():
     features[1] = float("inf")
     features[2] = float("-inf")
 
-    pred = clf.predict(features)
-    assert isinstance(pred, ThreatPrediction)
-    assert np.isfinite(pred.confidence)
+    with pytest.raises(ValueError, match="Feature vector contains non-finite values"):
+        clf.predict(features)
 
 
 def test_phase23_backward_compatible_15_to_48_expansion():
-    """Verify passing a 15-dim vector to a 48-dim classifier pads with 0.0 safely."""
+    """
+    Verify passing a 15-dim vector to a 48-dim classifier is rejected rather than silently padded,
+    while a legacy 15-dim model artifact cleanly evaluates 15-dim inputs.
+    """
     mgr = ModelLifecycleManager()
     mgr.load_artifact()
     clf = mgr.active_classifier
     assert clf.n_features == 48
 
     vec_15 = [0.5] * 15
-    pred = clf.predict(vec_15)
-    assert isinstance(pred, ThreatPrediction)
-    assert pred.is_calibrated is True
+    # 48-feature model must reject incomplete 15-feature input
+    with pytest.raises(ValueError, match="Feature vector length mismatch"):
+        clf.predict(vec_15)
+
+    # Legacy 15-feature model cleanly evaluates 15-dim inputs
+    legacy_path = mgr.models_dir / "threat_classifier.pkl"
+    if legacy_path.exists():
+        legacy_clf = ThreatClassifier()
+        legacy_clf.load(str(legacy_path))
+        if legacy_clf.n_features == 15:
+            pred_legacy = legacy_clf.predict(vec_15)
+            assert isinstance(pred_legacy, ThreatPrediction)
+            assert pred_legacy.is_calibrated is False
 
 
 # ── Test 16: Lifecycle metadata identifies artifact actually used ─────────────

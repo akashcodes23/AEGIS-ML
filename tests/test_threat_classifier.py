@@ -21,15 +21,14 @@ def test_threat_classifier_feature_validation():
     with pytest.raises(ValueError, match="Feature vector length mismatch"):
         clf.validate_features([0.1] * 10)
 
-    # NaN / Inf handling
+    # NaN / Inf rejection
     features_with_nan = [0.1] * 14 + [np.nan]
-    cleaned = clf.validate_features(features_with_nan)
-    assert not np.isnan(cleaned).any()
-    assert cleaned[-1] == 0.0
+    with pytest.raises(ValueError, match="Feature vector contains non-finite values"):
+        clf.validate_features(features_with_nan)
 
     features_with_inf = [np.inf] + [0.1] * 14
-    cleaned_inf = clf.validate_features(features_with_inf)
-    assert not np.isinf(cleaned_inf).any()
+    with pytest.raises(ValueError, match="Feature vector contains non-finite values"):
+        clf.validate_features(features_with_inf)
 
 
 def test_threat_classifier_fit_predict_and_persistence(tmp_path):

@@ -106,25 +106,59 @@ class ModelLifecycleManager:
     def validate_artifact_file(
         self,
         artifact_path: Union[str, Path],
+        expected_sha256: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """
         Rigorously validate an artifact file before activation.
         
         Checks:
-        1. File exists and is within trusted models directory.
-        2. Successfully deserializes without errors.
-        3. Schema keys are present (`model`, `classes`, `feature_names`).
-        4. Model is fitted and has `predict_proba`.
-        5. Classes match canonical MITRE-aligned classes.
-        6. If calibrated: calibrator is present, fitted, and classes align with model classes.
-        7. Runs a test inference on a dummy feature vector to confirm numerical stability.
+        1. Path is strictly within trusted models directory (sandboxed).
+        2. File exists and has approved extension (.pkl, .joblib).
+        3. If expected_sha256 provided, cryptographic checksum must match.
+        4. If companion metadata file exists, recorded SHA-256 must match file SHA-256.
+        5. Successfully deserializes without errors.
+        6. Schema keys are present (`model`, `classes`, `feature_names`).
+        7. Model is fitted and has `predict_proba`.
+        8. Classes match canonical MITRE-aligned classes.
+        9. If calibrated: calibrator is present, fitted, and classes align with model classes.
+        10. Runs a test inference on a dummy feature vector to confirm numerical stability.
         """
         p = Path(artifact_path).resolve()
+        # Security: verify path sandbox FIRST to avoid leaking file existence outside models_dir
+        if not self._is_safe_path(p):
+            return False, "Untrusted path rejected: candidate artifact must reside within trusted models directory.", None
+
         if not p.exists():
             return False, f"Artifact file does not exist: {p.name}", None
 
-        if not self._is_safe_path(p):
-            return False, f"Untrusted path rejected: {p} is outside {self.models_dir}", None
+        if p.suffix.lower() not in (".pkl", ".joblib"):
+            return False, f"Unsupported file extension '{p.suffix}': only .pkl and .joblib artifacts are permitted.", None
+
+        # Check cryptographic SHA-256
+        actual_sha = compute_file_sha256(p)
+        if expected_sha256 is not None:
+            if actual_sha.lower() != expected_sha256.lower():
+                return False, f"Cryptographic checksum mismatch: expected {expected_sha256}, computed {actual_sha}", None
+
+        # Cross-validate against companion metadata JSON if present
+        companion_meta_candidates = [
+            p.parent / f"{p.stem}_metadata.json",
+            p.parent / f"{p.stem}.json"
+        ]
+        for meta_cand in companion_meta_candidates:
+            if meta_cand.exists():
+                try:
+                    with open(meta_cand, "r", encoding="utf-8") as f:
+                        meta_data = json.load(f)
+                    recorded_sha = meta_data.get("artifact_sha256")
+                    if recorded_sha and recorded_sha.lower() != actual_sha.lower():
+                        return False, (
+                            f"Artifact/metadata checksum mismatch: companion metadata recorded {recorded_sha[:12]}..., "
+                            f"actual file hash is {actual_sha[:12]}..."
+                        ), None
+                except Exception as exc:
+                    return False, f"Failed to parse companion metadata file: {exc}", None
+                break
 
         try:
             data = joblib.load(p)
@@ -208,7 +242,11 @@ class ModelLifecycleManager:
         }
         return True, "Artifact validation passed successfully", meta_summary
 
-    def load_artifact(self, artifact_path: Optional[Union[str, Path]] = None) -> bool:
+    def load_artifact(
+        self,
+        artifact_path: Optional[Union[str, Path]] = None,
+        expected_sha256: Optional[str] = None,
+    ) -> bool:
         """
         Safely load and activate a model artifact.
         
@@ -216,8 +254,11 @@ class ModelLifecycleManager:
         """
         if artifact_path is not None:
             target = Path(artifact_path)
+            if not self._is_safe_path(target):
+                logger.error(f"[Lifecycle] Untrusted artifact path rejected: {target}")
+                return False
             if not target.exists():
-                logger.warning(f"[Lifecycle] Specified artifact does not exist: {target}")
+                logger.warning(f"[Lifecycle] Specified artifact does not exist: {target.name}")
                 return False
         else:
             target = Path(CALIBRATED_CLASSIFIER_PATH)
@@ -228,7 +269,7 @@ class ModelLifecycleManager:
                 logger.warning(f"[Lifecycle] Neither calibrated nor legacy artifact found at {target}")
                 return False
 
-        is_valid, msg, meta = self.validate_artifact_file(target)
+        is_valid, msg, meta = self.validate_artifact_file(target, expected_sha256=expected_sha256)
         if not is_valid:
             logger.error(f"[Lifecycle] Artifact validation failed for {target.name}: {msg}")
             return False

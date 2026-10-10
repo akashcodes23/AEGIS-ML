@@ -90,18 +90,16 @@ class ThreatClassifier:
         """
         arr = np.asarray(features, dtype=np.float64).flatten()
         if len(arr) != self.n_features:
-            if len(arr) == 15 and self.n_features == 48:
-                padded = np.zeros(48, dtype=np.float64)
-                padded[:15] = arr
-                arr = padded
-            else:
-                raise ValueError(
-                    f"Feature vector length mismatch: expected {self.n_features} features, "
-                    f"got {len(arr)} (features: {self.feature_names})"
-                )
+            raise ValueError(
+                f"Feature vector length mismatch: expected {self.n_features} features, "
+                f"got {len(arr)}. Silent zero-padding or truncation is semantically invalid. "
+                f"Provide all {self.n_features} ordered features matching model feature schema."
+            )
         if not np.all(np.isfinite(arr)):
-            logger.warning("Non-finite values (NaN/Inf) encountered in feature vector; replacing with finite values")
-            arr = np.nan_to_num(arr, nan=0.0, posinf=1e5, neginf=-1e5)
+            raise ValueError(
+                "Feature vector contains non-finite values (NaN or Inf). "
+                "Invalid numerical inputs cannot be silently coerced into valid predictions."
+            )
         return arr
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
@@ -174,6 +172,11 @@ class ThreatClassifier:
         raw_probas_arr = self.model.predict_proba(X)[0]
         if not np.all(np.isfinite(raw_probas_arr)):
             raise ValueError("Base model produced non-finite raw probabilities.")
+        if not np.all((raw_probas_arr >= 0.0) & (raw_probas_arr <= 1.0)):
+            raise ValueError("Base model produced probabilities out of [0, 1] range.")
+        if abs(float(np.sum(raw_probas_arr)) - 1.0) > 1e-4:
+            raise ValueError(f"Base model probabilities do not sum to 1.0 (sum={np.sum(raw_probas_arr)}).")
+
         raw_classes = list(self.model.classes_)
         raw_probs = {
             str(cls): float(raw_probas_arr[raw_classes.index(cls)])
@@ -183,7 +186,9 @@ class ThreatClassifier:
 
         # 2. Calibrated probabilities (if calibrated)
         cal_probs: Optional[Dict[str, float]] = None
-        if self.is_calibrated and self.calibrator is not None:
+        if self.is_calibrated:
+            if self.calibrator is None:
+                raise ValueError("ThreatClassifier declares is_calibrated=True but calibrator is None.")
             cal_probas_arr = self.calibrator.predict_proba(X)[0]
             if not np.all(np.isfinite(cal_probas_arr)):
                 raise ValueError("Calibrator produced non-finite probabilities.")
