@@ -1,0 +1,245 @@
+{
+  "phase": "24",
+  "title": "External Dataset Evaluation and Generalization Audit",
+  "timestamp": "2026-10-10T08:16:08.131262+00:00",
+  "random_seed": 42,
+  "dataset_metadata": {
+    "dataset_name": "CIC-IDS2017",
+    "version": "1.0 (MachineLearningCVE)",
+    "institution": "Canadian Institute for Cybersecurity (CIC), University of New Brunswick (UNB)",
+    "citation": "Sharafaldin, I., Habibi Lashkari, A., Ghorbani, A. (2018). 'Toward Generating a New Intrusion Detection Dataset and Intrusion Traffic Characterization.' Proceedings of the 4th International Conference on Information Systems Security and Privacy (ICISSP).",
+    "official_url": "https://www.unb.ca/cic/datasets/ids-2017.html",
+    "licensing_and_distribution": "UNB requires interactive registration form with name, institutional affiliation, and email confirmation. Non-interactive scraping and redistributing raw CSVs via Git is restricted.",
+    "telemetry_modality": "Network flow records generated via CICFlowMeter (birectional flow statistics).",
+    "known_limitations": [
+      "Pure network flow telemetry: Zero host process, socket binding, or auth log context.",
+      "CICFlowMeter overflow bugs: produces Infinity and NaN in flow rate features, and negative duration values.",
+      "Duplicate records: Contains ~1% exact 5-tuple duplicates across capture windows.",
+      "Label casing and whitespace inconsistencies in raw CSVs.",
+      "High class imbalance: Benign traffic represents >80% of flows in most daily captures.",
+      "Targeted DoS/DDoS attacks dominate the attack volume, which are volumetric flooding rather than stealthy intrusions."
+    ],
+    "storage_requirements": {
+      "MachineLearningCVE_csv_archive": "~500 MB compressed, ~2.5 GB uncompressed (8 daily CSV files)",
+      "full_pcap_archive": "~50 GB compressed"
+    },
+    "expected_files": [
+      "Monday-WorkingHours.pcap_ISCX.csv",
+      "Tuesday-WorkingHours.pcap_ISCX.csv",
+      "Wednesday-workingHours.pcap_ISCX.csv",
+      "Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv",
+      "Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv",
+      "Friday-WorkingHours-Morning.pcap_ISCX.csv",
+      "Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv",
+      "Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv"
+    ]
+  },
+  "schema_compatibility_audit": {
+    "audit_name": "AEGIS-ML 48-Feature Schema Compatibility Audit on CIC-IDS2017",
+    "total_features": 48,
+    "counts": {
+      "category_a_directly_observable": 14,
+      "category_b_computable_transformations": 17,
+      "category_c_dependent_on_missing_telemetry": 10,
+      "category_d_dependent_on_unreconstructable_context": 7,
+      "category_e_unavailable_or_incompatible": 17
+    },
+    "percentages": {
+      "directly_observable_pct": 29.2,
+      "computable_transformations_pct": 35.4,
+      "incompatible_or_unobserved_pct": 35.4
+    },
+    "feature_lists": {
+      "category_a": [
+        "dst_port_risk",
+        "bytes_sent_log",
+        "bytes_ratio",
+        "is_external_dst",
+        "hour_of_day_sin",
+        "hour_of_day_cos",
+        "is_network_layer",
+        "is_endpoint_layer",
+        "is_application_layer",
+        "has_network_context",
+        "transfer_size_bucket",
+        "missing_dst_port",
+        "missing_bytes_sent",
+        "missing_bytes_received"
+      ],
+      "category_b": [
+        "distinct_dst_internal_5m",
+        "dst_diversity_ratio_5m",
+        "is_new_src_dst_pair",
+        "src_out_degree_5m",
+        "dst_in_degree_5m",
+        "pivot_chain_indicator",
+        "direction_internal",
+        "direction_outbound",
+        "direction_inbound",
+        "is_new_destination",
+        "connection_frequency",
+        "seq_window_event_count_host",
+        "seq_window_network_event_count",
+        "seq_time_since_last_host_event_log",
+        "seq_time_since_last_network_event_log",
+        "seq_window_has_external_transfer",
+        "seq_window_bytes_sent_sum_log"
+      ],
+      "category_c": [
+        "failed_auth_rate",
+        "missing_process_name",
+        "missing_auth_result",
+        "has_process_context",
+        "has_verified_socket_binding",
+        "seq_window_endpoint_event_count",
+        "seq_time_since_last_endpoint_event_log",
+        "seq_process_ancestry_observed",
+        "seq_parent_process_is_shell_or_script",
+        "seq_verified_socket_attribution"
+      ],
+      "category_d": [
+        "baseline_deviation",
+        "bytes_sent_zscore",
+        "conn_rate_zscore",
+        "cross_layer_match",
+        "if_anomaly_score",
+        "graph_new_connections",
+        "seq_sequence_completeness_score"
+      ],
+      "category_e": [
+        "baseline_deviation",
+        "bytes_sent_zscore",
+        "conn_rate_zscore",
+        "cross_layer_match",
+        "failed_auth_rate",
+        "graph_new_connections",
+        "has_process_context",
+        "has_verified_socket_binding",
+        "if_anomaly_score",
+        "missing_auth_result",
+        "missing_process_name",
+        "seq_parent_process_is_shell_or_script",
+        "seq_process_ancestry_observed",
+        "seq_sequence_completeness_score",
+        "seq_time_since_last_endpoint_event_log",
+        "seq_verified_socket_attribution",
+        "seq_window_endpoint_event_count"
+      ]
+    },
+    "sample_mappings": [
+      {
+        "destination_feature": "dst_port_risk",
+        "source_field": "Destination Port",
+        "category": "A",
+        "transformation": "PORT_RISK dictionary lookup based on known high-risk port numbers",
+        "units_and_range": "[0.0, 1.0] categorical risk score",
+        "missing_value_policy": "Default to 0.0 if port is missing or outside known risk table",
+        "semantic_assumptions": "Destination port accurately reflects target service type"
+      },
+      {
+        "destination_feature": "bytes_sent_log",
+        "source_field": "Total Length of Fwd Packets",
+        "category": "A",
+        "transformation": "np.log1p(max(0, float(val)))",
+        "units_and_range": "[0.0, 25.0] log-transformed bytes",
+        "missing_value_policy": "Impute 0.0 if NaN or negative (CICFlowMeter bug)",
+        "semantic_assumptions": "Forward packet payload length corresponds to client-to-server outbound volume"
+      },
+      {
+        "destination_feature": "bytes_ratio",
+        "source_field": "Total Length of Fwd Packets & Total Length of Bwd Packets",
+        "category": "A",
+        "transformation": "fwd_bytes / (fwd_bytes + bwd_bytes + 1e-6)",
+        "units_and_range": "[0.0, 1.0] unitless ratio",
+        "missing_value_policy": "0.5 if both are zero or NaN",
+        "semantic_assumptions": "Measures flow asymmetry (e.g. data exfiltration has high forward ratio)"
+      },
+      {
+        "destination_feature": "is_external_dst",
+        "source_field": "Destination IP",
+        "category": "A",
+        "transformation": "1.0 if not is_rfc1918_private(dst_ip) else 0.0",
+        "units_and_range": "{0.0, 1.0} boolean flag",
+        "missing_value_policy": "0.0 if destination IP is unparseable",
+        "semantic_assumptions": "Evaluates whether traffic leaves the private intranet"
+      },
+      {
+        "destination_feature": "distinct_dst_internal_5m",
+        "source_field": "Destination IP over sliding 5m stream window",
+        "category": "B",
+        "transformation": "Count distinct internal destination IPs targeted by source IP within 300 seconds",
+        "units_and_range": "[0, inf) count",
+        "missing_value_policy": "0.0 if no prior history",
+        "semantic_assumptions": "Identifies internal network reconnaissance and fan-out scanning"
+      },
+      {
+        "destination_feature": "failed_auth_rate",
+        "source_field": "N/A (Authentication logs)",
+        "category": "C",
+        "transformation": "None possible. Network flows do not capture application login events or PAM logs.",
+        "units_and_range": "[0.0, 1.0]",
+        "missing_value_policy": "Structurally unobserved. Fixed to 0.0 (leads to out-of-distribution input for brute-force detection).",
+        "semantic_assumptions": "Crucial host telemetry absent from network-only datasets."
+      },
+      {
+        "destination_feature": "has_process_context",
+        "source_field": "N/A (Process execution events)",
+        "category": "C",
+        "transformation": "None possible. Packet captures do not record process IDs, parent PIDs, or binary paths.",
+        "units_and_range": "{0.0, 1.0}",
+        "missing_value_policy": "Strictly 0.0 (unobserved).",
+        "semantic_assumptions": "AEGIS-ML relies on process context to distinguish user browsers from malware beacons."
+      },
+      {
+        "destination_feature": "baseline_deviation",
+        "source_field": "N/A (Multi-day benign host behavioral baseline)",
+        "category": "D",
+        "transformation": "Cannot compute enterprise host baseline deviation from arbitrary test PCAPs.",
+        "units_and_range": "[0.0, inf)",
+        "missing_value_policy": "Defaulting to 0.0 conceals anomalous flow deviations.",
+        "semantic_assumptions": "Requires baseline profiling on uninfected traffic from the target host."
+      },
+      {
+        "destination_feature": "cross_layer_match",
+        "source_field": "N/A (Socket-to-Process correlation)",
+        "category": "D",
+        "transformation": "Requires simultaneous endpoint and network event correlation.",
+        "units_and_range": "{0.0, 1.0}",
+        "missing_value_policy": "Structurally 0.0.",
+        "semantic_assumptions": "AEGIS-ML's strongest signal for lateral movement and exfiltration."
+      }
+    ],
+    "audit_verdict": "17 of 48 features (35.4%) are structurally unavailable in pure network flow datasets. Zero-filling or imputing unobserved endpoint features introduces severe distributional shift and invalidates the Phase 23 calibrated decision boundaries."
+  },
+  "existing_model_transfer_evaluation": {
+    "evaluation_mode": "EXISTING_MODEL_TRANSFER_EVALUATION",
+    "production_model_path": "/Users/akashgpatil/major_project/AEGIS-ML/data/models/calibrated_threat_classifier.pkl",
+    "production_model_exists": true,
+    "production_model_version": "23.0.0",
+    "expected_feature_count": 48,
+    "is_calibrated": true,
+    "calibration_method": "isotonic",
+    "transfer_feasible": false,
+    "status": "NOT_FEASIBLE",
+    "limitation_category": "INCOMPATIBLE_TELEMETRY",
+    "blocking_reasons": [
+      "AEGIS-ML's calibrated model strictly requires 48 input features; CIC-IDS2017 provides only network flow telemetry.",
+      "17 features (35.4% of schema) represent endpoint processes, parent-child process ancestry, PAM/auth failures, and cross-layer socket bindings.",
+      "Silently imputing 0.0 for absent endpoint features corrupts calibrated probabilities: the model was calibrated on dual-telemetry synthetic data where endpoint indicators actively discriminate attacks.",
+      "Truncating the feature vector to 15 features is prohibited by model validation (ThreatClassifier enforces exact feature dimensionality).",
+      "Retraining or fine-tuning the production model simply to score higher on external benchmark data violates project integrity rules."
+    ],
+    "conclusion": "Direct evaluation of calibrated_threat_classifier.pkl on CIC-IDS2017 is mathematically and scientifically INVALID. The model was trained on dual-telemetry events and cannot be transferred to single-modality network-only flow datasets without severe telemetry truncation."
+  },
+  "status": "not_completed",
+  "status_code": "BLOCKED_AWAITING_LOCAL_COPY",
+  "dataset_acquisition_status": "NOT_DOWNLOADED",
+  "reason": "No CIC-IDS2017 CSV files found in datasets/cicids2017/. Official UNB download requires an interactive registration form at https://www.unb.ca/cic/datasets/ids-2017.html. Automated scraping without registration is prohibited by UNB. Evaluation infrastructure and schema audit are fully operational.",
+  "reproduction_instructions": [
+    "1. Visit https://www.unb.ca/cic/datasets/ids-2017.html and complete the dataset registration form.",
+    "2. Download the MachineLearningCVE archive (~500 MB).",
+    "3. Extract CSV files into datasets/cicids2017/ (e.g., Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv).",
+    "4. Execute: python3 -m backend.evaluation.external_dataset_evaluation --data datasets/cicids2017/<file>.csv"
+  ],
+  "retrained_experiment": null
+}
