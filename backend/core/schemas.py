@@ -83,6 +83,11 @@ class DetectionResult(BaseModel):
     is_alert: bool = False
     fused_score: float = 0.0
     local_deviations: Dict[str, float] = {}
+    is_calibrated: bool = False
+    calibrated_probabilities: Optional[Dict[str, float]] = None
+    raw_probabilities: Optional[Dict[str, float]] = None
+    model_version: Optional[str] = None
+    confidence_qualification: Optional[str] = None
 
 
 class Alert(BaseModel):
@@ -115,6 +120,12 @@ class Alert(BaseModel):
     is_false_positive: Optional[bool] = None  # None if unlabelled/unknown
     fp_reason: Optional[str] = None
     status: Literal["open", "investigating", "resolved", "isolated"] = "open"
+    is_calibrated: bool = False
+    calibrated_confidence: Optional[float] = None
+    calibrated_probabilities: Optional[Dict[str, float]] = None
+    raw_probabilities: Optional[Dict[str, float]] = None
+    model_version: Optional[str] = None
+    confidence_qualification: Optional[str] = None
 
 
 class TimelineEntry(BaseModel):

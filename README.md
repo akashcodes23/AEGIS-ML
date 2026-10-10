@@ -197,6 +197,9 @@ Dashboard will be available at [http://localhost:5173](http://localhost:5173).
 ### REST Endpoints
 - `GET /health`: Health status, model readiness, and dataset availability.
 - `POST /api/detect`: Direct prediction for a single `UnifiedEvent` payload via the full ML pipeline.
+- `GET /api/model/lifecycle`: Active model version, calibration status, schema version, and lifecycle inspection.
+- `POST /api/model/validate`: Dry-run validation of a candidate model artifact.
+- `POST /api/model/reload`: Safe activation of a candidate model artifact with rollback protection.
 - `GET /api/alerts`: List latest 100 detected alerts.
 - `GET /api/stats/summary`: Aggregate statistics (total events, alerts by severity, EPS).
 - `GET /api/analysis/files`: List available dataset files.
@@ -211,6 +214,6 @@ Dashboard will be available at [http://localhost:5173](http://localhost:5173).
 
 ## ⚠️ Known Limitations & Scope
 
-1. **Uncalibrated Random Forest Probabilities:** Random Forest class probabilities represent tree consensus rather than Bayesian posterior probabilities. Threat severity is decoupled from raw confidence.
+1. **Confidence Calibration & Benchmark Boundaries:** In Phase 23, the serving pipeline integrates isotonic calibration (`CalibratedClassifierCV`) mapping raw tree plurality votes to empirical posterior probabilities. However, because calibration was fitted and evaluated on synthetic benchmark scenarios, calibrated scores do not guarantee empirical risk levels in unmonitored real-world enterprise environments.
 2. **Tabular Feature Extraction vs. Deep Temporal Graphs:** AEGIS-ML utilizes NetworkX for topological graph metrics combined with tabular tree ensembles. A deep PyTorch Temporal Graph Neural Network (T-GNN) is part of the future research roadmap.
 3. **Synthetic vs. Real-World Benchmarks:** While the model achieves high F1 on synthetic and CICIDS2017 flow datasets, real-world deployment requires continuous baseline adaptation and ongoing false-positive calibration.

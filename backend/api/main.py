@@ -33,7 +33,10 @@ try:
     from backend.detection.isolation_forest import IsolationForestDetector
     from backend.detection.baseline_profiler import BehavioralBaselineProfiler
     from backend.detection.threat_classifier import ThreatClassifier
-    from backend.detection.model_trainer import extract_features
+    from backend.detection.model_trainer import extract_features, extract_full_causal_features
+    from backend.detection.model_lifecycle import ModelLifecycleManager
+    from backend.detection.temporal_graph_extractor import CausalTemporalGraphTracker
+    from backend.detection.sequence_context import CausalSequenceTracker
     from backend.correlation.weighted_fusion import WeightedEvidenceFusion
     from backend.correlation.incident_correlator import IncidentCorrelator
     from backend.explainability.explainer import LocalFeatureExplainer
@@ -51,7 +54,10 @@ except ModuleNotFoundError:
     from detection.isolation_forest import IsolationForestDetector
     from detection.baseline_profiler import BehavioralBaselineProfiler
     from detection.threat_classifier import ThreatClassifier
-    from detection.model_trainer import extract_features
+    from detection.model_trainer import extract_features, extract_full_causal_features
+    from detection.model_lifecycle import ModelLifecycleManager
+    from detection.temporal_graph_extractor import CausalTemporalGraphTracker
+    from detection.sequence_context import CausalSequenceTracker
     from correlation.weighted_fusion import WeightedEvidenceFusion
     from correlation.incident_correlator import IncidentCorrelator
     from explainability.explainer import LocalFeatureExplainer
@@ -252,28 +258,36 @@ def _load_models_from_disk(state) -> bool:
         state.profiler = BehavioralBaselineProfiler()
         state.profiler.load()
 
-        state.classifier = ThreatClassifier()
-        clf_loaded = state.classifier.load()
+        state.graph_tracker = CausalTemporalGraphTracker()
+        state.sequence_tracker = CausalSequenceTracker(window_seconds=300.0)
+
+        # Initialize ModelLifecycleManager and load versioned/calibrated model
+        state.lifecycle_manager = ModelLifecycleManager()
+        clf_loaded = state.lifecycle_manager.load_artifact()
+        if clf_loaded and state.lifecycle_manager.active_classifier:
+            state.classifier = state.lifecycle_manager.active_classifier
+        else:
+            state.classifier = ThreatClassifier()
+            clf_loaded = state.classifier.load()
 
         state.fusion_engine = WeightedEvidenceFusion()
 
         # Initialize incident correlation and local explainer
         state.correlator = IncidentCorrelator(time_window_seconds=600, dedup_window_seconds=60)
         feature_names = (
-            state.classifier.FEATURE_NAMES
-            if (clf_loaded and hasattr(state.classifier, "FEATURE_NAMES"))
-            else [
-                "bytes_sent", "bytes_received", "duration_ms", "hour_of_day",
-                "is_business_hours", "bytes_ratio", "port_risk_score",
-                "connections_per_minute", "src_internal", "dst_internal",
-                "if_score", "baseline_deviation", "graph_degree",
-                "graph_external_ratio", "failed_auth_rate"
-            ]
+            state.classifier.feature_names
+            if (clf_loaded and hasattr(state.classifier, "feature_names"))
+            else getattr(state.classifier, "FEATURE_NAMES", [])
         )
         state.explainer = LocalFeatureExplainer(feature_names=feature_names)
 
         fitted = clf_loaded and state.classifier.is_fitted
-        logger.info(f"[AEGIS] Models loaded from disk — classifier fitted={fitted}, correlator initialized")
+        is_cal = getattr(state.classifier, "is_calibrated", False)
+        ver = getattr(state.classifier, "model_version", "legacy")
+        logger.info(
+            f"[AEGIS] Models loaded from disk — classifier fitted={fitted}, "
+            f"version={ver}, calibrated={is_cal}, correlator initialized"
+        )
         return fitted
     except Exception as e:
         logger.error(f"[AEGIS] Model load error: {e}")
@@ -378,13 +392,24 @@ async def dataset_worker(state):
                         base_dev = state.profiler.compute_deviation_score(event)
                         failed_auth = 1.0 if (event.status_code == 401 or event.auth_result == "failure") else 0.0
 
-                        features = extract_features(
-                            event=event,
-                            if_score=if_score,
-                            baseline_deviation=base_dev,
-                            profiler=state.profiler,
-                            failed_auth_rate=failed_auth
-                        )
+                        if getattr(state.classifier, "n_features", 15) == 48 and hasattr(state, "graph_tracker") and hasattr(state, "sequence_tracker"):
+                            features = extract_full_causal_features(
+                                event=event,
+                                if_score=if_score,
+                                baseline_deviation=base_dev,
+                                profiler=state.profiler,
+                                failed_auth_rate=failed_auth,
+                                graph_tracker=state.graph_tracker,
+                                sequence_tracker=state.sequence_tracker,
+                            )
+                        else:
+                            features = extract_features(
+                                event=event,
+                                if_score=if_score,
+                                baseline_deviation=base_dev,
+                                profiler=state.profiler,
+                                failed_auth_rate=failed_auth
+                            )
 
                         prediction = state.classifier.predict(features)
 
@@ -425,6 +450,12 @@ async def dataset_worker(state):
                                 fingerprint=fp,
                                 raw_event=ev_raw,
                                 is_false_positive=None,
+                                is_calibrated=prediction.is_calibrated,
+                                calibrated_confidence=round(prediction.confidence, 4) if prediction.is_calibrated else None,
+                                calibrated_probabilities=prediction.calibrated_probabilities,
+                                raw_probabilities=prediction.raw_probabilities,
+                                model_version=prediction.model_version,
+                                confidence_qualification=prediction.confidence_qualification,
                             )
                         elif is_anomalous:
                             # Genuine statistical anomaly alert without forcing supervised class
@@ -795,13 +826,24 @@ def detect_single_event(event: UnifiedEvent):
     try:
         if_score = app.state.if_detector.predict(event)
         base_dev = app.state.profiler.compute_deviation_score(event)
-        features = extract_features(
-            event=event,
-            if_score=if_score,
-            baseline_deviation=base_dev,
-            profiler=app.state.profiler,
-            failed_auth_rate=0.0
-        )
+        if getattr(app.state.classifier, "n_features", 15) == 48 and hasattr(app.state, "graph_tracker") and hasattr(app.state, "sequence_tracker"):
+            features = extract_full_causal_features(
+                event=event,
+                if_score=if_score,
+                baseline_deviation=base_dev,
+                profiler=app.state.profiler,
+                failed_auth_rate=0.0,
+                graph_tracker=app.state.graph_tracker,
+                sequence_tracker=app.state.sequence_tracker,
+            )
+        else:
+            features = extract_features(
+                event=event,
+                if_score=if_score,
+                baseline_deviation=base_dev,
+                profiler=app.state.profiler,
+                failed_auth_rate=0.0
+            )
         prediction = app.state.classifier.predict(features)
 
         result = app.state.fusion_engine.fuse(
@@ -811,7 +853,12 @@ def detect_single_event(event: UnifiedEvent):
             graph_score=0.0,
             threat_type=prediction.threat_type,
             classifier_confidence=prediction.confidence,
-            severity=prediction.severity
+            severity=prediction.severity,
+            is_calibrated=prediction.is_calibrated,
+            calibrated_probabilities=prediction.calibrated_probabilities,
+            raw_probabilities=prediction.raw_probabilities,
+            model_version=prediction.model_version,
+            confidence_qualification=prediction.confidence_qualification,
         )
         return result
     except Exception as e:
@@ -820,6 +867,43 @@ def detect_single_event(event: UnifiedEvent):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error executing threat prediction."
         )
+
+
+class ArtifactValidationRequest(BaseModel):
+    artifact_filename: str
+
+
+@app.get("/api/model/lifecycle")
+def get_model_lifecycle():
+    """Return inspection metadata, calibration status, and version of active model."""
+    if not hasattr(app.state, "lifecycle_manager"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model lifecycle manager is uninitialized."
+        )
+    return app.state.lifecycle_manager.get_lifecycle_status()
+
+
+@app.post("/api/model/validate")
+def validate_model_artifact(req: ArtifactValidationRequest):
+    """Validate a candidate model artifact inside data/models/ before activation."""
+    if not hasattr(app.state, "lifecycle_manager"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model lifecycle manager is uninitialized."
+        )
+    target_path = app.state.lifecycle_manager.models_dir / req.artifact_filename
+    is_valid, msg, meta = app.state.lifecycle_manager.validate_artifact_file(target_path)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Artifact validation rejected: {msg}"
+        )
+    return {
+        "valid": True,
+        "message": msg,
+        "metadata": meta,
+    }
 
 
 # ── WebSocket Endpoint ────────────────────────────────────────────────────────

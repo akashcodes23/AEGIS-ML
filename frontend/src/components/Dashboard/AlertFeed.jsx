@@ -93,12 +93,30 @@ function AlertRow({ alert, index }) {
                 Synthetic
               </span>
             )}
+            {alert.is_calibrated && (
+              <span
+                title="Calibrated probability (evaluated on synthetic scenario benchmarks)"
+                style={{
+                  fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8,
+                  background: 'rgba(16, 185, 129, 0.1)', color: '#10b981',
+                  border: '1px solid rgba(16, 185, 129, 0.2)'
+                }}
+              >
+                Calibrated
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 11, color: 'var(--accent-info)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
             <Shield size={12} />
-            {alert.classifier_probability != null
-              ? `${Math.round(alert.classifier_probability * 100)}% Consensus`
-              : (alert.anomaly_score ? `Score ${Number(alert.anomaly_score).toFixed(2)}` : `${Math.round((alert.confidence || 0) * 100)}% Risk`)}
+            {alert.is_calibrated ? (
+              <span title="Calibrated posterior probability (synthetic scenario evaluation; real-world empirical risk not guaranteed)">
+                {Math.round((alert.calibrated_confidence != null ? alert.calibrated_confidence : alert.confidence) * 100)}% Calibrated Conf.
+              </span>
+            ) : alert.classifier_probability != null ? (
+              `${Math.round(alert.classifier_probability * 100)}% Consensus`
+            ) : (
+              alert.anomaly_score ? `Score ${Number(alert.anomaly_score).toFixed(2)}` : `${Math.round((alert.confidence || 0) * 100)}% Risk`
+            )}
           </div>
         </div>
       </div>

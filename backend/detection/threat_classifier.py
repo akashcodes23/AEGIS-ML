@@ -20,19 +20,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ThreatPrediction:
+    """Prediction output from ThreatClassifier, exposing calibrated confidence and diagnostics."""
     threat_type: str
     confidence: float
     severity: Optional[str]
     feature_importances: Dict[str, float]
     raw_probabilities: Dict[str, float]
+    calibrated_probabilities: Optional[Dict[str, float]] = None
+    is_calibrated: bool = False
+    calibration_method: Optional[str] = None
+    model_version: Optional[str] = None
+    confidence_qualification: Optional[str] = None
 
 
 class ThreatClassifier:
     """
-    Random Forest multi-class threat classifier for AEGIS-ML.
+    Random Forest multi-class threat classifier for AEGIS-ML with probability calibration support.
     
-    Predicts MITRE-aligned canonical threat categories from normalized 15-dimensional
-    behavioral and telemetry feature vectors.
+    Predicts MITRE-aligned canonical threat categories from normalized behavioral and telemetry
+    feature vectors (supporting 15, 36, or 48 feature representations).
     """
     CLASSES = ["benign", "brute_force", "lateral_movement", "data_exfiltration", "c2_beaconing"]
     N_FEATURES = 15
@@ -54,7 +60,12 @@ class ThreatClassifier:
         "data_exfiltration": "critical",
     }
 
-    def __init__(self, random_state: int = 42, feature_names: Optional[List[str]] = None):
+    def __init__(
+        self,
+        random_state: int = 42,
+        feature_names: Optional[List[str]] = None,
+        model_version: str = "23.0.0",
+    ):
         self.random_state = random_state
         self.feature_names = list(feature_names) if feature_names is not None else list(self.FEATURE_NAMES)
         self.n_features = len(self.feature_names)
@@ -64,6 +75,12 @@ class ThreatClassifier:
             random_state=self.random_state,
             class_weight="balanced"
         )
+        self.calibrator = None
+        self.is_calibrated = False
+        self.calibration_method: Optional[str] = None
+        self.model_version = model_version
+        self.schema_version = "1.0.0"
+        self.classes: List[str] = list(self.CLASSES)
         self.is_fitted = False
         self.metadata: Dict[str, Any] = {}
 
@@ -73,17 +90,18 @@ class ThreatClassifier:
         """
         arr = np.asarray(features, dtype=np.float64).flatten()
         if len(arr) != self.n_features:
-            raise ValueError(
-                f"Feature vector length mismatch: expected {self.n_features} features, "
-                f"got {len(arr)} (features: {self.feature_names})"
-            )
-        if np.isnan(arr).any():
-            # Cleanly replace NaN with 0.0 to prevent unhandled crashes, but warn
-            logger.warning("NaN encountered in feature vector; replacing with 0.0")
-            arr = np.nan_to_num(arr, nan=0.0)
-        if np.isinf(arr).any():
-            logger.warning("Inf encountered in feature vector; clipping to valid range")
-            arr = np.nan_to_num(arr, posinf=1e6, neginf=-1e6)
+            if len(arr) == 15 and self.n_features == 48:
+                padded = np.zeros(48, dtype=np.float64)
+                padded[:15] = arr
+                arr = padded
+            else:
+                raise ValueError(
+                    f"Feature vector length mismatch: expected {self.n_features} features, "
+                    f"got {len(arr)} (features: {self.feature_names})"
+                )
+        if not np.all(np.isfinite(arr)):
+            logger.warning("Non-finite values (NaN/Inf) encountered in feature vector; replacing with finite values")
+            arr = np.nan_to_num(arr, nan=0.0, posinf=1e5, neginf=-1e5)
         return arr
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
@@ -102,22 +120,46 @@ class ThreatClassifier:
 
         self.model.fit(X, y)
         self.is_fitted = True
+        self.classes = list(self.model.classes_)
         self.metadata = {
             "feature_names": self.feature_names,
-            "classes": list(self.model.classes_),
+            "classes": self.classes,
             "sklearn_version": sklearn.__version__,
             "n_samples": len(X),
-            "n_features": self.n_features
+            "n_features": self.n_features,
+            "model_version": self.model_version,
+            "is_calibrated": False,
         }
+
+    def fit_calibrator(self, X_val: np.ndarray, y_val: np.ndarray, method: str = "isotonic") -> None:
+        """
+        Fit a probability calibrator on validation data using FrozenEstimator.
+        Guarantees that base model weights are not modified and test data is not seen.
+        """
+        from sklearn.calibration import CalibratedClassifierCV
+        from sklearn.frozen import FrozenEstimator
+
+        if not self.is_fitted:
+            raise NotFittedError("Base model must be fitted before fitting calibrator.")
+
+        cal = CalibratedClassifierCV(estimator=FrozenEstimator(self.model), method=method)
+        cal.fit(X_val, y_val)
+        self.calibrator = cal
+        self.is_calibrated = True
+        self.calibration_method = method
+        self.metadata["is_calibrated"] = True
+        self.metadata["calibration_method"] = method
 
     def predict(self, features: List[float]) -> ThreatPrediction:
         """
         Predict threat category and derive confidence & severity.
         
-        NOTE ON CONFIDENCE:
-        The probability returned by RandomForestClassifier represents the fraction of trees
-        voting for the predicted class. It is NOT a calibrated Bayesian posterior real-world
-        probability. Threat severity is determined by an explicit policy based on attack impact.
+        When calibrated:
+        Returns calibrated posterior probabilities (with sum-to-one validation) and
+        sets confidence to the calibrated posterior probability.
+        
+        When uncalibrated:
+        Returns raw ensemble tree-vote agreement fractions.
         """
         if not self.is_fitted:
             raise NotFittedError(
@@ -127,19 +169,52 @@ class ThreatClassifier:
 
         features_arr = self.validate_features(features)
         X = features_arr.reshape(1, -1)
-        probas = self.model.predict_proba(X)[0]
-        max_idx = int(np.argmax(probas))
-        confidence = float(probas[max_idx])
-        predicted_class = str(self.model.classes_[max_idx])
 
-        # Map probabilities for all classes
+        # 1. Raw ensemble tree-vote probabilities
+        raw_probas_arr = self.model.predict_proba(X)[0]
+        if not np.all(np.isfinite(raw_probas_arr)):
+            raise ValueError("Base model produced non-finite raw probabilities.")
+        raw_classes = list(self.model.classes_)
         raw_probs = {
-            str(cls): float(probas[idx])
-            for idx, cls in enumerate(self.model.classes_)
+            str(cls): float(raw_probas_arr[raw_classes.index(cls)])
+            for cls in self.classes
+            if cls in raw_classes
         }
 
-        severity = self.determine_severity(predicted_class, confidence)
+        # 2. Calibrated probabilities (if calibrated)
+        cal_probs: Optional[Dict[str, float]] = None
+        if self.is_calibrated and self.calibrator is not None:
+            cal_probas_arr = self.calibrator.predict_proba(X)[0]
+            if not np.all(np.isfinite(cal_probas_arr)):
+                raise ValueError("Calibrator produced non-finite probabilities.")
+            if not np.all((cal_probas_arr >= 0.0) & (cal_probas_arr <= 1.0)):
+                raise ValueError("Calibrator produced probabilities out of [0, 1] range.")
+            if abs(float(np.sum(cal_probas_arr)) - 1.0) > 1e-4:
+                raise ValueError(f"Calibrator probabilities do not sum to 1.0 (sum={np.sum(cal_probas_arr)}).")
 
+            cal_classes = list(self.calibrator.classes_)
+            cal_probs = {
+                str(cls): float(cal_probas_arr[cal_classes.index(cls)])
+                for cls in self.classes
+                if cls in cal_classes
+            }
+            active_probs = cal_probs
+            confidence_qualification = (
+                "Calibrated probability evaluated on synthetic scenario benchmark; "
+                "real-world empirical risk not guaranteed."
+            )
+        else:
+            active_probs = raw_probs
+            confidence_qualification = (
+                "Uncalibrated tree-vote consensus fraction; does not represent calibrated probability."
+            )
+
+        # 3. Decision: argmax over active probabilities
+        best_cls = max(active_probs.keys(), key=lambda c: active_probs[c])
+        confidence = float(active_probs[best_cls])
+        severity = self.determine_severity(best_cls, confidence)
+
+        # 4. Feature importances
         importances = {}
         if hasattr(self.model, "feature_importances_"):
             importances = {
@@ -149,11 +224,16 @@ class ThreatClassifier:
             }
 
         return ThreatPrediction(
-            threat_type=predicted_class,
+            threat_type=best_cls,
             confidence=confidence,
             severity=severity,
             feature_importances=importances,
-            raw_probabilities=raw_probs
+            raw_probabilities=raw_probs,
+            calibrated_probabilities=cal_probs,
+            is_calibrated=self.is_calibrated,
+            calibration_method=self.calibration_method,
+            model_version=self.model_version,
+            confidence_qualification=confidence_qualification,
         )
 
     def determine_severity(self, threat_type: str, confidence: float) -> Optional[str]:
@@ -167,7 +247,7 @@ class ThreatClassifier:
 
         base = self.BASE_SEVERITY.get(threat_type, "medium")
 
-        # Modulate severity if model tree consensus is exceptionally high or marginal
+        # Modulate severity if model consensus/confidence is exceptionally high or marginal
         if confidence >= 0.95 and base == "medium":
             return "high"
         if confidence < 0.40 and base == "critical":
@@ -176,25 +256,31 @@ class ThreatClassifier:
         return base
 
     def save(self, path: Optional[str] = None) -> str:
-        """Serialize model artifact with full metadata."""
+        """Serialize model artifact with full metadata and versioning."""
         if not self.is_fitted:
             raise NotFittedError("Cannot save unfitted ThreatClassifier.")
         target_path = path or RF_CLASSIFIER_PATH
         Path(target_path).parent.mkdir(parents=True, exist_ok=True)
         artifact = {
+            "schema_version": self.schema_version,
+            "model_version": self.model_version,
             "is_fitted": self.is_fitted,
+            "is_calibrated": self.is_calibrated,
+            "calibration_method": self.calibration_method,
             "model": self.model,
-            "feature_names": self.FEATURE_NAMES,
-            "classes": list(self.model.classes_),
+            "calibrator": self.calibrator,
+            "feature_names": self.feature_names,
+            "classes": list(self.classes),
+            "n_features": self.n_features,
             "sklearn_version": sklearn.__version__,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
         joblib.dump(artifact, target_path)
-        logger.info(f"ThreatClassifier saved to {target_path}")
+        logger.info(f"ThreatClassifier saved to {target_path} (calibrated={self.is_calibrated})")
         return str(target_path)
 
     def load(self, path: Optional[str] = None) -> bool:
-        """Load model artifact and validate feature/class compatibility."""
+        """Load model artifact, validating feature/class compatibility and calibration."""
         target_path = path or RF_CLASSIFIER_PATH
         if not os.path.exists(target_path):
             logger.warning(f"ThreatClassifier artifact not found at {target_path}")
@@ -207,18 +293,38 @@ class ThreatClassifier:
                 self.model = data["model"]
                 self.is_fitted = bool(data.get("is_fitted", True))
                 self.metadata = data.get("metadata", {})
+                self.model_version = data.get("model_version", "legacy")
+                self.schema_version = data.get("schema_version", "1.0.0")
+
+                # Calibration inspection
+                calibrator = data.get("calibrator")
+                is_calibrated = bool(data.get("is_calibrated", False))
+                if is_calibrated and calibrator is not None and hasattr(calibrator, "predict_proba"):
+                    self.calibrator = calibrator
+                    self.is_calibrated = True
+                    self.calibration_method = data.get("calibration_method", "isotonic")
+                else:
+                    self.calibrator = None
+                    self.is_calibrated = False
+                    self.calibration_method = None
+
                 saved_features = data.get("feature_names") or self.metadata.get("feature_names")
                 if saved_features:
                     self.feature_names = list(saved_features)
                     self.n_features = len(self.feature_names)
-                if saved_features and saved_features != self.FEATURE_NAMES:
-                    logger.warning(
-                        f"Feature names in loaded model ({saved_features}) differ from "
-                        f"current default ({self.FEATURE_NAMES})"
-                    )
+
+                saved_classes = data.get("classes") or list(self.model.classes_)
+                self.classes = list(saved_classes)
             else:
+                # Raw model fallback
                 self.model = data
                 self.is_fitted = hasattr(self.model, "classes_")
+                self.calibrator = None
+                self.is_calibrated = False
+                self.calibration_method = None
+                if hasattr(self.model, "classes_"):
+                    self.classes = list(self.model.classes_)
+
             return self.is_fitted
         except Exception as e:
             logger.error(f"Failed to load ThreatClassifier from {target_path}: {e}")

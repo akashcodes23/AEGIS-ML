@@ -56,6 +56,15 @@ except ModuleNotFoundError:
     from backend.detection.isolation_forest import IsolationForestDetector
     from backend.detection.threat_classifier import ThreatClassifier
 
+try:
+    from detection.temporal_graph_extractor import RELATIONAL_GRAPH_FEATURE_NAMES, CausalTemporalGraphTracker
+    from detection.telemetry_context import extract_telemetry_context_features, extract_missingness_features
+    from detection.sequence_context import SEQUENCE_FEATURE_NAMES, CausalSequenceTracker
+except ModuleNotFoundError:
+    from backend.detection.temporal_graph_extractor import RELATIONAL_GRAPH_FEATURE_NAMES, CausalTemporalGraphTracker
+    from backend.detection.telemetry_context import extract_telemetry_context_features, extract_missingness_features
+    from backend.detection.sequence_context import SEQUENCE_FEATURE_NAMES, CausalSequenceTracker
+
 logger = logging.getLogger(__name__)
 
 # Canonical MITRE-aligned threat classes
@@ -412,6 +421,54 @@ def extract_features(
 
     # Validate vector
     assert len(vector) == ThreatClassifier.N_FEATURES, f"Vector length {len(vector)} != 15"
+    return vector
+
+
+def extract_full_causal_features(
+    event: UnifiedEvent,
+    if_score: float,
+    baseline_deviation: float,
+    profiler: BehavioralBaselineProfiler,
+    failed_auth_rate: float,
+    graph_tracker: Optional[CausalTemporalGraphTracker] = None,
+    sequence_tracker: Optional[CausalSequenceTracker] = None,
+) -> List[float]:
+    """
+    Extract full 48-dimensional causal feature vector matching PHASE22_BASELINE_FEATURE_NAMES.
+    Combines:
+    - 15 base behavioral/telemetry features
+    - 6 relational graph features
+    - 10 telemetry context features
+    - 5 missingness indicators
+    - 12 sequence features (excluding 2 inferred cross-net)
+    """
+    # 1. Base 15 features
+    base_15 = extract_features(event, if_score, baseline_deviation, profiler, failed_auth_rate)
+
+    # 2. Relational graph features (6)
+    if graph_tracker is not None:
+        tg_dict = graph_tracker.extract_features_single(event, advance_state=True)
+        rel_6 = [float(tg_dict.get(k, 0.0)) for k in RELATIONAL_GRAPH_FEATURE_NAMES]
+    else:
+        rel_6 = [0.0] * len(RELATIONAL_GRAPH_FEATURE_NAMES)
+
+    # 3. Telemetry context features (10)
+    ctx_10 = extract_telemetry_context_features(event)
+
+    # 4. Explicit missingness features (5)
+    miss_5 = extract_missingness_features(event)
+
+    # 5. Causal sequence features (12)
+    inferred = {"seq_inferred_file_read_before_outbound_net", "seq_inferred_file_read_before_internal_net"}
+    seq_keys = [f for f in SEQUENCE_FEATURE_NAMES if f not in inferred]
+    if sequence_tracker is not None:
+        seq_dict = sequence_tracker.extract_features_single(event, advance_state=True)
+        seq_12 = [float(seq_dict.get(k, 0.0)) for k in seq_keys]
+    else:
+        seq_12 = [0.0] * len(seq_keys)
+
+    vector = base_15 + rel_6 + ctx_10 + miss_5 + seq_12
+    assert len(vector) == 48, f"Full causal vector length {len(vector)} != 48"
     return vector
 
 

@@ -58,6 +58,11 @@ class WeightedEvidenceFusion:
         threat_type: Optional[str] = None,
         classifier_confidence: float = 0.0,
         severity: Optional[str] = None,
+        is_calibrated: bool = False,
+        calibrated_probabilities: Optional[Dict[str, float]] = None,
+        raw_probabilities: Optional[Dict[str, float]] = None,
+        model_version: Optional[str] = None,
+        confidence_qualification: Optional[str] = None,
     ) -> DetectionResult:
         """
         Combine evidence scores into a unified DetectionResult.
@@ -91,8 +96,15 @@ class WeightedEvidenceFusion:
             graph_score=float(graph_score),
             threat_type=threat_type,
             confidence=float(classifier_confidence if is_attack else (1.0 - fused_score)),
+            classifier_probability=float(classifier_confidence),
             severity=severity,
             is_alert=is_alert,
+            fused_score=round(float(fused_score), 4),
+            is_calibrated=is_calibrated,
+            calibrated_probabilities=calibrated_probabilities,
+            raw_probabilities=raw_probabilities,
+            model_version=model_version,
+            confidence_qualification=confidence_qualification,
         )
 
 
