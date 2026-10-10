@@ -413,13 +413,13 @@ def test_host_isolation_in_temporal_state():
     mgr.ingest_event(ev_a)
     mgr.ingest_event(ev_b)
 
-    # Verify history is strictly segregated
-    assert "192.168.1.10" in seq_tracker.host_history
-    assert "192.168.1.20" in seq_tracker.host_history
-    assert len(seq_tracker.host_history["192.168.1.10"]) == 1
-    assert len(seq_tracker.host_history["192.168.1.20"]) == 1
-    assert seq_tracker.host_history["192.168.1.10"][0].process_name == "powershell.exe"
-    assert seq_tracker.host_history["192.168.1.20"][0].process_name == "cmd.exe"
+    # Verify history is strictly segregated by stable host_id
+    assert "HOST-A" in seq_tracker.host_history
+    assert "HOST-B" in seq_tracker.host_history
+    assert len(seq_tracker.host_history["HOST-A"]) == 1
+    assert len(seq_tracker.host_history["HOST-B"]) == 1
+    assert seq_tracker.host_history["HOST-A"][0].process_name == "powershell.exe"
+    assert seq_tracker.host_history["HOST-B"][0].process_name == "cmd.exe"
 
 
 # ── Test 12: Sequence Tracker Reset Behavior ──────────────────────────────────

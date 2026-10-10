@@ -167,7 +167,12 @@ class CausalSequenceTracker:
         Returns:
             Dictionary mapping feature names to float values.
         """
-        host = event.src_ip or event.src_entity or "unknown_host"
+        host = (
+            getattr(event, "host_id", None)
+            or getattr(event, "src_ip", None)
+            or getattr(event, "src_entity", None)
+            or "unknown_host"
+        )
         t = event.timestamp or datetime.utcnow()
         t_cutoff = t - timedelta(seconds=self.window_seconds)
 

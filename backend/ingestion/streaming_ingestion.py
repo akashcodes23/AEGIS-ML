@@ -53,16 +53,18 @@ class StreamingIngestionManager:
         max_seen_ids: int = 100_000,
         sequence_tracker: Optional[Any] = None,
         graph_tracker: Optional[Any] = None,
+        detection_handler: Optional[Any] = None,
     ):
         self.dedup_window_seconds = float(dedup_window_seconds)
         self.late_tolerance_seconds = float(late_tolerance_seconds)
         self.max_seen_ids = int(max_seen_ids)
         self.sequence_tracker = sequence_tracker
         self.graph_tracker = graph_tracker
+        self.detection_handler = detection_handler
 
         # In-memory deduplication state
         self._seen_event_ids: OrderedDict[str, datetime] = OrderedDict()
-        self._seen_fingerprints: Dict[str, datetime] = {}
+        self._seen_fingerprints: OrderedDict[str, datetime] = OrderedDict()
 
         # Stream timing state
         self.watermark_timestamp: Optional[datetime] = None
@@ -140,8 +142,10 @@ class StreamingIngestionManager:
             if len(self._seen_event_ids) > self.max_seen_ids:
                 self._seen_event_ids.popitem(last=False)
 
-        # Store in fingerprint cache
+        # Store in bounded fingerprint LRU
         self._seen_fingerprints[fingerprint] = now
+        if len(self._seen_fingerprints) > self.max_seen_ids:
+            self._seen_fingerprints.popitem(last=False)
         event.dedup_fingerprint = fingerprint
 
         # Prune fingerprints older than 2x window relative to event timestamp
@@ -150,8 +154,8 @@ class StreamingIngestionManager:
         for k in stale_fps:
             self._seen_fingerprints.pop(k, None)
 
-        # Track active host
-        host = event.host_id or event.src_entity
+        # Track active host (prioritizing host_id over IP)
+        host = getattr(event, "host_id", None) or getattr(event, "src_ip", None) or getattr(event, "src_entity", None)
         if host:
             self._active_hosts.add(host)
 
@@ -207,9 +211,11 @@ class StreamingIngestionManager:
         raw_event: Union[Dict[str, Any], UnifiedEvent],
         source_system: Optional[str] = None,
         dispatch_trackers: bool = True,
+        trigger_detection: bool = False,
     ) -> IngestionItemResult:
         """
         Normalize, validate, deduplicate, and process a single incoming telemetry event.
+        Optionally triggers calibrated ML detection and alert correlation.
         """
         # 1. Normalize
         if isinstance(raw_event, UnifiedEvent):
@@ -269,6 +275,15 @@ class StreamingIngestionManager:
         if dispatch_trackers:
             self.dispatch_causal_trackers(event)
 
+        # 6. End-to-End Detection Trigger (Audit 3)
+        det_result = None
+        alert_result = None
+        if trigger_detection and self.detection_handler:
+            try:
+                det_result, alert_result = self.detection_handler(event)
+            except Exception as exc:
+                logger.error("Detection handler execution failed: %s", exc)
+
         return IngestionItemResult(
             event_id=event.event_id,
             status="accepted",
@@ -276,6 +291,8 @@ class StreamingIngestionManager:
             is_late_arriving=bool(event.is_late_arriving),
             clock_skew_detected=bool(event.clock_skew_detected),
             event=event,
+            detection=det_result,
+            alert=alert_result,
         )
 
     def ingest_batch(
@@ -284,6 +301,7 @@ class StreamingIngestionManager:
         source_system: Optional[str] = None,
         max_batch_size: int = 500,
         dispatch_trackers: bool = True,
+        trigger_detection: bool = False,
     ) -> IngestionBatchResponse:
         """
         Batch ingestion with partial failure tolerance and per-item results.
@@ -301,6 +319,7 @@ class StreamingIngestionManager:
                 raw_ev,
                 source_system=source_system,
                 dispatch_trackers=dispatch_trackers,
+                trigger_detection=trigger_detection,
             )
             results.append(res)
             if res.status == "accepted":

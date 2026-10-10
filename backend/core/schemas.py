@@ -225,12 +225,14 @@ class IngestionEventRequest(BaseModel):
     raw_event: Dict[str, Any]
     source_system: Optional[str] = None
     schema_version: Optional[str] = "25.0.0"
+    trigger_detection: bool = False
 
 
 class IngestionBatchRequest(BaseModel):
     events: List[Dict[str, Any]]
     source_system: Optional[str] = None
     schema_version: Optional[str] = "25.0.0"
+    trigger_detection: bool = False
 
 
 class IngestionItemResult(BaseModel):
@@ -240,6 +242,8 @@ class IngestionItemResult(BaseModel):
     is_late_arriving: bool = False
     clock_skew_detected: bool = False
     event: Optional[UnifiedEvent] = None
+    detection: Optional[DetectionResult] = None
+    alert: Optional[Alert] = None
 
 
 class IngestionBatchResponse(BaseModel):
