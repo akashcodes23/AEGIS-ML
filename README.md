@@ -1,219 +1,305 @@
+<div align="center">
+
 # 🛡️ AEGIS-ML
 
 ### Enterprise Cyber Threat Intelligence & Anomaly Detection Pipeline
 
-> Real-Time Multi-Layer Cyber Defense using Random Forest Threat Classification, Isolation Forest Anomaly Detection, Behavioral Profiling, and Temporal Knowledge Graphs.
+**Real-time, multi-layer cyber defense** that fuses supervised classification, unsupervised anomaly detection, behavioral profiling, and a temporal knowledge graph, then maps every alert to the **MITRE ATT&CK** kill chain.
+
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-Dashboard-646CFF?logo=vite&logoColor=white)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-RF%20%2B%20IF-F7931E?logo=scikitlearn&logoColor=white)
+![MITRE ATT&CK](https://img.shields.io/badge/MITRE-ATT%26CK-C8102E)
+![Tests](https://img.shields.io/badge/tests-21%20passing-brightgreen)
+
+[Quick Start](#-quick-start) · [Architecture](#-architecture) · [Training](#-training--evaluation) · [API](#-api-reference) · [Limitations](#-limitations--honest-scope)
+
+</div>
 
 ---
 
-## 🌐 Overview
+## 🌐 Why AEGIS-ML?
 
-**AEGIS-ML** is a machine learning-powered cybersecurity intelligence platform designed to detect, analyze, correlate, and visualize multi-layer threats across enterprise networks. It ingests network flows, endpoint process logs, and application events, mapping detected threats to the **MITRE ATT&CK** kill chain.
+Most detection tools rely on a single signal: a signature, a threshold, or one model. Attackers don't operate in one layer, so detection shouldn't either.
 
-### Core Architecture
+AEGIS-ML ingests **network flows, endpoint process logs, and application events**, normalizes them into one event schema, and scores each event with **four independent evidence sources**. These are then fused into a single, explainable alert with a kill-chain stage attached.
 
-```text
-       ┌────────────────────────┐
-       │ Ingestion & Normalizer │
-       └───────────┬────────────┘
-                   │  UnifiedEvent
-       ┌───────────▼────────────────────────┐
-       │   Feature Engineering (15 dims)    │
-       │  (Causal, Leaked-Free Extraction)  │
-       └─────┬────────────────────────┬─────┘
-             │                        │
-┌────────────▼──────────────┐  ┌──────▼─────────────────────┐
-│ Isolation Forest Detectors │  │ Behavioral Baseline Profiler│
-│ (Network & Endpoint Flow) │  │  (Host & Svc-Account Dev)  │
-└────────────┬──────────────┘  └──────┬─────────────────────┘
-             │                        │
-             └───────────┬────────────┘
-                         │
-       ┌─────────────────▼──────────────────┐
-       │ Random Forest Threat Classifier    │
-       │ (Balanced, 5 Canonical Classes)    │
-       └─────────────────┬──────────────────┘
-                         │ Threat Prediction & Consensus
-       ┌─────────────────▼──────────────────┐
-       │     Weighted Evidence Fusion       │
-       │  (IF + Baselines + Graph + RF)     │
-       └─────────────────┬──────────────────┘
-                         │ Alerts & Kill-Chain Stages
-       ┌─────────────────▼──────────────────┐
-       │ FastAPI Backend (REST & WebSocket) │
-       │        Port 8000                   │
-       └─────────────────┬──────────────────┘
-                         │ Real-Time WS Stream
-       ┌─────────────────▼──────────────────┐
-       │ React + Cytoscape + Vite Dashboard │
-       │        Port 5173                   │
-       └────────────────────────────────────┘
+| | |
+|---|---|
+| 🧠 **Hybrid ML** | Random Forest (known attacks) + Isolation Forest (unknown anomalies) |
+| 👤 **Behavioral baselines** | Per-host and per-service-account deviation profiling |
+| 🕸️ **Temporal knowledge graph** | NetworkX entity-edge tracking to expose lateral movement paths |
+| ⚖️ **Weighted evidence fusion** | One consensus verdict from IF + baselines + graph + RF |
+| 🎯 **MITRE ATT&CK mapping** | Every alert is tagged with a kill-chain stage |
+| 📡 **Live dashboard** | WebSocket-streamed alerts, topology graph, and stats |
+| 🔒 **Leak-free MLOps** | Split-before-fit, SMOTE inside folds only, benign-only baselines |
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TD
+    A[Ingestion & Normalizer<br/>network · endpoint · application] -->|UnifiedEvent| B[Feature Engineering<br/>15 dims · causal, leak-free]
+    B --> C[Isolation Forest<br/>network & endpoint]
+    B --> D[Behavioral Baseline Profiler<br/>host & service-account deviation]
+    B --> E[Temporal Knowledge Graph<br/>NetworkX entity edges]
+    B --> F[Random Forest Classifier<br/>5 canonical classes · balanced]
+    C --> G[Weighted Evidence Fusion]
+    D --> G
+    E --> G
+    F --> G
+    G -->|alerts + kill-chain stage| H[FastAPI Backend<br/>REST + WebSocket · :8000]
+    H -->|real-time WS stream| I[React + Cytoscape + Vite Dashboard<br/>:5173]
 ```
 
+### How a single event flows through the system
+
+1. **Normalize**: raw telemetry becomes a `UnifiedEvent`, regardless of source.
+2. **Featurize**: 15 causal features are extracted using time windows that never look into the future.
+3. **Score in parallel**: anomaly (IF), behavioral drift, graph topology, and supervised class probability.
+4. **Fuse**: a weighted combination produces a consensus verdict.
+5. **Alert**: the result is mapped to a MITRE ATT&CK stage and pushed over WebSocket to the dashboard.
+
 ---
 
-## 🛠️ Technology Stack
+## 🎯 Threat Classes & MITRE Mapping
 
-| Layer | Actual Technology & Version |
+AEGIS-ML classifies telemetry into five canonical categories:
+
+| Class | What it captures |
 |---|---|
-| **API Backend** | FastAPI, Uvicorn, WebSockets, Pydantic v2 |
-| **Frontend** | React 19, Vite, Cytoscape.js (Topology Graph), Recharts |
-| **Supervised ML** | scikit-learn Random Forest Classifier (`balanced` class weighting) |
-| **Unsupervised ML** | scikit-learn Isolation Forest (`contamination=0.05`) |
-| **Resampling** | `imbalanced-learn` (`ImbPipeline` with SMOTE in train folds only) |
-| **Graph Analysis** | NetworkX (Temporal Knowledge Graph & Entity Edge Tracking) |
-| **Serialization** | Joblib / Pickle with metadata verification |
-| **Testing** | pytest, pytest-asyncio, FastAPI TestClient |
+| `benign` | Normal business traffic, legitimate service polling, regular downloads |
+| `brute_force` | Credential stuffing, repeated auth failures, password spraying |
+| `lateral_movement` | Internal recon, PsExec usage, internal host port scanning |
+| `c2_beaconing` | Periodic bot heartbeats, command & control, external tunneling |
+| `data_exfiltration` | High-volume egress, archive staging, abnormal upload ratios |
 
----
+### Third-party dataset normalization (e.g. CICIDS2017)
 
-## 🎯 Threat Classes & Label Mapping
-
-The model classifies telemetry events into 5 canonical categories:
-
-1. `benign`: Normal business traffic, legitimate service polling, regular downloads.
-2. `brute_force`: Credential stuffing, repetitive authentication failures, password spraying.
-3. `lateral_movement`: Internal reconnaissance, PSExec usage, internal host port scanning.
-4. `c2_beaconing`: Command & control beaconing, periodic bot heartbeats, external tunneling.
-5. `data_exfiltration`: High-volume data egress, archive staging, abnormal upload ratios.
-
-### Dataset Mapping
-
-Third-party datasets (such as CICIDS2017) are normalized and mapped using the following schema:
-
-| Dataset Label | Canonical Class | MITRE Kill-Chain Stage |
+| Dataset label | Canonical class | Kill-chain stage |
 |---|---|---|
 | `BENIGN`, `Normal` | `benign` | N/A |
 | `FTP-Patator`, `SSH-Patator`, `Web Attack - Brute Force` | `brute_force` | Weaponize / Delivery |
 | `PortScan`, `Infiltration` | `lateral_movement` | Install |
-| `Bot`, `DDoS`, `DoS Hulk`, `DoS GoldenEye` | `c2_beaconing` | Command & Control (C2) |
+| `Bot`, `DDoS`, `DoS Hulk`, `DoS GoldenEye` | `c2_beaconing` | Command & Control |
 | `Heartbleed`, `Infiltration` (data egress) | `data_exfiltration` | Exfiltrate |
-| *Unmapped / Unknown Labels* | *Flagged explicitly & reported in diagnostics* | *Under Review* |
+| *Unmapped / unknown labels* | *Flagged and reported in diagnostics* | *Under Review* |
+
+> Unknown labels are never silently dropped. They are surfaced in training diagnostics.
 
 ---
 
-## ⚡ Installation & Setup
+## 🧪 Training & Evaluation
+
+The pipeline is built to be **reproducible and leak-free**:
+
+- ✅ **Split first**: an 80/20 train/holdout partition happens *before* any feature fitting.
+- ✅ **SMOTE in-fold only**: resampling runs inside `imblearn.pipeline.Pipeline` training folds and is never applied to test data.
+- ✅ **Clean baselines**: entity baselines are built only from benign training samples, which prevents baseline poisoning.
+- ✅ **Honest benchmarking**: every model is compared against a stratified `DummyClassifier`.
+- ✅ **Transparent artifacts**: weights, feature names, sklearn version, and JSON metrics are all saved.
+- ✅ **Calibrated confidence**: isotonic calibration (`CalibratedClassifierCV`) maps raw tree votes to posterior probabilities.
+
+### Saved artifacts (`data/models/`)
+
+| File | Purpose |
+|---|---|
+| `threat_classifier.pkl` | Fitted Random Forest classifier |
+| `isolation_forest_network.pkl` | Network Isolation Forest + scaling statistics |
+| `isolation_forest_endpoint.pkl` | Endpoint Isolation Forest |
+| `entity_baselines.pkl` | Behavioral profiles for internal hosts |
+| `eval_results.json` | Machine-readable evaluation metrics |
+
+<!--
+  📊 Add your real holdout results here once you have them, for example:
+
+  | Class | Precision | Recall | F1 |
+  |---|---|---|---|
+  | ... | ... | ... | ... |
+
+  Generate them with: python3 -m backend.detection.model_trainer evaluate <untouched dataset>
+  and copy the numbers from data/models/eval_results.json
+-->
+
+---
+
+## ⚡ Quick Start
 
 ### Prerequisites
-- Python 3.10+ (tested on Python 3.10.12)
-- Node.js 18+ and npm
 
-### 1️⃣ Clone and Environment Configuration
+- Python **3.10+**
+- Node.js **18+** and npm
+
+### 1. Clone and configure
 
 ```bash
 git clone https://github.com/akashcodes23/AEGIS-ML.git
 cd AEGIS-ML
 
-# Create and activate Python virtual environment
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate          # Windows: venv\Scripts\activate
 
-# Install backend dependencies
 pip install -r backend/requirements.txt
-
-# Copy environment template
-cp .env.example .env
+cp .env.example .env              # Windows: copy .env.example .env
 ```
 
-### 2️⃣ Generate Synthetic Scenarios (Optional if no external dataset is present)
+### 2. Generate synthetic attack scenarios *(skip if you have your own dataset)*
 
 ```bash
 python3 -m backend.data_generator.orchestrator train
-# Generates data/raw/combined_labeled.jsonl with realistic multi-layer attack scenarios
+# → data/raw/combined_labeled.jsonl (multi-layer attack scenarios)
 ```
 
----
-
-## 🏋️ Training & Evaluation
-
-AEGIS-ML features a reproducible, leak-free training pipeline adhering to industry MLOps best practices:
-- **Strict Data Partitioning:** 80% train / 20% holdout test partition created *before* any feature fitting.
-- **Leak-Free Resampling:** SMOTE applied strictly within training folds using `imblearn.pipeline.Pipeline`. Never applied to test data.
-- **Baseline Profiling:** Entity baselines built *strictly* on benign training samples to prevent baseline poisoning.
-- **Baseline Benchmarking:** Evaluated alongside a stratified `DummyClassifier`.
-- **Transparent Artifacts:** Model weights, feature names, sklearn versions, and JSON metrics are saved to `data/models/`.
-
-### Run Model Training
+### 3. Train the models
 
 ```bash
-# Train on default synthetic dataset
+# Default synthetic dataset
 python3 -m backend.detection.model_trainer train
 
-# Or train on a custom dataset file (CSV / JSONL)
+# Or your own CSV / JSONL
 python3 -m backend.detection.model_trainer train path/to/dataset.csv
 ```
 
-### Run Independent Evaluation
+Evaluate saved models on an untouched dataset:
 
 ```bash
-# Evaluate existing saved models on an untouched dataset
 python3 -m backend.detection.model_trainer evaluate data/raw/combined_labeled.jsonl
 ```
 
-### Output Artifacts
-- `data/models/threat_classifier.pkl` (Fitted Random Forest classifier)
-- `data/models/isolation_forest_network.pkl` (Network Isolation Forest with scaling statistics)
-- `data/models/isolation_forest_endpoint.pkl` (Endpoint Isolation Forest)
-- `data/models/entity_baselines.pkl` (Entity profiles for internal hosts)
-- `data/models/eval_results.json` (Machine-readable evaluation metrics)
-
----
-
-## 🧪 Automated Testing
-
-Run the automated test suite covering dataset parsing, normalization, feature extraction, causal time windowing, model validation, and API contracts:
-
-```bash
-pytest tests/ -v
-```
-
-All 21 test suites execute in ~2.5s with zero external dataset requirements.
-
----
-
-## 🚀 Running the System
-
-### 1. Start the FastAPI Backend
+### 4. Launch the backend
 
 ```bash
 uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-- API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-- Health Check: [http://localhost:8000/health](http://localhost:8000/health)
 
-### 2. Start the Frontend Dashboard
+- 📖 Interactive API docs: <http://localhost:8000/docs>
+- ❤️ Health check: <http://localhost:8000/health>
+
+### 5. Launch the dashboard
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Dashboard will be available at [http://localhost:5173](http://localhost:5173).
+
+Open <http://localhost:5173>.
+
+### 6. Run the tests
+
+```bash
+pytest tests/ -v
+```
+
+21 tests covering dataset parsing, normalization, feature extraction, causal windowing, model validation, and API contracts. They need no external dataset.
 
 ---
 
-## 📡 API Endpoints
+## 📡 API Reference
 
-### REST Endpoints
-- `GET /health`: Health status, model readiness, and dataset availability.
-- `POST /api/detect`: Direct prediction for a single `UnifiedEvent` payload via the full ML pipeline.
-- `GET /api/model/lifecycle`: Active model version, calibration status, schema version, and lifecycle inspection.
-- `POST /api/model/validate`: Dry-run validation of a candidate model artifact.
-- `POST /api/model/reload`: Safe activation of a candidate model artifact with rollback protection.
-- `GET /api/alerts`: List latest 100 detected alerts.
-- `GET /api/stats/summary`: Aggregate statistics (total events, alerts by severity, EPS).
-- `GET /api/analysis/files`: List available dataset files.
-- `POST /api/analysis/start` & `POST /api/analysis/stop`: Start/stop streaming dataset evaluation.
-- `POST /api/incident/{event_id}/remediate`: Mark alert incident resolved.
-- `POST /api/incident/{event_id}/isolate`: Network kill-switch to isolate compromised source entity.
+### REST
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Service health, model readiness, dataset availability |
+| `POST` | `/api/detect` | Run one `UnifiedEvent` through the full ML pipeline |
+| `GET` | `/api/alerts` | Latest 100 detected alerts |
+| `GET` | `/api/stats/summary` | Total events, alerts by severity, events per second |
+| `GET` | `/api/model/lifecycle` | Active model version, calibration status, schema version |
+| `POST` | `/api/model/validate` | Dry-run validation of a candidate model artifact |
+| `POST` | `/api/model/reload` | Safe hot-swap of a candidate model, with rollback protection |
+| `GET` | `/api/analysis/files` | List available dataset files |
+| `POST` | `/api/analysis/start` · `/stop` | Start or stop streaming dataset analysis |
+| `POST` | `/api/incident/{event_id}/remediate` | Mark an incident as resolved |
+| `POST` | `/api/incident/{event_id}/isolate` | Kill-switch: isolate the compromised source entity |
 
 ### WebSocket
-- `ws://localhost:8000/ws/live`: Real-time streaming channel broadcasting `new_alert`, `graph_update`, and `stats_update`.
+
+`ws://localhost:8000/ws/live` streams three event types in real time:
+
+| Message | Payload |
+|---|---|
+| `new_alert` | A freshly fused alert with severity and kill-chain stage |
+| `graph_update` | Topology changes for the Cytoscape view |
+| `stats_update` | Rolling aggregate statistics |
 
 ---
 
-## ⚠️ Known Limitations & Scope
+## 🛠️ Tech Stack
 
-1. **Confidence Calibration & Benchmark Boundaries:** In Phase 23, the serving pipeline integrates isotonic calibration (`CalibratedClassifierCV`) mapping raw tree plurality votes to empirical posterior probabilities. However, because calibration was fitted and evaluated on synthetic benchmark scenarios, calibrated scores do not guarantee empirical risk levels in unmonitored real-world enterprise environments.
-2. **Tabular Feature Extraction vs. Deep Temporal Graphs:** AEGIS-ML utilizes NetworkX for topological graph metrics combined with tabular tree ensembles. A deep PyTorch Temporal Graph Neural Network (T-GNN) is part of the future research roadmap.
-3. **Synthetic vs. Real-World Benchmarks:** While the model achieves high F1 on synthetic and CICIDS2017 flow datasets, real-world deployment requires continuous baseline adaptation and ongoing false-positive calibration.
+| Layer | Technology |
+|---|---|
+| **API** | FastAPI · Uvicorn · WebSockets · Pydantic v2 |
+| **Frontend** | React 19 · Vite · Cytoscape.js · Recharts |
+| **Supervised ML** | scikit-learn Random Forest (`class_weight="balanced"`) |
+| **Unsupervised ML** | scikit-learn Isolation Forest (`contamination=0.05`) |
+| **Resampling** | imbalanced-learn (`ImbPipeline` + SMOTE, train folds only) |
+| **Graph analysis** | NetworkX temporal knowledge graph |
+| **Serialization** | Joblib / Pickle with metadata verification |
+| **Testing** | pytest · pytest-asyncio · FastAPI TestClient |
+
+---
+
+## 📁 Project Structure
+
+```
+AEGIS-ML/
+├── backend/          # FastAPI app, detection pipeline, data generators
+├── frontend/         # React + Vite + Cytoscape dashboard
+├── data/             # Raw datasets and trained model artifacts
+├── docs/             # Project documentation
+├── tests/            # pytest suite
+├── export.py         # Export utility
+├── .env.example      # Environment template
+└── README.md
+```
+
+---
+
+## ⚠️ Limitations & Honest Scope
+
+AEGIS-ML is a research-grade platform, and its limits are stated up front:
+
+1. **Calibration is benchmark-bound.** Isotonic calibration was fitted and evaluated on synthetic scenarios. Calibrated scores do not guarantee real-world risk levels in an unmonitored enterprise.
+2. **Tabular + graph metrics, not a deep graph model.** The system combines NetworkX topology features with tree ensembles. A deep Temporal GNN is on the roadmap.
+3. **Synthetic and CICIDS2017 results are not production proof.** Real deployment needs continuous baseline adaptation and ongoing false-positive tuning.
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] PyTorch Temporal Graph Neural Network (T-GNN) for deep relational detection
+- [ ] Continuous baseline adaptation to handle concept drift
+- [ ] Analyst feedback loop for false-positive recalibration
+- [ ] Containerized deployment (Docker Compose)
+- [ ] Additional real-world benchmark datasets
+
+---
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome.
+
+1. Fork the repo and create a feature branch.
+2. Add or update tests, and make sure `pytest tests/ -v` passes.
+3. Open a pull request describing the change.
+
+---
+
+## 📄 License
+
+<!-- Add a LICENSE file (MIT is a common choice) and update this line. -->
+No license specified yet.
+
+---
+
+<div align="center">
+
+**Built by [@akashcodes23](https://github.com/akashcodes23)**
+
+⭐ If AEGIS-ML is useful to you, consider starring the repo.
+
+</div>
