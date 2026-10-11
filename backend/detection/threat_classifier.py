@@ -241,6 +241,111 @@ class ThreatClassifier:
             confidence_qualification=confidence_qualification,
         )
 
+    def predict_batch(self, features_list: List[List[float]]) -> List[ThreatPrediction]:
+        """
+        Batch prediction for high-throughput detection pipelines.
+        Computes predictions across the entire batch in a single vectorized call,
+        preserving identical mathematics, validation, and calibration guarantees as predict().
+        """
+        if not self.is_fitted:
+            raise NotFittedError(
+                "ThreatClassifier is not fitted or loaded. Predictions cannot be served. "
+                "Call load() with an existing model artifact or run the training pipeline first."
+            )
+        if not features_list:
+            return []
+
+        # Validate each row independently
+        validated_rows = [self.validate_features(f) for f in features_list]
+        X = np.vstack(validated_rows)
+
+        # 1. Raw ensemble tree-vote probabilities
+        raw_probas = self.model.predict_proba(X)
+        if not np.all(np.isfinite(raw_probas)):
+            raise ValueError("Base model produced non-finite raw probabilities.")
+        if not np.all((raw_probas >= 0.0) & (raw_probas <= 1.0)):
+            raise ValueError("Base model produced probabilities out of [0, 1] range.")
+        if not np.allclose(np.sum(raw_probas, axis=1), 1.0, atol=1e-4):
+            raise ValueError("Base model probabilities do not sum to 1.0.")
+
+        raw_classes = list(self.model.classes_)
+        raw_indices = [raw_classes.index(cls) if cls in raw_classes else -1 for cls in self.classes]
+
+        # 2. Calibrated probabilities (if calibrated)
+        cal_probas = None
+        cal_indices = None
+        if self.is_calibrated:
+            if self.calibrator is None:
+                raise ValueError("ThreatClassifier declares is_calibrated=True but calibrator is None.")
+            cal_probas = self.calibrator.predict_proba(X)
+            if not np.all(np.isfinite(cal_probas)):
+                raise ValueError("Calibrator produced non-finite probabilities.")
+            if not np.all((cal_probas >= 0.0) & (cal_probas <= 1.0)):
+                raise ValueError("Calibrator produced probabilities out of [0, 1] range.")
+            if not np.allclose(np.sum(cal_probas, axis=1), 1.0, atol=1e-4):
+                raise ValueError("Calibrator probabilities do not sum to 1.0.")
+
+            cal_classes = list(self.calibrator.classes_)
+            cal_indices = [cal_classes.index(cls) if cls in cal_classes else -1 for cls in self.classes]
+
+        # 3. Global feature importances
+        importances = {}
+        if hasattr(self.model, "feature_importances_"):
+            importances = {
+                self.feature_names[i]: float(val)
+                for i, val in enumerate(self.model.feature_importances_)
+                if i < len(self.feature_names)
+            }
+
+        predictions: List[ThreatPrediction] = []
+        for i in range(len(features_list)):
+            raw_row = raw_probas[i]
+            raw_probs = {
+                str(cls): float(raw_row[idx])
+                for cls, idx in zip(self.classes, raw_indices)
+                if idx != -1
+            }
+
+            if self.is_calibrated and cal_probas is not None:
+                cal_row = cal_probas[i]
+                cal_probs = {
+                    str(cls): float(cal_row[idx])
+                    for cls, idx in zip(self.classes, cal_indices)
+                    if idx != -1
+                }
+                active_probs = cal_probs
+                confidence_qualification = (
+                    "Calibrated probability evaluated on synthetic scenario benchmark; "
+                    "real-world empirical risk not guaranteed."
+                )
+            else:
+                cal_probs = None
+                active_probs = raw_probs
+                confidence_qualification = (
+                    "Uncalibrated tree-vote consensus fraction; does not represent calibrated probability."
+                )
+
+            best_cls = max(active_probs.keys(), key=lambda c: active_probs[c])
+            confidence = float(active_probs[best_cls])
+            severity = self.determine_severity(best_cls, confidence)
+
+            predictions.append(
+                ThreatPrediction(
+                    threat_type=best_cls,
+                    confidence=confidence,
+                    severity=severity,
+                    feature_importances=importances,
+                    raw_probabilities=raw_probs,
+                    calibrated_probabilities=cal_probs,
+                    is_calibrated=self.is_calibrated,
+                    calibration_method=self.calibration_method,
+                    model_version=self.model_version,
+                    confidence_qualification=confidence_qualification,
+                )
+            )
+
+        return predictions
+
     def determine_severity(self, threat_type: str, confidence: float) -> Optional[str]:
         """
         Decoupled threat severity policy.

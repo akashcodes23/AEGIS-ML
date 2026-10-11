@@ -1,11 +1,12 @@
 {
   "metadata": {
-    "benchmark_phase": "Phase 27: Asynchronous Detection Pipeline",
-    "timestamp": "2026-10-11T05:01:34.015828+00:00",
+    "benchmark_phase": "Phase 28.2: Synchronous vs. Asynchronous Performance Evaluation",
+    "timestamp": "2026-10-11T05:28:33.871455+00:00",
     "platform": "macOS-27.0.1-arm64-arm-64bit",
     "python_version": "3.10.12",
     "cpu_architecture": "arm64",
     "cores": 10,
+    "classifier_features": 48,
     "disclaimer": "Measurements reflect single-machine local runtime performance on macOS. The in-memory queue provides process-isolated concurrency and non-blocking ingestion, but does NOT provide durable recovery across process restarts."
   },
   "results": {
@@ -14,43 +15,83 @@
         "mode": "synchronous",
         "total_events": 100,
         "accepted_events": 100,
-        "elapsed_seconds": 4.0813,
-        "ingestion_throughput_eps": 24.5,
-        "completed_detection_throughput_eps": 24.5,
-        "latency_p50_ms": 40.782,
-        "latency_p95_ms": 41.773,
-        "latency_mean_ms": 40.813,
-        "peak_memory_mb": 0.895
+        "elapsed_seconds": 4.995,
+        "ingestion_throughput_eps": 20.02,
+        "completed_detection_throughput_eps": 20.02,
+        "latency_p50_ms": 49.936,
+        "latency_p95_ms": 51.05,
+        "latency_mean_ms": 49.949,
+        "peak_memory_mb": 1.052,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0
       },
-      "asynchronous": {
-        "mode": "asynchronous_2_workers",
+      "asynchronous_unbatched": {
+        "mode": "asynchronous_unbatched_2w",
         "total_events": 100,
         "accepted_events": 100,
         "completed_events": 100,
         "failed_events": 0,
         "retries": 0,
         "elapsed_ingest_seconds": 0.0149,
-        "elapsed_total_seconds": 4.6762,
-        "ingestion_throughput_eps": 6722.01,
-        "completed_detection_throughput_eps": 21.38,
-        "ingest_latency_p50_ms": 0.145,
-        "ingest_latency_p95_ms": 0.175,
+        "elapsed_total_seconds": 6.0607,
+        "ingestion_throughput_eps": 6691.01,
+        "completed_detection_throughput_eps": 16.5,
+        "ingest_latency_p50_ms": 0.146,
+        "ingest_latency_p95_ms": 0.18,
         "queue_wait_time_ms": {
-          "p50": 2341.983,
-          "p95": 4428.03,
-          "mean": 2294.793
+          "p50": 3025.309,
+          "p95": 5744.299,
+          "mean": 2977.582
         },
         "worker_proc_time_ms": {
-          "p50": 93.128,
-          "p95": 139.55,
-          "mean": 92.437
+          "p50": 120.732,
+          "p95": 181.593,
+          "mean": 120.287
         },
         "end_to_end_latency_ms": {
-          "p50": 2434.818,
-          "p95": 4523.289,
-          "mean": 2387.236
+          "p50": 3146.719,
+          "p95": 5865.769,
+          "mean": 3097.878
         },
-        "peak_memory_mb": 1.462
+        "queue_depth_max": 98,
+        "queue_depth_mean": 47.16,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0,
+        "peak_memory_mb": 2.153
+      },
+      "asynchronous_batched": {
+        "mode": "asynchronous_batched_2w",
+        "total_events": 100,
+        "accepted_events": 100,
+        "completed_events": 100,
+        "failed_events": 0,
+        "retries": 0,
+        "elapsed_ingest_seconds": 0.0149,
+        "elapsed_total_seconds": 1.2264,
+        "ingestion_throughput_eps": 6713.34,
+        "completed_detection_throughput_eps": 81.54,
+        "ingest_latency_p50_ms": 0.146,
+        "ingest_latency_p95_ms": 0.175,
+        "queue_wait_time_ms": {
+          "p50": 380.459,
+          "p95": 752.131,
+          "mean": 361.088
+        },
+        "worker_proc_time_ms": {
+          "p50": 11.703,
+          "p95": 11.89,
+          "mean": 12.103
+        },
+        "end_to_end_latency_ms": {
+          "p50": 754.953,
+          "p95": 1213.654,
+          "mean": 691.961
+        },
+        "queue_depth_max": 68,
+        "queue_depth_mean": 27.75,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0,
+        "peak_memory_mb": 1.507
       }
     },
     "workload_250": {
@@ -58,43 +99,167 @@
         "mode": "synchronous",
         "total_events": 250,
         "accepted_events": 250,
-        "elapsed_seconds": 10.2386,
-        "ingestion_throughput_eps": 24.42,
-        "completed_detection_throughput_eps": 24.42,
-        "latency_p50_ms": 40.509,
-        "latency_p95_ms": 42.959,
-        "latency_mean_ms": 40.953,
-        "peak_memory_mb": 1.1
+        "elapsed_seconds": 12.9295,
+        "ingestion_throughput_eps": 19.34,
+        "completed_detection_throughput_eps": 19.34,
+        "latency_p50_ms": 51.077,
+        "latency_p95_ms": 54.296,
+        "latency_mean_ms": 51.717,
+        "peak_memory_mb": 1.45,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0
       },
-      "asynchronous": {
-        "mode": "asynchronous_2_workers",
+      "asynchronous_unbatched": {
+        "mode": "asynchronous_unbatched_2w",
         "total_events": 250,
         "accepted_events": 250,
         "completed_events": 250,
         "failed_events": 0,
         "retries": 0,
-        "elapsed_ingest_seconds": 0.0379,
-        "elapsed_total_seconds": 11.6825,
-        "ingestion_throughput_eps": 6589.52,
-        "completed_detection_throughput_eps": 21.4,
+        "elapsed_ingest_seconds": 0.0381,
+        "elapsed_total_seconds": 15.4188,
+        "ingestion_throughput_eps": 6561.46,
+        "completed_detection_throughput_eps": 16.21,
         "ingest_latency_p50_ms": 0.15,
-        "ingest_latency_p95_ms": 0.163,
+        "ingest_latency_p95_ms": 0.178,
         "queue_wait_time_ms": {
-          "p50": 5816.304,
-          "p95": 11045.717,
-          "mean": 5794.813
+          "p50": 7669.307,
+          "p95": 14574.451,
+          "mean": 7636.475
         },
         "worker_proc_time_ms": {
-          "p50": 92.764,
-          "p95": 94.68,
-          "mean": 93.14
+          "p50": 121.975,
+          "p95": 183.561,
+          "mean": 122.98
         },
         "end_to_end_latency_ms": {
-          "p50": 5911.33,
-          "p95": 11137.827,
-          "mean": 5887.958
+          "p50": 7792.346,
+          "p95": 14636.189,
+          "mean": 7759.464
         },
-        "peak_memory_mb": 2.631
+        "queue_depth_max": 248,
+        "queue_depth_mean": 123.25,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0,
+        "peak_memory_mb": 3.172
+      },
+      "asynchronous_batched": {
+        "mode": "asynchronous_batched_2w",
+        "total_events": 250,
+        "accepted_events": 250,
+        "completed_events": 250,
+        "failed_events": 0,
+        "retries": 0,
+        "elapsed_ingest_seconds": 0.0387,
+        "elapsed_total_seconds": 3.0611,
+        "ingestion_throughput_eps": 6458.54,
+        "completed_detection_throughput_eps": 81.67,
+        "ingest_latency_p50_ms": 0.152,
+        "ingest_latency_p95_ms": 0.176,
+        "queue_wait_time_ms": {
+          "p50": 1171.713,
+          "p95": 2502.434,
+          "mean": 1247.811
+        },
+        "worker_proc_time_ms": {
+          "p50": 12.022,
+          "p95": 12.082,
+          "mean": 12.077
+        },
+        "end_to_end_latency_ms": {
+          "p50": 1557.026,
+          "p95": 2887.693,
+          "mean": 1615.519
+        },
+        "queue_depth_max": 218,
+        "queue_depth_mean": 94.39,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0,
+        "peak_memory_mb": 2.558
+      }
+    },
+    "workload_500": {
+      "synchronous": {
+        "mode": "synchronous",
+        "total_events": 500,
+        "accepted_events": 500,
+        "elapsed_seconds": 25.9235,
+        "ingestion_throughput_eps": 19.29,
+        "completed_detection_throughput_eps": 19.29,
+        "latency_p50_ms": 51.797,
+        "latency_p95_ms": 52.883,
+        "latency_mean_ms": 51.846,
+        "peak_memory_mb": 1.672,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0
+      },
+      "asynchronous_unbatched": {
+        "mode": "asynchronous_unbatched_2w",
+        "total_events": 500,
+        "accepted_events": 500,
+        "completed_events": 500,
+        "failed_events": 0,
+        "retries": 0,
+        "elapsed_ingest_seconds": 0.0801,
+        "elapsed_total_seconds": 31.1922,
+        "ingestion_throughput_eps": 6241.04,
+        "completed_detection_throughput_eps": 16.03,
+        "ingest_latency_p50_ms": 0.16,
+        "ingest_latency_p95_ms": 0.18,
+        "queue_wait_time_ms": {
+          "p50": 15581.317,
+          "p95": 29499.503,
+          "mean": 15523.775
+        },
+        "worker_proc_time_ms": {
+          "p50": 123.414,
+          "p95": 185.573,
+          "mean": 124.281
+        },
+        "end_to_end_latency_ms": {
+          "p50": 15705.598,
+          "p95": 29650.39,
+          "mean": 15648.066
+        },
+        "queue_depth_max": 498,
+        "queue_depth_mean": 243.85,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0,
+        "peak_memory_mb": 4.905
+      },
+      "asynchronous_batched": {
+        "mode": "asynchronous_batched_2w",
+        "total_events": 500,
+        "accepted_events": 500,
+        "completed_events": 500,
+        "failed_events": 0,
+        "retries": 0,
+        "elapsed_ingest_seconds": 0.0804,
+        "elapsed_total_seconds": 6.1345,
+        "ingestion_throughput_eps": 6219.21,
+        "completed_detection_throughput_eps": 81.51,
+        "ingest_latency_p50_ms": 0.16,
+        "ingest_latency_p95_ms": 0.181,
+        "queue_wait_time_ms": {
+          "p50": 2736.577,
+          "p95": 5396.241,
+          "mean": 2767.842
+        },
+        "worker_proc_time_ms": {
+          "p50": 12.024,
+          "p95": 12.125,
+          "mean": 12.094
+        },
+        "end_to_end_latency_ms": {
+          "p50": 3120.938,
+          "p95": 5778.015,
+          "mean": 3144.696
+        },
+        "queue_depth_max": 468,
+        "queue_depth_mean": 221.06,
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0,
+        "peak_memory_mb": 4.297
       }
     }
   }

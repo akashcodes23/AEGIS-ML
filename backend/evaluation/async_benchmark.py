@@ -1,19 +1,17 @@
 """
-Phase 27 Performance Benchmark: Synchronous vs. Asynchronous Detection Pipeline.
+Phase 28 Performance Benchmark: Synchronous vs. Asynchronous (Unbatched & Batched) Detection Pipeline.
 
-Compares:
-1. Synchronous Pipeline: Ingestion + Feature Extraction + RF Inference + Fusion on main thread.
-2. Asynchronous Pipeline: Ingestion + Bounded In-Memory Queue + Background Worker Pool.
-
-Measures:
-- Ingestion throughput (events/second).
-- Completed detection throughput (events/second).
-- Queue wait time percentiles (median p50, p95).
-- Worker detection processing time (median p50, p95).
-- Total end-to-end latency (median p50, p95).
-- Peak memory allocation (tracemalloc).
-- Queue saturation and backpressure rejections.
-- Failure and retry rates.
+Rigorous Comparative Methodology:
+1. Equivalent Inputs: Deterministic synthetic multi-host event sequences.
+2. Equivalent Model & Configuration: Active calibrated 48-feature production model (calibrated_threat_classifier.pkl).
+3. Warm-up Procedures: Warmup execution across all pipelines prior to recording.
+4. Measurement Boundaries:
+   - Ingestion Throughput (eps): Rate at which caller thread enqueues/accepts events.
+   - Completed Detection Throughput (eps): Rate at which background workers finish end-to-end detection, fusion, and correlation.
+   - Latencies: p50 (median) and p95 for queue wait, worker detection processing, and end-to-end latency.
+   - Queue Observability: Queue depth sampling over time, peak queue depth, saturation/rejections.
+   - Memory: tracemalloc peak resident heap consumption.
+   - Terminal Criteria: Explicit async flush() ensuring 100% of submitted events reach terminal state.
 
 Outputs reproducible results to data/models/async_benchmark_results.json.
 """
@@ -28,7 +26,7 @@ import time
 import tracemalloc
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -82,7 +80,12 @@ class BenchmarkEnvironment:
 
     def __init__(self):
         self.classifier = ThreatClassifier()
-        self.classifier.load()
+        cal_path = PROJECT_ROOT / "data" / "models" / "calibrated_threat_classifier.pkl"
+        if cal_path.exists():
+            self.classifier.load(str(cal_path))
+        else:
+            self.classifier.load()
+
         self.if_detector = IsolationForestDetector()
         self.if_detector.load()
         self.profiler = BehavioralBaselineProfiler()
@@ -96,7 +99,7 @@ class BenchmarkEnvironment:
         self.alerts_by_severity = {}
 
     def evaluate_detection(self, event: UnifiedEvent):
-        """Standard pipeline detection evaluation."""
+        """Standard single-sample pipeline detection evaluation."""
         if_score = self.if_detector.predict(event) if self.if_detector else 0.0
         base_dev = self.profiler.compute_deviation_score(event) if self.profiler else 0.0
         failed_auth = 1.0 if (event.status_code == 401 or str(event.auth_result or "").strip().lower() == "failure") else 0.0
@@ -137,10 +140,78 @@ class BenchmarkEnvironment:
         )
         return fused, None
 
+    def evaluate_batch_detection(self, events: List[UnifiedEvent]):
+        """Batched pipeline detection evaluation executing vectorized model inference."""
+        features_list = []
+        meta = []
+        for event in events:
+            if_score = self.if_detector.predict(event) if self.if_detector else 0.0
+            base_dev = self.profiler.compute_deviation_score(event) if self.profiler else 0.0
+            failed_auth = 1.0 if (event.status_code == 401 or str(event.auth_result or "").strip().lower() == "failure") else 0.0
+
+            if getattr(self.classifier, "n_features", 15) == 48:
+                features = extract_full_causal_features(
+                    event=event,
+                    if_score=if_score,
+                    baseline_deviation=base_dev,
+                    profiler=self.profiler,
+                    failed_auth_rate=failed_auth,
+                    graph_tracker=self.graph_tracker,
+                    sequence_tracker=self.sequence_tracker,
+                )
+            else:
+                features = extract_features(
+                    event=event,
+                    if_score=if_score,
+                    baseline_deviation=base_dev,
+                    profiler=self.profiler,
+                    failed_auth_rate=failed_auth,
+                )
+            features_list.append(features)
+            meta.append((event, if_score, base_dev))
+
+        if hasattr(self.classifier, "predict_batch"):
+            preds = self.classifier.predict_batch(features_list)
+        else:
+            preds = [self.classifier.predict(f) for f in features_list]
+
+        results = []
+        for (event, if_score, base_dev), pred in zip(meta, preds):
+            fused = self.fusion_engine.fuse(
+                event=event,
+                if_score=if_score,
+                baseline_deviation=base_dev,
+                graph_score=0.0,
+                threat_type=pred.threat_type,
+                classifier_confidence=pred.confidence,
+                severity=pred.severity,
+                is_calibrated=pred.is_calibrated,
+                calibrated_probabilities=pred.calibrated_probabilities,
+                raw_probabilities=pred.raw_probabilities,
+                model_version=pred.model_version,
+                confidence_qualification=pred.confidence_qualification,
+            )
+            results.append((fused, None))
+        return results
+
+
+def warmup_environment(env: BenchmarkEnvironment, count: int = 20) -> None:
+    """Warm up models, memory allocators, and feature extractors."""
+    stream = _generate_synthetic_stream(count, datetime.now(timezone.utc))
+    mgr = StreamingIngestionManager(
+        sequence_tracker=env.sequence_tracker,
+        graph_tracker=env.graph_tracker,
+        detection_handler=env.evaluate_detection,
+    )
+    for ev in stream:
+        mgr.ingest_event(ev, trigger_detection=True)
+
 
 def benchmark_sync_pipeline(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Profile synchronous execution where ingestion and ML inference run on caller thread."""
     env = BenchmarkEnvironment()
+    warmup_environment(env, count=15)
+
     mgr = StreamingIngestionManager(
         sequence_tracker=env.sequence_tracker,
         graph_tracker=env.graph_tracker,
@@ -183,12 +254,21 @@ def benchmark_sync_pipeline(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "latency_p95_ms": round(p95, 3),
         "latency_mean_ms": round(sum(latencies_ms) / n, 3),
         "peak_memory_mb": round(peak_mem / (1024 * 1024), 3),
+        "queue_saturation_count": 0,
+        "rejected_event_count": 0,
     }
 
 
-async def benchmark_async_pipeline(events: List[Dict[str, Any]], workers: int = 2) -> Dict[str, Any]:
+async def benchmark_async_pipeline(
+    events: List[Dict[str, Any]],
+    workers: int = 2,
+    use_batching: bool = False,
+    batch_size: int = 16,
+) -> Dict[str, Any]:
     """Profile asynchronous execution where ingestion enqueues to bounded worker pool."""
     env = BenchmarkEnvironment()
+    warmup_environment(env, count=15)
+
     q_cfg = AsyncQueueConfig(
         max_queue_size=len(events) * 2,
         worker_concurrency=workers,
@@ -196,7 +276,9 @@ async def benchmark_async_pipeline(events: List[Dict[str, Any]], workers: int = 
     )
     q = AsyncDetectionQueue(
         config=q_cfg,
-        detection_handler=env.evaluate_detection,
+        detection_handler=env.evaluate_detection if not use_batching else None,
+        detection_batch_handler=env.evaluate_batch_detection if use_batching else None,
+        batch_size=batch_size,
     )
     await q.start()
 
@@ -206,10 +288,21 @@ async def benchmark_async_pipeline(events: List[Dict[str, Any]], workers: int = 
         async_queue=q,
     )
 
+    # Queue depth sampling background task
+    queue_depth_samples = []
+    sampling_active = True
+
+    async def _sample_depth():
+        while sampling_active:
+            queue_depth_samples.append(q.queue_depth)
+            await asyncio.sleep(0.005)
+
+    sampler_task = asyncio.create_task(_sample_depth())
+
     gc.collect()
     tracemalloc.start()
 
-    # 1. Measure Ingestion Phase (Enqueue speed)
+    # 1. Ingestion Phase
     ingest_start = time.perf_counter()
     ingest_latencies_ms = []
     accepted = 0
@@ -225,9 +318,16 @@ async def benchmark_async_pipeline(events: List[Dict[str, Any]], workers: int = 
     ingest_time = time.perf_counter() - ingest_start
     ingest_eps = len(events) / ingest_time if ingest_time > 0 else 0.0
 
-    # 2. Measure Completion Phase (Worker execution to empty queue)
-    await q.flush(timeout_seconds=30.0)
+    # 2. Completion Phase (Worker execution until empty queue)
+    await q.flush(timeout_seconds=45.0)
     total_time = time.perf_counter() - ingest_start
+
+    sampling_active = False
+    sampler_task.cancel()
+    try:
+        await sampler_task
+    except asyncio.CancelledError:
+        pass
 
     current_mem, peak_mem = tracemalloc.get_traced_memory()
     tracemalloc.stop()
@@ -239,8 +339,12 @@ async def benchmark_async_pipeline(events: List[Dict[str, Any]], workers: int = 
     sorted_ingest = sorted(ingest_latencies_ms)
     n = len(sorted_ingest)
 
+    max_depth = max(queue_depth_samples) if queue_depth_samples else 0
+    mean_depth = sum(queue_depth_samples) / len(queue_depth_samples) if queue_depth_samples else 0.0
+
+    mode_label = f"asynchronous_{'batched' if use_batching else 'unbatched'}_{workers}w"
     return {
-        "mode": f"asynchronous_{workers}_workers",
+        "mode": mode_label,
         "total_events": len(events),
         "accepted_events": accepted,
         "completed_events": metrics.completed_events,
@@ -255,53 +359,61 @@ async def benchmark_async_pipeline(events: List[Dict[str, Any]], workers: int = 
         "queue_wait_time_ms": metrics.queue_wait_time_ms,
         "worker_proc_time_ms": metrics.processing_time_ms,
         "end_to_end_latency_ms": metrics.end_to_end_latency_ms,
+        "queue_depth_max": max_depth,
+        "queue_depth_mean": round(mean_depth, 2),
+        "queue_saturation_count": q.rejected_count,
+        "rejected_event_count": q.rejected_count,
         "peak_memory_mb": round(peak_mem / (1024 * 1024), 3),
     }
 
 
 def run_benchmark() -> Dict[str, Any]:
-    """Execute complete sync vs async comparative benchmark across multiple workloads."""
-    print("=" * 90)
-    print("AEGIS-ML PHASE 27: SYNCHRONOUS VS. ASYNCHRONOUS PIPELINE BENCHMARK")
-    print("=" * 90)
+    """Execute complete Phase 28 benchmark comparing sync, async-unbatched, and async-batched pipelines."""
+    print("=" * 95)
+    print("AEGIS-ML PHASE 28.2: PERFORMANCE BENCHMARK (SYNC VS ASYNC UNBATCHED VS ASYNC BATCHED)")
+    print("=" * 95)
 
     base_time = datetime(2026, 10, 11, 10, 0, 0, tzinfo=timezone.utc)
-    workload_sizes = [100, 250]
+    workload_sizes = [100, 250, 500]
     results = {}
 
     for size in workload_sizes:
-        print(f"\nEvaluating workload size: {size} events...")
+        print(f"\n[Workload: {size} events]")
         events = _generate_synthetic_stream(size, base_time)
 
-        # 1. Synchronous
-        print("  Running synchronous pipeline...")
+        # 1. Synchronous Baseline
+        print("  1. Running synchronous baseline...")
         sync_res = benchmark_sync_pipeline(events)
-        print(f"    - Ingestion Throughput:  {sync_res['ingestion_throughput_eps']} eps")
-        print(f"    - Median Latency:        {sync_res['latency_p50_ms']} ms")
-        print(f"    - Total Elapsed:         {sync_res['elapsed_seconds']} s")
+        print(f"     - Ingest / Det EPS: {sync_res['ingestion_throughput_eps']} eps | Latency p50: {sync_res['latency_p50_ms']} ms | Peak Mem: {sync_res['peak_memory_mb']} MB")
 
-        # 2. Asynchronous (2 workers)
-        print("  Running asynchronous pipeline (2 workers)...")
-        async_res = asyncio.run(benchmark_async_pipeline(events, workers=2))
-        print(f"    - Ingestion Throughput:  {async_res['ingestion_throughput_eps']} eps (Enqueue speedup: {async_res['ingestion_throughput_eps'] / sync_res['ingestion_throughput_eps']:.1f}x)")
-        print(f"    - Completed Detection:   {async_res['completed_detection_throughput_eps']} eps")
-        print(f"    - Ingest Median Latency: {async_res['ingest_latency_p50_ms']} ms")
-        print(f"    - Worker Proc Median:    {async_res['worker_proc_time_ms']['p50']} ms")
-        print(f"    - End-to-End Median:     {async_res['end_to_end_latency_ms']['p50']} ms")
+        # 2. Asynchronous Unbatched (Phase 27 Baseline)
+        print("  2. Running asynchronous unbatched (2 workers)...")
+        async_unbatched_res = asyncio.run(benchmark_async_pipeline(events, workers=2, use_batching=False))
+        print(f"     - Ingest EPS: {async_unbatched_res['ingestion_throughput_eps']} eps | Completed Det EPS: {async_unbatched_res['completed_detection_throughput_eps']} eps")
+        print(f"     - Queue Wait p50: {async_unbatched_res['queue_wait_time_ms']['p50']} ms | Worker Proc p50: {async_unbatched_res['worker_proc_time_ms']['p50']} ms | E2E p50: {async_unbatched_res['end_to_end_latency_ms']['p50']} ms")
+
+        # 3. Asynchronous Batched (Phase 28 Optimized)
+        print("  3. Running asynchronous batched (2 workers, batch_size=16)...")
+        async_batched_res = asyncio.run(benchmark_async_pipeline(events, workers=2, use_batching=True, batch_size=16))
+        speedup = (async_batched_res['completed_detection_throughput_eps'] / async_unbatched_res['completed_detection_throughput_eps']) if async_unbatched_res['completed_detection_throughput_eps'] > 0 else 1.0
+        print(f"     - Ingest EPS: {async_batched_res['ingestion_throughput_eps']} eps | Completed Det EPS: {async_batched_res['completed_detection_throughput_eps']} eps (Speedup: {speedup:.2f}x)")
+        print(f"     - Queue Wait p50: {async_batched_res['queue_wait_time_ms']['p50']} ms | Worker Proc p50: {async_batched_res['worker_proc_time_ms']['p50']} ms | E2E p50: {async_batched_res['end_to_end_latency_ms']['p50']} ms")
 
         results[f"workload_{size}"] = {
             "synchronous": sync_res,
-            "asynchronous": async_res,
+            "asynchronous_unbatched": async_unbatched_res,
+            "asynchronous_batched": async_batched_res,
         }
 
     report = {
         "metadata": {
-            "benchmark_phase": "Phase 27: Asynchronous Detection Pipeline",
+            "benchmark_phase": "Phase 28.2: Synchronous vs. Asynchronous Performance Evaluation",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "platform": platform.platform(),
             "python_version": platform.python_version(),
             "cpu_architecture": platform.machine(),
             "cores": os.cpu_count(),
+            "classifier_features": 48,
             "disclaimer": (
                 "Measurements reflect single-machine local runtime performance on macOS. "
                 "The in-memory queue provides process-isolated concurrency and non-blocking ingestion, "

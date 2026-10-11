@@ -133,6 +133,7 @@ async def lifespan(application: FastAPI):
             worker_concurrency=int(os.getenv("AEGIS_QUEUE_WORKERS", "2")),
         ),
         detection_handler=lambda ev: _evaluate_event_detection(ev, application.state),
+        detection_batch_handler=lambda evs: _evaluate_batch_detection(evs, application.state),
     )
     await application.state.async_queue.start()
 
@@ -963,167 +964,192 @@ def _require_admin_authorization(
         )
 
 
+def _evaluate_batch_detection(
+    events: List[UnifiedEvent],
+    state: Any,
+) -> List[Tuple[Optional[DetectionResult], Optional[Alert]]]:
+    """
+    Evaluate a batch of accepted UnifiedEvents through the complete detection pipeline:
+    extract features (48 causal features if configured), execute calibrated classifier via
+    vectorized batch inference, fuse evidence, generate Alert if threat/anomaly thresholds
+    are met, and correlate into incident graph.
+    """
+    if not hasattr(state, "classifier") or not state.classifier or not getattr(state.classifier, "is_fitted", False):
+        return [(None, None) for _ in events]
+
+    if not events:
+        return []
+
+    try:
+        prep_items = []
+        features_list = []
+
+        for event in events:
+            if_score = state.if_detector.predict(event) if hasattr(state, "if_detector") and state.if_detector else 0.0
+            base_dev = state.profiler.compute_deviation_score(event) if hasattr(state, "profiler") and state.profiler else 0.0
+            failed_auth = 1.0 if (event.status_code == 401 or str(event.auth_result or "").strip().lower() == "failure") else 0.0
+
+            if getattr(state.classifier, "n_features", 15) == 48 and hasattr(state, "graph_tracker") and hasattr(state, "sequence_tracker"):
+                features = extract_full_causal_features(
+                    event=event,
+                    if_score=if_score,
+                    baseline_deviation=base_dev,
+                    profiler=state.profiler,
+                    failed_auth_rate=failed_auth,
+                    graph_tracker=state.graph_tracker,
+                    sequence_tracker=state.sequence_tracker,
+                )
+            else:
+                features = extract_features(
+                    event=event,
+                    if_score=if_score,
+                    baseline_deviation=base_dev,
+                    profiler=state.profiler,
+                    failed_auth_rate=failed_auth,
+                )
+            features_list.append(features)
+            prep_items.append((event, if_score, base_dev, features))
+
+        if hasattr(state.classifier, "predict_batch"):
+            predictions = state.classifier.predict_batch(features_list)
+        else:
+            predictions = [state.classifier.predict(f) for f in features_list]
+
+        results = []
+        for (event, if_score, base_dev, features), prediction in zip(prep_items, predictions):
+            fusion_result = None
+            if hasattr(state, "fusion_engine") and state.fusion_engine:
+                fusion_result = state.fusion_engine.fuse(
+                    event=event,
+                    if_score=if_score,
+                    baseline_deviation=base_dev,
+                    graph_score=0.0,
+                    threat_type=prediction.threat_type,
+                    classifier_confidence=prediction.confidence,
+                    severity=prediction.severity,
+                    is_calibrated=prediction.is_calibrated,
+                    calibrated_probabilities=prediction.calibrated_probabilities,
+                    raw_probabilities=prediction.raw_probabilities,
+                    model_version=prediction.model_version,
+                    confidence_qualification=prediction.confidence_qualification,
+                )
+
+            is_threat = prediction.threat_type != "benign"
+            is_anomalous = if_score >= ANOMALY_THRESHOLD or base_dev >= 0.70
+            alert_obj = None
+
+            if is_threat and prediction.confidence >= CONFIDENCE_ALERT_MIN:
+                stage = KILL_CHAIN_STAGES.get(prediction.threat_type, "Weaponize")
+                local_explanations = {}
+                if hasattr(state, "explainer") and state.explainer:
+                    try:
+                        local_explanations = state.explainer.explain(
+                            features,
+                            global_importances=prediction.feature_importances,
+                            entity_profile=state.profiler.profiles.get(event.src_entity) if hasattr(state, "profiler") and state.profiler else None,
+                        )
+                    except Exception as ex_err:
+                        logger.debug("Local explainer error during streaming detection: %s", ex_err)
+
+                alert_obj = Alert(
+                    event_id=event.event_id,
+                    timestamp=event.timestamp or datetime.utcnow(),
+                    created_at=datetime.utcnow(),
+                    threat_type=prediction.threat_type,
+                    severity=prediction.severity or "medium",
+                    confidence=round(prediction.confidence, 4),
+                    classifier_probability=round(prediction.confidence, 4),
+                    anomaly_score=round(if_score, 4),
+                    baseline_deviation=round(base_dev, 4),
+                    src_entity=event.src_entity,
+                    dst_entity=event.dst_entity,
+                    layer=event.layer,
+                    source_file="streaming_ingestion",
+                    is_synthetic=False,
+                    feature_importance=local_explanations,
+                    global_feature_importances=prediction.feature_importances,
+                    current_kill_chain_stage=stage,
+                    predicted_next_stage=NEXT_STAGE.get(stage, "Impact"),
+                    fingerprint=getattr(event, "raw_payload_hash", None) or event.event_id,
+                    raw_event=event.model_dump() if hasattr(event, "model_dump") else event.dict(),
+                    is_false_positive=None,
+                    is_calibrated=prediction.is_calibrated,
+                    calibrated_confidence=round(prediction.confidence, 4) if prediction.is_calibrated else None,
+                    calibrated_probabilities=prediction.calibrated_probabilities,
+                    raw_probabilities=prediction.raw_probabilities,
+                    model_version=prediction.model_version,
+                    confidence_qualification=prediction.confidence_qualification,
+                )
+            elif is_anomalous:
+                alert_obj = Alert(
+                    event_id=event.event_id,
+                    timestamp=event.timestamp or datetime.utcnow(),
+                    created_at=datetime.utcnow(),
+                    threat_type="statistical_anomaly",
+                    severity="high" if (if_score >= 0.85 or base_dev >= 0.85) else "medium",
+                    confidence=round(if_score, 4),
+                    classifier_probability=None,
+                    anomaly_score=round(if_score, 4),
+                    baseline_deviation=round(base_dev, 4),
+                    src_entity=event.src_entity,
+                    dst_entity=event.dst_entity,
+                    layer=event.layer,
+                    source_file="streaming_ingestion",
+                    is_synthetic=False,
+                    feature_importance={},
+                    global_feature_importances={},
+                    current_kill_chain_stage="Anomaly",
+                    predicted_next_stage="Investigation",
+                    fingerprint=getattr(event, "raw_payload_hash", None) or event.event_id,
+                    raw_event=event.model_dump() if hasattr(event, "model_dump") else event.dict(),
+                    is_false_positive=None,
+                )
+
+            if alert_obj and hasattr(state, "correlator") and state.correlator:
+                incident, is_new = state.correlator.correlate_alert(alert_obj, raw_event=event)
+                alert_obj.incident_id = incident.incident_id
+                alert_dict = alert_obj.model_dump() if hasattr(alert_obj, "model_dump") else alert_obj.dict()
+                alert_dict["event_id"] = alert_obj.event_id
+                alert_dict["incident_id"] = incident.incident_id
+                alert_dict["timestamp"] = alert_obj.timestamp.isoformat() if alert_obj.timestamp else datetime.utcnow().isoformat()
+                alert_dict["created_at"] = alert_obj.created_at.isoformat()
+
+                if hasattr(state, "alerts"):
+                    state.alerts.append(alert_dict)
+                if hasattr(state, "alerts_by_severity"):
+                    sev = alert_dict["severity"]
+                    state.alerts_by_severity[sev] = state.alerts_by_severity.get(sev, 0) + 1
+
+                inc_dict = incident.model_dump() if hasattr(incident, "model_dump") else incident.dict()
+                inc_dict["created_at"] = incident.created_at.isoformat()
+                inc_dict["updated_at"] = incident.updated_at.isoformat()
+                for t in inc_dict.get("timeline", []):
+                    if isinstance(t.get("timestamp"), datetime):
+                        t["timestamp"] = t["timestamp"].isoformat()
+
+                if hasattr(state, "incidents"):
+                    inc_idx = next((i for i, inc in enumerate(state.incidents) if inc.get("incident_id") == incident.incident_id), None)
+                    if inc_idx is not None:
+                        state.incidents[inc_idx] = inc_dict
+                    else:
+                        state.incidents.append(inc_dict)
+
+            results.append((fusion_result, alert_obj))
+
+        return results
+
+    except Exception as exc:
+        logger.error("Error during streaming detection evaluation: %s", exc)
+        return [(None, None) for _ in events]
+
+
 def _evaluate_event_detection(
     event: UnifiedEvent,
     state: Any,
 ) -> Tuple[Optional[DetectionResult], Optional[Alert]]:
-    """
-    Evaluate an accepted UnifiedEvent through the complete detection pipeline:
-    extract features (48 causal features if configured), execute calibrated classifier,
-    fuse evidence, generate Alert if threat/anomaly thresholds are met, and correlate
-    into incident graph.
-    """
-    if not hasattr(state, "classifier") or not state.classifier or not getattr(state.classifier, "is_fitted", False):
-        return None, None
-
-    try:
-        if_score = state.if_detector.predict(event) if hasattr(state, "if_detector") and state.if_detector else 0.0
-        base_dev = state.profiler.compute_deviation_score(event) if hasattr(state, "profiler") and state.profiler else 0.0
-        failed_auth = 1.0 if (event.status_code == 401 or str(event.auth_result or "").strip().lower() == "failure") else 0.0
-
-        if getattr(state.classifier, "n_features", 15) == 48 and hasattr(state, "graph_tracker") and hasattr(state, "sequence_tracker"):
-            features = extract_full_causal_features(
-                event=event,
-                if_score=if_score,
-                baseline_deviation=base_dev,
-                profiler=state.profiler,
-                failed_auth_rate=failed_auth,
-                graph_tracker=state.graph_tracker,
-                sequence_tracker=state.sequence_tracker,
-            )
-        else:
-            features = extract_features(
-                event=event,
-                if_score=if_score,
-                baseline_deviation=base_dev,
-                profiler=state.profiler,
-                failed_auth_rate=failed_auth,
-            )
-
-        prediction = state.classifier.predict(features)
-
-        fusion_result = None
-        if hasattr(state, "fusion_engine") and state.fusion_engine:
-            fusion_result = state.fusion_engine.fuse(
-                event=event,
-                if_score=if_score,
-                baseline_deviation=base_dev,
-                graph_score=0.0,
-                threat_type=prediction.threat_type,
-                classifier_confidence=prediction.confidence,
-                severity=prediction.severity,
-                is_calibrated=prediction.is_calibrated,
-                calibrated_probabilities=prediction.calibrated_probabilities,
-                raw_probabilities=prediction.raw_probabilities,
-                model_version=prediction.model_version,
-                confidence_qualification=prediction.confidence_qualification,
-            )
-
-        is_threat = prediction.threat_type != "benign"
-        is_anomalous = if_score >= ANOMALY_THRESHOLD or base_dev >= 0.70
-        alert_obj = None
-
-        if is_threat and prediction.confidence >= CONFIDENCE_ALERT_MIN:
-            stage = KILL_CHAIN_STAGES.get(prediction.threat_type, "Weaponize")
-            local_explanations = {}
-            if hasattr(state, "explainer") and state.explainer:
-                try:
-                    local_explanations = state.explainer.explain(
-                        features,
-                        global_importances=prediction.feature_importances,
-                        entity_profile=state.profiler.profiles.get(event.src_entity) if hasattr(state, "profiler") and state.profiler else None,
-                    )
-                except Exception as ex_err:
-                    logger.debug("Local explainer error during streaming detection: %s", ex_err)
-
-            alert_obj = Alert(
-                event_id=event.event_id,
-                timestamp=event.timestamp or datetime.utcnow(),
-                created_at=datetime.utcnow(),
-                threat_type=prediction.threat_type,
-                severity=prediction.severity or "medium",
-                confidence=round(prediction.confidence, 4),
-                classifier_probability=round(prediction.confidence, 4),
-                anomaly_score=round(if_score, 4),
-                baseline_deviation=round(base_dev, 4),
-                src_entity=event.src_entity,
-                dst_entity=event.dst_entity,
-                layer=event.layer,
-                source_file="streaming_ingestion",
-                is_synthetic=False,
-                feature_importance=local_explanations,
-                global_feature_importances=prediction.feature_importances,
-                current_kill_chain_stage=stage,
-                predicted_next_stage=NEXT_STAGE.get(stage, "Impact"),
-                fingerprint=getattr(event, "raw_payload_hash", None) or event.event_id,
-                raw_event=event.model_dump() if hasattr(event, "model_dump") else event.dict(),
-                is_false_positive=None,
-                is_calibrated=prediction.is_calibrated,
-                calibrated_confidence=round(prediction.confidence, 4) if prediction.is_calibrated else None,
-                calibrated_probabilities=prediction.calibrated_probabilities,
-                raw_probabilities=prediction.raw_probabilities,
-                model_version=prediction.model_version,
-                confidence_qualification=prediction.confidence_qualification,
-            )
-        elif is_anomalous:
-            alert_obj = Alert(
-                event_id=event.event_id,
-                timestamp=event.timestamp or datetime.utcnow(),
-                created_at=datetime.utcnow(),
-                threat_type="statistical_anomaly",
-                severity="high" if (if_score >= 0.85 or base_dev >= 0.85) else "medium",
-                confidence=round(if_score, 4),
-                classifier_probability=None,
-                anomaly_score=round(if_score, 4),
-                baseline_deviation=round(base_dev, 4),
-                src_entity=event.src_entity,
-                dst_entity=event.dst_entity,
-                layer=event.layer,
-                source_file="streaming_ingestion",
-                is_synthetic=False,
-                feature_importance={},
-                global_feature_importances={},
-                current_kill_chain_stage="Anomaly",
-                predicted_next_stage="Investigation",
-                fingerprint=getattr(event, "raw_payload_hash", None) or event.event_id,
-                raw_event=event.model_dump() if hasattr(event, "model_dump") else event.dict(),
-                is_false_positive=None,
-            )
-
-        if alert_obj and hasattr(state, "correlator") and state.correlator:
-            incident, is_new = state.correlator.correlate_alert(alert_obj, raw_event=event)
-            alert_obj.incident_id = incident.incident_id
-            alert_dict = alert_obj.model_dump() if hasattr(alert_obj, "model_dump") else alert_obj.dict()
-            alert_dict["event_id"] = alert_obj.event_id
-            alert_dict["incident_id"] = incident.incident_id
-            alert_dict["timestamp"] = alert_obj.timestamp.isoformat() if alert_obj.timestamp else datetime.utcnow().isoformat()
-            alert_dict["created_at"] = alert_obj.created_at.isoformat()
-
-            if hasattr(state, "alerts"):
-                state.alerts.append(alert_dict)
-            if hasattr(state, "alerts_by_severity"):
-                sev = alert_dict["severity"]
-                state.alerts_by_severity[sev] = state.alerts_by_severity.get(sev, 0) + 1
-
-            inc_dict = incident.model_dump() if hasattr(incident, "model_dump") else incident.dict()
-            inc_dict["created_at"] = incident.created_at.isoformat()
-            inc_dict["updated_at"] = incident.updated_at.isoformat()
-            for t in inc_dict.get("timeline", []):
-                if isinstance(t.get("timestamp"), datetime):
-                    t["timestamp"] = t["timestamp"].isoformat()
-
-            if hasattr(state, "incidents"):
-                inc_idx = next((i for i, inc in enumerate(state.incidents) if inc.get("incident_id") == incident.incident_id), None)
-                if inc_idx is not None:
-                    state.incidents[inc_idx] = inc_dict
-                else:
-                    state.incidents.append(inc_dict)
-
-        return fusion_result, alert_obj
-
-    except Exception as exc:
-        logger.error("Error during streaming detection evaluation: %s", exc)
-        return None, None
+    """Single-event evaluation adapter wrapping _evaluate_batch_detection."""
+    res = _evaluate_batch_detection([event], state)
+    return res[0] if res else (None, None)
 
 
 def _get_ingestion_manager(state) -> StreamingIngestionManager:
@@ -1135,6 +1161,7 @@ def _get_ingestion_manager(state) -> StreamingIngestionManager:
                 worker_concurrency=int(os.getenv("AEGIS_QUEUE_WORKERS", "2")),
             ),
             detection_handler=lambda ev: _evaluate_event_detection(ev, state),
+            detection_batch_handler=lambda evs: _evaluate_batch_detection(evs, state),
         )
 
     if not hasattr(state, "ingestion_manager") or state.ingestion_manager is None:

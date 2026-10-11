@@ -1,0 +1,104 @@
+{
+  "metadata": {
+    "timestamp": "2026-10-11T05:10:53.384330+00:00",
+    "events_profiled": 200,
+    "alerts_generated": 16,
+    "incidents_correlated": 16,
+    "total_elapsed_seconds": 9.7912,
+    "effective_throughput_eps": 20.43,
+    "peak_memory_mb": 1.5,
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "python_version": "3.10.12",
+    "cpu_count": 10
+  },
+  "stages": {
+    "1_normalization": {
+      "invocations": 200,
+      "total_time_ms": 21.581,
+      "mean_ms": 0.1079,
+      "p50_ms": 0.1056,
+      "p95_ms": 0.1302,
+      "percent_of_pipeline": 0.22
+    },
+    "2_isolation_forest": {
+      "invocations": 200,
+      "total_time_ms": 1254.631,
+      "mean_ms": 6.2732,
+      "p50_ms": 7.2806,
+      "p95_ms": 7.645,
+      "percent_of_pipeline": 12.82
+    },
+    "3_baseline_profiler": {
+      "invocations": 200,
+      "total_time_ms": 0.268,
+      "mean_ms": 0.0013,
+      "p50_ms": 0.0012,
+      "p95_ms": 0.0021,
+      "percent_of_pipeline": 0.0
+    },
+    "4_sequence_features": {
+      "invocations": 200,
+      "total_time_ms": 8.541,
+      "mean_ms": 0.0427,
+      "p50_ms": 0.0422,
+      "p95_ms": 0.0529,
+      "percent_of_pipeline": 0.09
+    },
+    "5_graph_features": {
+      "invocations": 200,
+      "total_time_ms": 3.838,
+      "mean_ms": 0.0192,
+      "p50_ms": 0.0185,
+      "p95_ms": 0.0269,
+      "percent_of_pipeline": 0.04
+    },
+    "6_48_feature_assembly": {
+      "invocations": 200,
+      "total_time_ms": 11.919,
+      "mean_ms": 0.0596,
+      "p50_ms": 0.0599,
+      "p95_ms": 0.0675,
+      "percent_of_pipeline": 0.12
+    },
+    "7_classifier_inference": {
+      "invocations": 200,
+      "total_time_ms": 8478.93,
+      "mean_ms": 42.3947,
+      "p50_ms": 42.1789,
+      "p95_ms": 43.7165,
+      "percent_of_pipeline": 86.62
+    },
+    "8_evidence_fusion": {
+      "invocations": 200,
+      "total_time_ms": 5.308,
+      "mean_ms": 0.0265,
+      "p50_ms": 0.0211,
+      "p95_ms": 0.0336,
+      "percent_of_pipeline": 0.05
+    },
+    "9_local_explainer": {
+      "invocations": 35,
+      "total_time_ms": 0.09,
+      "mean_ms": 0.0026,
+      "p50_ms": 0.0025,
+      "p95_ms": 0.0035,
+      "percent_of_pipeline": 0.0
+    },
+    "10_incident_correlation": {
+      "invocations": 16,
+      "total_time_ms": 2.648,
+      "mean_ms": 0.1655,
+      "p50_ms": 0.1134,
+      "p95_ms": 0.9462,
+      "percent_of_pipeline": 0.03
+    },
+    "11_pydantic_serialization": {
+      "invocations": 16,
+      "total_time_ms": 1.42,
+      "mean_ms": 0.0887,
+      "p50_ms": 0.0879,
+      "p95_ms": 0.1481,
+      "percent_of_pipeline": 0.01
+    }
+  }
+}

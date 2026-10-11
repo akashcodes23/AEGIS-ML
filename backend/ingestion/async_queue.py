@@ -22,6 +22,7 @@ Key Architectural Guarantees:
 """
 
 import asyncio
+import contextlib
 import logging
 import math
 import time
@@ -92,9 +93,13 @@ class AsyncDetectionQueue:
         self,
         config: Optional[AsyncQueueConfig] = None,
         detection_handler: Optional[Callable[[UnifiedEvent], Tuple[Optional[DetectionResult], Optional[Alert]]]] = None,
+        detection_batch_handler: Optional[Callable[[List[UnifiedEvent]], List[Tuple[Optional[DetectionResult], Optional[Alert]]]]] = None,
+        batch_size: int = 16,
     ):
         self.config = config or AsyncQueueConfig()
         self.detection_handler = detection_handler
+        self.detection_batch_handler = detection_batch_handler
+        self.batch_size = max(1, batch_size)
 
         # Internal queue and dead-letter records
         self._queue: asyncio.Queue[QueuedEventItem] = asyncio.Queue(maxsize=self.config.max_queue_size)
@@ -152,6 +157,17 @@ class AsyncDetectionQueue:
         """Start the background worker pool and thread executor."""
         if self._running:
             return
+
+        running_loop = asyncio.get_running_loop()
+        try:
+            queue_loop = getattr(self._queue, "_loop", None)
+            if queue_loop is not None and queue_loop != running_loop:
+                if self._queue.empty():
+                    self._queue = asyncio.Queue(maxsize=self.config.max_queue_size)
+                    self._master_host_lock = asyncio.Lock()
+                    self._host_locks.clear()
+        except Exception:
+            pass
 
         self._running = True
         self._executor = ThreadPoolExecutor(
@@ -299,37 +315,100 @@ class AsyncDetectionQueue:
             return False, "queue_full", None
 
     async def _worker_loop(self, worker_id: int) -> None:
-        """Main worker consumption loop."""
+        """Main worker consumption loop supporting both single-event and safe batched processing."""
         loop = asyncio.get_running_loop()
 
         while self._running:
             try:
-                item = await self._queue.get()
+                first_item = await self._queue.get()
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                if not self._running:
+                    break
                 logger.error(f"[Worker-{worker_id}] Unexpected error dequeuing: {e}")
+                try:
+                    await asyncio.sleep(0.05)
+                except (asyncio.CancelledError, RuntimeError):
+                    break
                 continue
 
+            # Batch collection if batch handler is available
+            items = [first_item]
+            if self.detection_batch_handler is not None and self.batch_size > 1:
+                while len(items) < self.batch_size:
+                    try:
+                        next_item = self._queue.get_nowait()
+                        items.append(next_item)
+                    except (asyncio.QueueEmpty, ValueError):
+                        break
+
+            batch_count = len(items)
             try:
-                # Record queue wait time
                 now = time.perf_counter()
-                wait_time_ms = (now - item.enqueued_at) * 1000.0
-                self._wait_times.append(wait_time_ms)
+                for it in items:
+                    wait_time_ms = (now - it.enqueued_at) * 1000.0
+                    self._wait_times.append(wait_time_ms)
+                    it.state = EventProcessingState.PROCESSING
+                self.processing_events += batch_count
 
-                item.state = EventProcessingState.PROCESSING
-                self.processing_events += 1
+                if self.detection_batch_handler is not None and len(items) > 1:
+                    # Multi-item batch path: acquire locks in deterministic sorted order
+                    unique_keys = sorted(list(set(it.partition_key for it in items)))
+                    locks = [await self._get_host_lock(k) for k in unique_keys]
+                    async with contextlib.AsyncExitStack() as stack:
+                        for lock in locks:
+                            await stack.enter_async_context(lock)
 
-                # Host partition serialization: acquire per-host lock
-                host_lock = await self._get_host_lock(item.partition_key)
-                async with host_lock:
-                    await self._process_item_with_retries(item, loop)
+                        # Filter idempotency under lock
+                        active_items = []
+                        for it in items:
+                            if it.event.event_id and it.event.event_id in self._completed_event_ids:
+                                it.state = EventProcessingState.COMPLETED
+                            else:
+                                active_items.append(it)
+
+                        if active_items:
+                            proc_start = time.perf_counter()
+                            try:
+                                if self._executor:
+                                    await loop.run_in_executor(
+                                        self._executor,
+                                        self.detection_batch_handler,
+                                        [it.event for it in active_items],
+                                    )
+                                proc_ms = (time.perf_counter() - proc_start) * 1000.0
+                                per_item_ms = proc_ms / len(active_items)
+                                completed_ts = time.time()
+                                for it in active_items:
+                                    it.state = EventProcessingState.COMPLETED
+                                    self.completed_events += 1
+                                    self._processing_times.append(per_item_ms)
+                                    self._e2e_latencies.append((time.perf_counter() - it.enqueued_at) * 1000.0)
+                                    if it.event.event_id:
+                                        self._completed_event_ids[it.event.event_id] = completed_ts
+                                        if len(self._completed_event_ids) > self._max_completed_ids:
+                                            self._completed_event_ids.popitem(last=False)
+                            except Exception as batch_err:
+                                logger.warning(f"[Worker-{worker_id}] Batch handler error, falling back to sequential retries: {batch_err}")
+                                for it in active_items:
+                                    await self._process_item_with_retries(it, loop)
+                else:
+                    # Single-item path (standard single event or fallback)
+                    single_item = items[0]
+                    host_lock = await self._get_host_lock(single_item.partition_key)
+                    async with host_lock:
+                        await self._process_item_with_retries(single_item, loop)
 
             except Exception as e:
-                logger.error(f"[Worker-{worker_id}] Unhandled error processing item: {e}")
+                logger.error(f"[Worker-{worker_id}] Unhandled error processing item(s): {e}")
+                for it in items:
+                    if it.state == EventProcessingState.PROCESSING:
+                        it.state = EventProcessingState.FAILED
             finally:
-                self.processing_events = max(0, self.processing_events - 1)
-                self._queue.task_done()
+                self.processing_events = max(0, self.processing_events - batch_count)
+                for _ in range(batch_count):
+                    self._queue.task_done()
 
     async def _process_item_with_retries(
         self,

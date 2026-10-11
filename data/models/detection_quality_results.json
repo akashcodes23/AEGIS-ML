@@ -1,0 +1,164 @@
+{
+  "metadata": {
+    "evaluation_phase": "Phase 28: Detection Quality & Error Analysis",
+    "timestamp": "2026-10-11T05:18:47.134695+00:00",
+    "dataset": "/Users/akashgpatil/major_project/AEGIS-ML/data/raw/behavioral_diversity_labeled.jsonl",
+    "split_method": "scenario_grouped_stratified_70_10_20",
+    "seed": 42,
+    "classes": [
+      "benign",
+      "brute_force",
+      "c2_beaconing",
+      "data_exfiltration",
+      "lateral_movement"
+    ],
+    "disclaimer": "Evaluation evaluated against scenario-grouped synthetic benchmarks. Real-world generalization on organic enterprise network telemetry has not been independently established."
+  },
+  "aggregate_metrics": {
+    "accuracy": 0.9963,
+    "balanced_accuracy": 0.9889,
+    "macro_f1": 0.9932,
+    "weighted_f1": 0.9963,
+    "benign_false_positive_rate": 0.0,
+    "benign_fp_count": 0,
+    "benign_total_count": 679,
+    "attack_recall": 0.9926,
+    "attack_tp_count": 403,
+    "attack_total_count": 406,
+    "log_loss": 0.1468,
+    "brier_score": 0.0042
+  },
+  "per_class_metrics": {
+    "benign": {
+      "precision": 0.9956,
+      "recall": 1.0,
+      "f1_score": 0.9978,
+      "support": 679
+    },
+    "brute_force": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 150
+    },
+    "c2_beaconing": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 30
+    },
+    "data_exfiltration": {
+      "precision": 0.9935,
+      "recall": 1.0,
+      "f1_score": 0.9968,
+      "support": 154
+    },
+    "lateral_movement": {
+      "precision": 1.0,
+      "recall": 0.9444,
+      "f1_score": 0.9714,
+      "support": 72
+    }
+  },
+  "confusion_matrix": [
+    [
+      679,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      150,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      30,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      154,
+      0
+    ],
+    [
+      3,
+      0,
+      0,
+      1,
+      68
+    ]
+  ],
+  "false_positive_workflow_analysis": {
+    "benign_traffic": {
+      "total_events": 400,
+      "false_alarms": 0,
+      "false_alarm_rate": 0.0,
+      "common_misclassifications": {}
+    },
+    "data_synchronization": {
+      "total_events": 72,
+      "false_alarms": 0,
+      "false_alarm_rate": 0.0,
+      "common_misclassifications": {}
+    },
+    "smb_file_sharing": {
+      "total_events": 106,
+      "false_alarms": 0,
+      "false_alarm_rate": 0.0,
+      "common_misclassifications": {}
+    },
+    "bulk_read_archive": {
+      "total_events": 47,
+      "false_alarms": 0,
+      "false_alarm_rate": 0.0,
+      "common_misclassifications": {}
+    },
+    "large_file_transfer": {
+      "total_events": 29,
+      "false_alarms": 0,
+      "false_alarm_rate": 0.0,
+      "common_misclassifications": {}
+    },
+    "software_deployment": {
+      "total_events": 25,
+      "false_alarms": 0,
+      "false_alarm_rate": 0.0,
+      "common_misclassifications": {}
+    }
+  },
+  "false_negative_attack_analysis": {
+    "lateral_movement": {
+      "total_attack_events": 72,
+      "missed_as_benign": 3,
+      "false_negative_rate": 0.0417,
+      "missed_lacking_endpoint_context": 0
+    },
+    "data_exfiltration": {
+      "total_attack_events": 154,
+      "missed_as_benign": 0,
+      "false_negative_rate": 0.0,
+      "missed_lacking_endpoint_context": 0
+    },
+    "c2_beaconing": {
+      "total_attack_events": 30,
+      "missed_as_benign": 0,
+      "false_negative_rate": 0.0,
+      "missed_lacking_endpoint_context": 0
+    },
+    "brute_force": {
+      "total_attack_events": 150,
+      "missed_as_benign": 0,
+      "false_negative_rate": 0.0,
+      "missed_lacking_endpoint_context": 0
+    }
+  }
+}
