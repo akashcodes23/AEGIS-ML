@@ -1,19 +1,19 @@
 # AEGIS Backend Requirements
-# Web framework
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-pydantic>=2.9.0
+# Web framework & server
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.30.0,<1.0.0
+pydantic>=2.9.0,<3.0.0
 python-dotenv>=1.0.1
 httpx>=0.27.0
 
-# Data & Machine Learning
-numpy>=1.26.0,<3.0.0
-scipy>=1.13.0,<1.15.0
-pandas>=2.2.0
-scikit-learn>=1.5.0
-imbalanced-learn>=0.12.2
-joblib>=1.4.0
-networkx>=3.3
+# Scientific & ML stack (pinned to match serialized model artifacts with verified prebuilt Linux wheels)
+numpy==2.2.6
+scipy==1.14.1
+pandas>=2.2.0,<3.0.0
+scikit-learn==1.7.2
+imbalanced-learn>=0.12.2,<0.15.0
+joblib>=1.4.0,<2.0.0
+networkx>=3.3,<4.0
 
 # Utilities & Streaming
 faker>=24.0.0

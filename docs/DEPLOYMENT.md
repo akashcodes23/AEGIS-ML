@@ -35,8 +35,8 @@ In the [Render Dashboard](https://dashboard.render.com/):
 | **Region** | Oregon (US West) or Frankfurt | Choose closest region to target users |
 | **Branch** | `main` | Production branch |
 | **Root Directory** | *(leave blank / repository root)* | Runs from repo root |
-| **Runtime** | `Python 3` | Python 3.10+ |
-| **Build Command** | `pip install -r backend/requirements.txt` | Installs dependencies |
+| **Runtime** | `Python 3` | Python 3.10.12 (specified via `.python-version`) |
+| **Build Command** | `pip install --upgrade pip setuptools wheel && pip install -r backend/requirements.txt` | Upgrades pip to ensure prebuilt binary wheels are used (avoids SciPy Fortran compilation) |
 | **Start Command** | `uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT` | Uses Render dynamic `$PORT` |
 | **Instance Type** | Free or Starter (512MB–1GB RAM) | Fits model memory footprint ($<150\text{ MB}$) |
 
@@ -166,5 +166,6 @@ When exposing the demo to the public:
 | **CORS Error in Browser** | `CORS_ORIGINS` or `CORS_ORIGIN_REGEX` missing frontend domain | Set `CORS_ORIGIN_REGEX=https://.*\.vercel\.app` or add exact Vercel URL to `CORS_ORIGINS` in Render. |
 | **WebSocket Connection Failed** | Mixed content blocked by browser | Ensure Vercel connects via `wss://`, not `ws://`. Set `VITE_WS_URL=wss://<backend>/ws/live`. |
 | **Model Load Error on Render** | Model artifact missing or path incorrect | Verify `calibrated_threat_classifier.pkl` is committed and `AEGIS_MODEL_DIR` is default `data/models`. |
-| **Render Build Fails on Python Version** | Defaulting to older Python | Set `PYTHON_VERSION=3.10.12` in Render Environment Variables. |
+| **Render Build Fails on Python Version** | Defaulting to older Python | Set `PYTHON_VERSION=3.10.12` in Render Environment Variables or commit `.python-version`. |
+| **SciPy Build Failure ("Unknown compiler(s): gfortran")** | Pip defaulted to building SciPy from source instead of using prebuilt wheel | Upgrade pip before installing (`pip install --upgrade pip setuptools wheel && pip install -r backend/requirements.txt`) and ensure Python 3.10+ is active. |
 | **Vercel Build Fails (404 on subpaths)** | Missing SPA rewrites | Ensure `frontend/vercel.json` contains SPA rewrite rule to `/index.html`. |
