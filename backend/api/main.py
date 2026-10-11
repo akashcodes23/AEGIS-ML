@@ -33,7 +33,7 @@ try:
     from backend.core.schemas import (
         UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry,
         IngestionEventRequest, IngestionBatchRequest, IngestionItemResult,
-        IngestionBatchResponse, StreamingIngestionStats,
+        IngestionBatchResponse, StreamingIngestionStats, ReplayRequest, ReplayResponse,
     )
     from backend.detection.isolation_forest import IsolationForestDetector
     from backend.detection.baseline_profiler import BehavioralBaselineProfiler
@@ -47,6 +47,7 @@ try:
     from backend.explainability.explainer import LocalFeatureExplainer
     from backend.ingestion.streaming_ingestion import StreamingIngestionManager
     from backend.ingestion.normalizer import NormalizerPipeline, NormalizationError
+    from backend.ingestion.replay import DeterministicEventReplayer, ReplayConfig
 except ModuleNotFoundError:
     from core.config import (
         CONFIDENCE_ALERT_MIN,
@@ -60,7 +61,7 @@ except ModuleNotFoundError:
     from core.schemas import (
         UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry,
         IngestionEventRequest, IngestionBatchRequest, IngestionItemResult,
-        IngestionBatchResponse, StreamingIngestionStats,
+        IngestionBatchResponse, StreamingIngestionStats, ReplayRequest, ReplayResponse,
     )
     from detection.isolation_forest import IsolationForestDetector
     from detection.baseline_profiler import BehavioralBaselineProfiler
@@ -74,6 +75,7 @@ except ModuleNotFoundError:
     from explainability.explainer import LocalFeatureExplainer
     from ingestion.streaming_ingestion import StreamingIngestionManager
     from ingestion.normalizer import NormalizerPipeline, NormalizationError
+    from ingestion.replay import DeterministicEventReplayer, ReplayConfig
 
 
 
@@ -1032,7 +1034,7 @@ def _evaluate_event_detection(
                 current_kill_chain_stage=stage,
                 predicted_next_stage=NEXT_STAGE.get(stage, "Impact"),
                 fingerprint=getattr(event, "raw_payload_hash", None) or event.event_id,
-                raw_event=event.dict(),
+                raw_event=event.model_dump() if hasattr(event, "model_dump") else event.dict(),
                 is_false_positive=None,
                 is_calibrated=prediction.is_calibrated,
                 calibrated_confidence=round(prediction.confidence, 4) if prediction.is_calibrated else None,
@@ -1062,13 +1064,14 @@ def _evaluate_event_detection(
                 current_kill_chain_stage="Anomaly",
                 predicted_next_stage="Investigation",
                 fingerprint=getattr(event, "raw_payload_hash", None) or event.event_id,
-                raw_event=event.dict(),
+                raw_event=event.model_dump() if hasattr(event, "model_dump") else event.dict(),
                 is_false_positive=None,
             )
 
         if alert_obj and hasattr(state, "correlator") and state.correlator:
             incident, is_new = state.correlator.correlate_alert(alert_obj, raw_event=event)
-            alert_dict = alert_obj.dict()
+            alert_obj.incident_id = incident.incident_id
+            alert_dict = alert_obj.model_dump() if hasattr(alert_obj, "model_dump") else alert_obj.dict()
             alert_dict["event_id"] = alert_obj.event_id
             alert_dict["incident_id"] = incident.incident_id
             alert_dict["timestamp"] = alert_obj.timestamp.isoformat() if alert_obj.timestamp else datetime.utcnow().isoformat()
@@ -1080,7 +1083,7 @@ def _evaluate_event_detection(
                 sev = alert_dict["severity"]
                 state.alerts_by_severity[sev] = state.alerts_by_severity.get(sev, 0) + 1
 
-            inc_dict = incident.dict()
+            inc_dict = incident.model_dump() if hasattr(incident, "model_dump") else incident.dict()
             inc_dict["created_at"] = incident.created_at.isoformat()
             inc_dict["updated_at"] = incident.updated_at.isoformat()
             for t in inc_dict.get("timeline", []):
@@ -1181,6 +1184,45 @@ def reset_ingestion(
     mgr = _get_ingestion_manager(app.state)
     mgr.reset()
     return {"status": "success", "message": "Streaming ingestion state and trackers reset."}
+
+
+@app.post("/api/ingest/replay", response_model=ReplayResponse)
+def replay_event_sequence(
+    request: ReplayRequest,
+    x_aegis_admin_key: Optional[str] = Header(None, alias="X-AEGIS-Admin-Key"),
+):
+    """
+    Deterministically replay an event sequence in an isolated execution sandbox.
+    Never modifies live production streaming ingestion buffers or active incident streams.
+    """
+    _require_admin_authorization(x_aegis_admin_key, action_description="/api/ingest/replay")
+
+    config = ReplayConfig(
+        mode=request.mode or "chronological",
+        jitter_max_seconds=float(request.jitter_max_seconds or 0.0),
+        out_of_order_probability=float(request.out_of_order_probability or 0.0),
+        duplicate_injection_rate=float(request.duplicate_injection_rate or 0.0),
+        trigger_detection=bool(request.trigger_detection),
+        seed=int(request.seed if request.seed is not None else 42),
+    )
+
+    det_handler = None
+    if request.trigger_detection:
+        det_handler = lambda ev: _evaluate_event_detection(ev, app.state)
+
+    replayer = DeterministicEventReplayer(
+        config=config,
+        detection_handler=det_handler,
+    )
+
+    summary = replayer.replay(request.events)
+
+    return ReplayResponse(
+        status="success",
+        summary=summary.to_dict(),
+        alerts_generated=summary.alerts_count,
+        incidents_created=summary.incidents_count,
+    )
 
 
 def _sanitize_artifact_filename(filename: str) -> str:

@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "timestamp": "2026-10-11T04:12:25.371622+00:00",
+    "benchmark_type": "streaming_ingestion_and_detection_benchmark",
+    "seed": 42,
+    "disclaimer": "These figures represent local synthetic benchmark measurements on the test machine. They demonstrate relative performance between ingestion-only and ML-detection paths and must not be interpreted as guaranteed production cluster throughput.",
+    "system_environment": {
+      "system": "Darwin",
+      "node": "Akashs-MacBook-Air.local",
+      "release": "27.0.0",
+      "machine": "arm64",
+      "python_version": "3.10.12"
+    }
+  },
+  "results": {
+    "volume_200": {
+      "ingestion_only": {
+        "mode": "ingestion_only",
+        "event_count": 200,
+        "total_duration_seconds": 0.0187,
+        "throughput_eps": 10687.81,
+        "latency_ms": {
+          "min": 0.017,
+          "p50_median": 0.093,
+          "mean": 0.093,
+          "p95": 0.105,
+          "p99": 0.132,
+          "max": 0.58
+        },
+        "outcomes": {
+          "accepted": 186,
+          "duplicate": 10,
+          "rejected": 4,
+          "late_arriving": 0,
+          "clock_skew": 186
+        },
+        "memory": {
+          "current_mb": 0.085,
+          "peak_mb": 0.098
+        }
+      },
+      "detection_enabled": {
+        "mode": "detection_enabled",
+        "event_count": 200,
+        "total_duration_seconds": 10.0074,
+        "throughput_eps": 19.99,
+        "latency_ms": {
+          "min": 0.029,
+          "p50_median": 54.27,
+          "mean": 50.036,
+          "p95": 55.387,
+          "p99": 61.3,
+          "max": 72.402
+        },
+        "outcomes": {
+          "accepted": 186,
+          "duplicate": 10,
+          "rejected": 4,
+          "late_arriving": 0,
+          "clock_skew": 186
+        },
+        "memory": {
+          "current_mb": 2.102,
+          "peak_mb": 5.66
+        }
+      }
+    },
+    "volume_1000": {
+      "ingestion_only": {
+        "mode": "ingestion_only",
+        "event_count": 1000,
+        "total_duration_seconds": 0.0939,
+        "throughput_eps": 10651.59,
+        "latency_ms": {
+          "min": 0.015,
+          "p50_median": 0.096,
+          "mean": 0.094,
+          "p95": 0.107,
+          "p99": 0.116,
+          "max": 0.137
+        },
+        "outcomes": {
+          "accepted": 923,
+          "duplicate": 54,
+          "rejected": 23,
+          "late_arriving": 0,
+          "clock_skew": 923
+        },
+        "memory": {
+          "current_mb": 0.285,
+          "peak_mb": 0.298
+        }
+      },
+      "detection_enabled": {
+        "mode": "detection_enabled",
+        "event_count": 1000,
+        "total_duration_seconds": 48.6795,
+        "throughput_eps": 20.54,
+        "latency_ms": {
+          "min": 0.017,
+          "p50_median": 52.987,
+          "mean": 48.679,
+          "p95": 54.438,
+          "p99": 65.092,
+          "max": 126.912
+        },
+        "outcomes": {
+          "accepted": 923,
+          "duplicate": 54,
+          "rejected": 23,
+          "late_arriving": 0,
+          "clock_skew": 923
+        },
+        "memory": {
+          "current_mb": 2.389,
+          "peak_mb": 5.284
+        }
+      }
+    }
+  }
+}

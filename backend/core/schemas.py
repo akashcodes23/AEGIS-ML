@@ -136,6 +136,7 @@ class DetectionResult(BaseModel):
 class Alert(BaseModel):
     alert_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     event_id: Optional[str] = None
+    incident_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     timestamp: Optional[datetime] = None
     threat_type: str
@@ -262,5 +263,22 @@ class StreamingIngestionStats(BaseModel):
     total_clock_skew: int
     watermark_timestamp: Optional[datetime] = None
     active_hosts_tracked: int
+
+
+class ReplayRequest(BaseModel):
+    events: List[Dict[str, Any]]
+    mode: Optional[str] = "chronological"
+    jitter_max_seconds: Optional[float] = 0.0
+    out_of_order_probability: Optional[float] = 0.0
+    duplicate_injection_rate: Optional[float] = 0.0
+    trigger_detection: Optional[bool] = False
+    seed: Optional[int] = 42
+
+
+class ReplayResponse(BaseModel):
+    status: str = "success"
+    summary: Dict[str, Any]
+    alerts_generated: int
+    incidents_created: int
 
 
