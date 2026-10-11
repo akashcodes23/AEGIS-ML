@@ -159,12 +159,13 @@ app = FastAPI(
 )
 
 # Configurable CORS
-cors_env = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000")
+cors_default = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000,https://aegis-ml-navv.vercel.app"
+cors_env = os.getenv("CORS_ORIGINS", cors_default)
 allowed_origins = [orig.strip() for orig in cors_env.split(",") if orig.strip()]
 if "*" in allowed_origins or os.getenv("AEGIS_ALLOW_ALL_ORIGINS", "false").lower() == "true":
     allowed_origins = ["*"]
 
-cors_regex = os.getenv("CORS_ORIGIN_REGEX")
+cors_regex = os.getenv("CORS_ORIGIN_REGEX", r"^https://.*\.vercel\.app$")
 
 app.add_middleware(
     CORSMiddleware,
@@ -1504,6 +1505,38 @@ def reload_model_artifact(
 async def websocket_endpoint(websocket: WebSocket):
     await app.state.ws_manager.connect(websocket)
     try:
+        # Provide immediate telemetry snapshot upon connection
+        inc_list = app.state.correlator.get_all_incidents() if hasattr(app.state, "correlator") else []
+        await websocket.send_json({
+            "type": "stats_update",
+            "data": {
+                "current_file": None,
+                "is_synthetic": False,
+                "total_events": app.state.total_events,
+                "total_alerts": len(app.state.alerts),
+                "total_incidents": len(inc_list),
+                "events_per_second": app.state.eps,
+                "false_positive_rate": None,
+                "alerts_by_severity": app.state.alerts_by_severity,
+                "analysis_complete": not app.state.analysis_running and app.state.total_events > 0,
+            }
+        })
+        if app.state.alerts:
+            for alert in app.state.alerts[-20:]:
+                await websocket.send_json({"type": "new_alert", "data": alert})
+            if inc_list:
+                for inc in inc_list[-10:]:
+                    inc_dict = inc.dict() if hasattr(inc, "dict") else inc
+                    if isinstance(inc_dict.get("created_at"), datetime):
+                        inc_dict["created_at"] = inc_dict["created_at"].isoformat()
+                    if isinstance(inc_dict.get("updated_at"), datetime):
+                        inc_dict["updated_at"] = inc_dict["updated_at"].isoformat()
+                    await websocket.send_json({"type": "new_incident", "data": inc_dict})
+            await websocket.send_json({
+                "type": "graph_update",
+                "data": _build_graph(app.state.alerts, inc_list)
+            })
+
         while True:
             try:
                 msg = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)

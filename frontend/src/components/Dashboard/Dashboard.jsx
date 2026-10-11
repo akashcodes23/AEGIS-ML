@@ -131,14 +131,45 @@ export default function Dashboard() {
   const currentFile = stats.current_file || null
   const analysisComplete = stats.analysis_complete || false
 
+  // Initial stats sync on mount
+  useEffect(() => {
+    fetch(`${API}/stats/summary`)
+      .then(r => r.json())
+      .then(d => {
+        if (d && typeof d.total_events === 'number') {
+          useAlertStore.getState().updateStats(d)
+          if (d.analysis_running) {
+            setSimulationRunning(true)
+          }
+        }
+      })
+      .catch(err => console.debug('[AEGIS] Stats summary sync failed:', err))
+  }, [setSimulationRunning])
+
   const startAnalysis = useCallback(async () => {
-    try { await fetch(`${API}/analysis/start`, { method: 'POST' }) } catch {}
-    setSimulationRunning(true)
+    try {
+      const res = await fetch(`${API}/analysis/start`, { method: 'POST' })
+      if (!res.ok) {
+        console.error('[AEGIS] Start analysis failed:', res.status, res.statusText)
+        return
+      }
+      setSimulationRunning(true)
+    } catch (err) {
+      console.error('[AEGIS] Failed to start analysis:', err)
+    }
   }, [setSimulationRunning])
 
   const stopAnalysis = useCallback(async () => {
-    try { await fetch(`${API}/analysis/stop`, { method: 'POST' }) } catch {}
-    setSimulationRunning(false)
+    try {
+      const res = await fetch(`${API}/analysis/stop`, { method: 'POST' })
+      if (!res.ok) {
+        console.error('[AEGIS] Stop analysis failed:', res.status, res.statusText)
+      }
+    } catch (err) {
+      console.error('[AEGIS] Failed to stop analysis:', err)
+    } finally {
+      setSimulationRunning(false)
+    }
   }, [setSimulationRunning])
 
   const hasFpr = stats.false_positive_rate !== null && stats.false_positive_rate !== undefined

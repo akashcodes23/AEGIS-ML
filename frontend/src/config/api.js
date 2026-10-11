@@ -35,8 +35,13 @@ export const getApiUrl = (endpoint) => {
   }
 
   // Prevent double '/api' if base already ends with '/api' and endpoint starts with '/api'
-  if (base.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
-    return `${base}${cleanEndpoint.slice(4)}`
+  if (base.endsWith('/api')) {
+    if (cleanEndpoint === '/api') {
+      return base
+    }
+    if (cleanEndpoint.startsWith('/api/')) {
+      return `${base}${cleanEndpoint.slice(4)}`
+    }
   }
 
   return `${base}${cleanEndpoint}`
