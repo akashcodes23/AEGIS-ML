@@ -1,16 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import useAlertStore from '../store/alertStore'
+import { getWsUrl } from '../config/api'
 
 const getDefaultWsUrl = () => {
-  if (import.meta.env?.VITE_WS_URL) {
-    return import.meta.env.VITE_WS_URL
-  }
-  if (typeof window !== 'undefined') {
-    // Use the current page hostname or 127.0.0.1 to avoid macOS IPv6 connection refused issues
-    const host = window.location.hostname || '127.0.0.1'
-    return `ws://${host}:8000/ws/live`
-  }
-  return 'ws://127.0.0.1:8000/ws/live'
+  return getWsUrl()
 }
 
 const RECONNECT_DELAY_MS = 2000

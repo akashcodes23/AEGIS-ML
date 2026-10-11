@@ -164,9 +164,12 @@ allowed_origins = [orig.strip() for orig in cors_env.split(",") if orig.strip()]
 if "*" in allowed_origins or os.getenv("AEGIS_ALLOW_ALL_ORIGINS", "false").lower() == "true":
     allowed_origins = ["*"]
 
+cors_regex = os.getenv("CORS_ORIGIN_REGEX")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=cors_regex if cors_regex else None,
     allow_credentials=True if allowed_origins != ["*"] else False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -1512,3 +1515,11 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.debug(f"[WS] Client exception: {exc}")
     finally:
         app.state.ws_manager.disconnect(websocket)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8000"))
+    host = os.getenv("HOST", "0.0.0.0")
+    uvicorn.run("backend.api.main:app", host=host, port=port, reload=False)
+

@@ -12,13 +12,14 @@ env/
 .coverage
 htmlcov/
 
-# Data files (large datasets not committed)
+# Data files (large datasets not committed, except verified benchmark dataset)
 data/raw/*.jsonl
 data/raw/*.csv
 data/processed/*.jsonl
 datasets/
+!data/raw/behavioral_diversity_labeled.jsonl
 
-# ML Models (keep directory structure with .gitkeep)
+# ML Models (keep directory structure with .gitkeep, whitelist production models)
 data/models/*.pkl
 data/models/**/*.pkl
 data/models/*.pt
@@ -29,6 +30,11 @@ data/models/**/*.joblib
 !data/models/external_experiments/.gitkeep
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/models/calibrated_threat_classifier.pkl
+!data/models/threat_classifier.pkl
+!data/models/isolation_forest_network.pkl
+!data/models/isolation_forest_endpoint.pkl
+!data/models/entity_baselines.pkl
 
 # Evaluation output logs
 *.log
@@ -38,6 +44,7 @@ node_modules/
 frontend/dist/
 frontend/.env
 frontend/.env.*
+!frontend/.env.example
 
 # OS files
 .DS_Store

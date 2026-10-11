@@ -5,6 +5,7 @@ import {
   HelpCircle, Eye, Network, CheckCircle2, AlertTriangle, ArrowRight, CornerDownRight
 } from 'lucide-react'
 import useAlertStore from '../../store/alertStore'
+import { getApiUrl } from '../../config/api'
 
 const TABS = [
   'Executive Summary',
@@ -692,7 +693,7 @@ export default memo(function IncidentCard() {
               <div>
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 16 }}>
                   <button
-                    onClick={() => fetch(`/api/incident/${incident.incident_id || incident.event_id}/remediate`, { method: 'POST' })}
+                    onClick={() => fetch(getApiUrl(`/api/incident/${incident.incident_id || incident.event_id}/remediate`), { method: 'POST' })}
                     style={{
                       padding: '12px 24px', background: 'var(--text-primary)',
                       color: '#fff', border: 'none', borderRadius: 12, fontSize: 13, fontWeight: 700,
@@ -705,7 +706,7 @@ export default memo(function IncidentCard() {
 
                   {(incident.severity === 'critical' || incident.severity === 'high') && (
                     <button
-                      onClick={() => fetch(`/api/incident/${incident.incident_id || incident.event_id}/isolate`, { method: 'POST' })}
+                      onClick={() => fetch(getApiUrl(`/api/incident/${incident.incident_id || incident.event_id}/isolate`), { method: 'POST' })}
                       title="Simulated action: In-memory stream block; no live firewall agent connected"
                       style={{
                         padding: '12px 24px', background: 'var(--accent-critical)',

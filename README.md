@@ -16,7 +16,7 @@ An asynchronous cyber defense platform that ingests heterogeneous security telem
 [![Tests](https://img.shields.io/badge/tests-324%20passing-brightgreen)](tests/)
 [![Release](https://img.shields.io/badge/release-v1.0.0--rc.1-blue)](CHANGELOG.md)
 
-[Quick Start](#-quick-start) · [Architecture](#-architecture-overview) · [Detection Pipeline](#-detection-pipeline) · [Evaluation](#-evaluation-methodology--results) · [Benchmarks](#-performance-benchmarks) · [Architecture Doc](docs/ARCHITECTURE.md) · [Model Card](docs/MODEL_CARD.md) · [Demo Guide](docs/DEMO_GUIDE.md)
+[Quick Start](#-quick-start) · [Architecture](#-architecture-overview) · [Detection Pipeline](#-detection-pipeline) · [Evaluation](#-evaluation-methodology--results) · [Benchmarks](#-performance-benchmarks) · [Architecture](docs/ARCHITECTURE.md) · [Model Card](docs/MODEL_CARD.md) · [Demo Guide](docs/DEMO_GUIDE.md) · [Deployment](docs/DEPLOYMENT.md)
 
 </div>
 

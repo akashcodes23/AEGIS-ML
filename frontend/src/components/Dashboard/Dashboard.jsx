@@ -5,8 +5,9 @@ import useWebSocket from '../../hooks/useWebSocket'
 import AlertFeed from './AlertFeed'
 import AttackGraph from './AttackGraph'
 import IncidentCard from './IncidentCard'
+import { getApiUrl } from '../../config/api'
 
-const API = '/api'
+const API = getApiUrl('/api')
 
 /* ── Stat card ────────────────────────────────────────────────────────────── */
 function StatCard({ label, value, unit = '', accentVar, icon: Icon, delay = 0 }) {
