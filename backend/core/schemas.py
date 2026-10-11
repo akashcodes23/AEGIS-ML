@@ -267,6 +267,7 @@ class QueueMetrics(BaseModel):
     """Real-time observability metrics for the asynchronous detection queue."""
     queue_depth: int = 0
     queue_capacity: int = 1000
+    submitted_events: int = 0
     accepted_events: int = 0
     queued_events: int = 0
     processing_events: int = 0

@@ -128,6 +128,7 @@ class AsyncDetectionQueue:
         self._max_completed_ids = 10000
 
         # Metrics counters
+        self.submitted_events: int = 0
         self.accepted_events: int = 0
         self.queued_events: int = 0
         self.processing_events: int = 0
@@ -135,6 +136,8 @@ class AsyncDetectionQueue:
         self.failed_events: int = 0
         self.retry_count: int = 0
         self.duplicate_count: int = 0
+        self.ingest_duplicate_count: int = 0
+        self.in_queue_duplicate_count: int = 0
         self.rejected_count: int = 0
         self.inference_failure_count: int = 0
 
@@ -255,11 +258,12 @@ class AsyncDetectionQueue:
         Returns:
             (success: bool, status_reason: str, queue_position: Optional[int])
         """
-        self.accepted_events += 1
+        self.submitted_events += 1
 
         # Check idempotency: if already processed recently, skip re-queue
         if event.event_id and event.event_id in self._completed_event_ids:
             self.duplicate_count += 1
+            self.ingest_duplicate_count += 1
             return False, "duplicate_event_already_processed", None
 
         partition_key = str(event.host_id or event.src_entity or "global")
@@ -284,6 +288,7 @@ class AsyncDetectionQueue:
                         self._queue.put(item),
                         timeout=self.config.timeout_seconds,
                     )
+                    self.accepted_events += 1
                     self.queued_events += 1
                     return True, "queued", self._queue.qsize()
                 except asyncio.TimeoutError:
@@ -296,6 +301,7 @@ class AsyncDetectionQueue:
         # Space available: enqueue immediately
         try:
             self._queue.put_nowait(item)
+            self.accepted_events += 1
             self.queued_events += 1
             return True, "queued", self._queue.qsize()
         except asyncio.QueueFull:
@@ -307,10 +313,11 @@ class AsyncDetectionQueue:
         Synchronous non-blocking enqueue helper.
         Enqueues immediately if space is available; rejects immediately if queue is full.
         """
-        self.accepted_events += 1
+        self.submitted_events += 1
 
         if event.event_id and event.event_id in self._completed_event_ids:
             self.duplicate_count += 1
+            self.ingest_duplicate_count += 1
             return False, "duplicate_event_already_processed", None
 
         partition_key = str(event.host_id or event.src_entity or "global")
@@ -329,6 +336,7 @@ class AsyncDetectionQueue:
 
         try:
             self._queue.put_nowait(item)
+            self.accepted_events += 1
             self.queued_events += 1
             return True, "queued", self._queue.qsize()
         except asyncio.QueueFull:
@@ -385,7 +393,9 @@ class AsyncDetectionQueue:
                         active_items = []
                         for it in items:
                             if it.event.event_id and it.event.event_id in self._completed_event_ids:
-                                it.state = EventProcessingState.COMPLETED
+                                it.state = EventProcessingState.DUPLICATE
+                                self.duplicate_count += 1
+                                self.in_queue_duplicate_count += 1
                             else:
                                 active_items.append(it)
 
@@ -442,7 +452,9 @@ class AsyncDetectionQueue:
 
         # Check idempotency again under host lock
         if event.event_id and event.event_id in self._completed_event_ids:
-            item.state = EventProcessingState.COMPLETED
+            item.state = EventProcessingState.DUPLICATE
+            self.duplicate_count += 1
+            self.in_queue_duplicate_count += 1
             return
 
         while True:
@@ -571,6 +583,7 @@ class AsyncDetectionQueue:
         return QueueMetrics(
             queue_depth=self._queue.qsize(),
             queue_capacity=self.config.max_queue_size,
+            submitted_events=self.submitted_events,
             accepted_events=self.accepted_events,
             queued_events=self.queued_events,
             processing_events=self.processing_events,
@@ -589,6 +602,43 @@ class AsyncDetectionQueue:
             is_durable=False,
             durability_guarantee="in_memory_volatile_queue_loss_possible_on_process_restart",
         )
+
+    def get_accounting_summary(self) -> Dict[str, Any]:
+        """
+        Reconcile submitted events with mutually exclusive terminal and outstanding outcomes.
+        Returns detailed disposition counters and verification assertions.
+        """
+        curr_queued = self._queue.qsize()
+        curr_processing = self.processing_events
+        terminal_completed = self.completed_events
+        terminal_failed = self.failed_events
+        rejected = self.rejected_count
+        total_dup = self.duplicate_count
+        ingest_dup = self.ingest_duplicate_count
+        in_queue_dup = self.in_queue_duplicate_count
+        accepted = self.accepted_events
+        submitted = self.submitted_events
+
+        accepted_reconciled = (accepted == terminal_completed + terminal_failed + in_queue_dup + curr_queued + curr_processing)
+        submitted_reconciled = (submitted == terminal_completed + terminal_failed + total_dup + rejected + curr_queued + curr_processing)
+        unexplained_loss = submitted - (terminal_completed + terminal_failed + total_dup + rejected + curr_queued + curr_processing)
+
+        return {
+            "submitted_events": submitted,
+            "accepted_events": accepted,
+            "rejected_events": rejected,
+            "ingest_duplicate_events": ingest_dup,
+            "in_queue_duplicate_events": in_queue_dup,
+            "total_duplicate_events": total_dup,
+            "completed_events": terminal_completed,
+            "failed_dead_letter_events": terminal_failed,
+            "currently_queued_events": curr_queued,
+            "currently_processing_events": curr_processing,
+            "accepted_reconciled": accepted_reconciled,
+            "submitted_reconciled": submitted_reconciled,
+            "unexplained_loss": unexplained_loss,
+            "reconciliation_passed": accepted_reconciled and submitted_reconciled and (unexplained_loss == 0),
+        }
 
     def get_dead_letter_items(self) -> List[DeadLetterItem]:
         """Return list of current dead letter items."""
@@ -609,6 +659,7 @@ class AsyncDetectionQueue:
         self._processing_times.clear()
         self._e2e_latencies.clear()
 
+        self.submitted_events = 0
         self.accepted_events = 0
         self.queued_events = 0
         self.processing_events = 0
@@ -616,6 +667,8 @@ class AsyncDetectionQueue:
         self.failed_events = 0
         self.retry_count = 0
         self.duplicate_count = 0
+        self.ingest_duplicate_count = 0
+        self.in_queue_duplicate_count = 0
         self.rejected_count = 0
         self.inference_failure_count = 0
         logger.info("[AsyncDetectionQueue] Reset queue state and metrics.")

@@ -311,8 +311,17 @@ async def run_sustained_workload(
     mem_current, mem_peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
+    accounting = async_queue.get_accounting_summary()
     metrics = async_queue.get_metrics()
     await async_queue.stop()
+
+    # Reconcile submitted events with mutually exclusive outcomes
+    assert accounting["reconciliation_passed"], (
+        f"Queue event reconciliation failed: unexplained loss = {accounting['unexplained_loss']} "
+        f"(submitted={accounting['submitted_events']}, completed={accounting['completed_events']}, "
+        f"failed={accounting['failed_dead_letter_events']}, duplicates={accounting['total_duplicate_events']}, "
+        f"rejected={accounting['rejected_events']}, in_flight={accounting['currently_queued_events'] + accounting['currently_processing_events']})"
+    )
 
     completed_eps = metrics.completed_events / total_elapsed if total_elapsed > 0 else 0.0
     stable_point_reached = (final_queue_depth == 0) and flush_success
@@ -320,14 +329,19 @@ async def run_sustained_workload(
     return {
         "workload_target_events": workload_size,
         "total_streamed_events": total_raw,
-        "enqueued_events": enqueued_count,
-        "completed_events": metrics.completed_events,
-        "failed_events": metrics.failed_events,
+        "submitted_events": accounting["submitted_events"],
+        "accepted_events": accounting["accepted_events"],
+        "completed_events": accounting["completed_events"],
+        "failed_events": accounting["failed_dead_letter_events"],
         "retry_count": metrics.retry_count,
-        "duplicate_count": metrics.duplicate_count,
-        "rejected_count": metrics.rejected_count,
+        "total_duplicate_events": accounting["total_duplicate_events"],
+        "ingest_duplicate_events": accounting["ingest_duplicate_events"],
+        "in_queue_duplicate_events": accounting["in_queue_duplicate_events"],
+        "rejected_events": accounting["rejected_events"],
         "dead_letter_count": metrics.dead_letter_count,
         "inference_failure_count": metrics.inference_failure_count,
+        "unexplained_loss": accounting["unexplained_loss"],
+        "reconciliation_passed": accounting["reconciliation_passed"],
         "duration_seconds": round(total_elapsed, 4),
         "enqueue_duration_seconds": round(enqueue_elapsed, 4),
         "completed_detection_throughput_eps": round(completed_eps, 2),
@@ -365,11 +379,13 @@ async def run_sustained_load_test_suite() -> Dict[str, Any]:
             inject_permanent_failure_rate=0.01,
         )
         tier_results[f"workload_{size}"] = tier_res
-        print(f"  Streamed: {tier_res['total_streamed_events']} events | Completed: {tier_res['completed_events']} events")
+        print(f"  Streamed: {tier_res['total_streamed_events']} | Submitted: {tier_res['submitted_events']} | Accepted: {tier_res['accepted_events']}")
+        print(f"  Disposition -> Completed: {tier_res['completed_events']} | Dead Letters: {tier_res['failed_events']} | Duplicates: {tier_res['total_duplicate_events']} (Ingest: {tier_res['ingest_duplicate_events']}, In-Queue: {tier_res['in_queue_duplicate_events']}) | Rejected: {tier_res['rejected_events']}")
+        print(f"  Accounting Reconciled: {tier_res['reconciliation_passed']} (Unexplained Loss: {tier_res['unexplained_loss']})")
         print(f"  Throughput: {tier_res['completed_detection_throughput_eps']} eps | Peak Queue Depth: {tier_res['peak_queue_depth']}")
         print(f"  Queue Wait p50/p95: {tier_res['queue_wait_ms']['p50']}ms / {tier_res['queue_wait_ms']['p95']}ms")
         print(f"  End-to-End Latency p50/p95: {tier_res['end_to_end_latency_ms']['p50']}ms / {tier_res['end_to_end_latency_ms']['p95']}ms")
-        print(f"  Retries: {tier_res['retry_count']} | Dead Letters: {tier_res['dead_letter_count']} | Inferences Failed: {tier_res['inference_failure_count']}")
+        print(f"  Retries: {tier_res['retry_count']} | Inference Failures: {tier_res['inference_failure_count']}")
         print(f"  Stable Operating Point Reached: {tier_res['stable_operating_point']} (Final Queue Depth: {tier_res['final_queue_depth']})")
         print(f"  Peak Memory: {tier_res['peak_heap_mb']} MB (Growth: {tier_res['memory_growth_mb']} MB)")
 
@@ -384,12 +400,13 @@ async def run_sustained_load_test_suite() -> Dict[str, Any]:
         inject_transient_failure_rate=0.0,
         inject_permanent_failure_rate=0.0,
     )
-    print(f"  Saturation Result: {saturation_res['rejected_count']} events rejected by bounded capacity backpressure")
+    print(f"  Saturation Result: {saturation_res['rejected_events']} events rejected by bounded capacity backpressure")
+    print(f"  Accounting Reconciled: {saturation_res['reconciliation_passed']} (Unexplained Loss: {saturation_res['unexplained_loss']})")
     print(f"  Stable Operating Point Reached: {saturation_res['stable_operating_point']}")
 
     summary = {
         "metadata": {
-            "evaluation_phase": "Phase 29.5: Sustained-Load Testing and Observability",
+            "evaluation_phase": "Phase 30: Queue Accounting and Sustained-Load Validation",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "python_version": platform.python_version(),
             "platform": platform.platform(),
@@ -407,6 +424,8 @@ async def run_sustained_load_test_suite() -> Dict[str, Any]:
             "memory_bounded": max(t["peak_heap_mb"] for t in tier_results.values()) < 150.0,
             "dead_letter_protection_verified": tier_results["workload_1000"]["dead_letter_count"] > 0,
             "retry_exponential_backoff_verified": tier_results["workload_1000"]["retry_count"] > 0,
+            "accounting_reconciliation_verified": all(t["reconciliation_passed"] for t in tier_results.values()) and saturation_res["reconciliation_passed"],
+            "zero_unexplained_loss": all(t["unexplained_loss"] == 0 for t in tier_results.values()) and (saturation_res["unexplained_loss"] == 0),
         },
     }
 

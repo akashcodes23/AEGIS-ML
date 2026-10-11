@@ -12,9 +12,9 @@
 ![Vite](https://img.shields.io/badge/Vite-Dashboard-646CFF?logo=vite&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-RF%20%2B%20IF-F7931E?logo=scikitlearn&logoColor=white)
 ![MITRE ATT&CK](https://img.shields.io/badge/MITRE-ATT%26CK-C8102E)
-![Tests](https://img.shields.io/badge/tests-21%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-110%2B%20passing-brightgreen)
 
-[Quick Start](#-quick-start) · [Architecture](#-architecture) · [Training](#-training--evaluation) · [API](#-api-reference) · [Limitations](#-limitations--honest-scope)
+[Quick Start](#-quick-start) · [Architecture](#-architecture) · [Training](#-training--evaluation) · [API](#-api-reference) · [Limitations](#-limitations--honest-scope) · [Phase 30 Audit](docs/PHASE30_FINAL_VALIDATION_AND_RELEASE_READINESS.md)
 
 </div>
 
@@ -42,7 +42,7 @@ AEGIS-ML ingests **network flows, endpoint process logs, and application events*
 
 ```mermaid
 flowchart TD
-    A[Ingestion & Normalizer<br/>network · endpoint · application] -->|UnifiedEvent| B[Feature Engineering<br/>15 dims · causal, leak-free]
+    A[Ingestion & Normalizer<br/>network · endpoint · application] -->|UnifiedEvent| B[Feature Engineering<br/>48 dims · causal, leak-free]
     B --> C[Isolation Forest<br/>network & endpoint]
     B --> D[Behavioral Baseline Profiler<br/>host & service-account deviation]
     B --> E[Temporal Knowledge Graph<br/>NetworkX entity edges]
@@ -58,7 +58,7 @@ flowchart TD
 ### How a single event flows through the system
 
 1. **Normalize**: raw telemetry becomes a `UnifiedEvent`, regardless of source.
-2. **Featurize**: 15 causal features are extracted using time windows that never look into the future.
+2. **Featurize**: 48 causal features (15 base telemetry + 6 graph + 10 context + 5 missingness + 12 sequence) are extracted using time windows that never look into the future.
 3. **Score in parallel**: anomaly (IF), behavioral drift, graph topology, and supervised class probability.
 4. **Fuse**: a weighted combination produces a consensus verdict.
 5. **Alert**: the result is mapped to a MITRE ATT&CK stage and pushed over WebSocket to the dashboard.
@@ -261,11 +261,13 @@ AEGIS-ML/
 
 ## ⚠️ Limitations & Honest Scope
 
-AEGIS-ML is a research-grade platform, and its limits are stated up front:
+AEGIS-ML is a research-grade platform, and its operational limits are stated up front:
 
-1. **Calibration is benchmark-bound.** Isotonic calibration was fitted and evaluated on synthetic scenarios. Calibrated scores do not guarantee real-world risk levels in an unmonitored enterprise.
-2. **Tabular + graph metrics, not a deep graph model.** The system combines NetworkX topology features with tree ensembles. A deep Temporal GNN is on the roadmap.
-3. **Synthetic and CICIDS2017 results are not production proof.** Real deployment needs continuous baseline adaptation and ongoing false-positive tuning.
+1. **In-Memory Queue Crash Volatility.** The asynchronous event queue is in-memory and process-bound (`asyncio.Queue`). While graceful shutdown drains queued events, sudden process termination or unhandled SIGKILL will lose in-flight and pending events. For guaranteed persistence across restarts, an external durable message broker (e.g. Kafka or RabbitMQ) is required.
+2. **Calibration is Benchmark-Bound.** Isotonic calibration was fitted and evaluated on scenario-grouped synthetic benchmarks. Calibrated probabilities do not guarantee identical error distributions under novel out-of-distribution enterprise traffic.
+3. **External Dataset Status (CIC-IDS2017 is BLOCKED).** Evaluation on CIC-IDS2017 remains strictly BLOCKED due to semantic incompatibilities and missing telemetry mappings in public releases; no unvalidated external claims are made.
+4. **Graph Metrics, Not a Deep Graph Model.** The system computes causal graph metrics via NetworkX rather than an end-to-end differentiable Temporal GNN. Deep graph learning remains on the future roadmap.
+5. **No Enforcement or Auto-Containment Claims.** The platform performs detection, scoring, and incident correlation; it does not implement kernel-level EDR drivers or automated firewall rule rewrites.
 
 ---
 

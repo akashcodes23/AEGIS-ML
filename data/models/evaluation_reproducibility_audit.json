@@ -1,7 +1,7 @@
 {
   "metadata": {
     "evaluation_phase": "Phase 29.6: Evaluation Reproducibility & Rigor Audit",
-    "timestamp": "2026-10-11T05:52:46.693190+00:00",
+    "timestamp": "2026-10-11T06:07:01.848487+00:00",
     "python_version": "3.10.12",
     "dataset": "/Users/akashgpatil/major_project/AEGIS-ML/data/raw/behavioral_diversity_labeled.jsonl",
     "baseline_results": "/Users/akashgpatil/major_project/AEGIS-ML/data/models/detection_quality_results.json"

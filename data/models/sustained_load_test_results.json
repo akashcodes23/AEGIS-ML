@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "evaluation_phase": "Phase 29.5: Sustained-Load Testing and Observability",
-    "timestamp": "2026-10-11T05:48:51.989014+00:00",
+    "evaluation_phase": "Phase 30: Queue Accounting and Sustained-Load Validation",
+    "timestamp": "2026-10-11T06:02:55.433915+00:00",
     "python_version": "3.10.12",
     "platform": "macOS-27.0.1-arm64-arm-64bit",
     "model_version": "23.0.0",
@@ -11,189 +11,216 @@
     "workload_100": {
       "workload_target_events": 100,
       "total_streamed_events": 109,
-      "enqueued_events": 109,
+      "submitted_events": 109,
+      "accepted_events": 109,
       "completed_events": 108,
       "failed_events": 0,
       "retry_count": 0,
-      "duplicate_count": 0,
-      "rejected_count": 0,
+      "total_duplicate_events": 1,
+      "ingest_duplicate_events": 0,
+      "in_queue_duplicate_events": 1,
+      "rejected_events": 0,
       "dead_letter_count": 0,
       "inference_failure_count": 0,
-      "duration_seconds": 1.5227,
-      "enqueue_duration_seconds": 0.2143,
-      "completed_detection_throughput_eps": 70.93,
+      "unexplained_loss": 0,
+      "reconciliation_passed": true,
+      "duration_seconds": 1.5674,
+      "enqueue_duration_seconds": 0.4872,
+      "completed_detection_throughput_eps": 68.91,
       "queue_wait_ms": {
-        "p50": 494.172,
-        "p95": 1099.566,
-        "mean": 530.8
+        "p50": 525.026,
+        "p95": 988.918,
+        "mean": 514.441
       },
       "processing_time_ms": {
-        "p50": 13.556,
-        "p95": 15.592,
-        "mean": 14.086
+        "p50": 13.624,
+        "p95": 15.784,
+        "mean": 14.499
       },
       "end_to_end_latency_ms": {
-        "p50": 700.919,
-        "p95": 1397.793,
-        "mean": 744.102
+        "p50": 734.586,
+        "p95": 1192.908,
+        "mean": 734.781
       },
-      "peak_queue_depth": 93,
+      "peak_queue_depth": 77,
       "final_queue_depth": 0,
       "stable_operating_point": true,
       "backlog_accumulated": false,
-      "memory_growth_mb": 1.409,
-      "peak_heap_mb": 1.409
+      "memory_growth_mb": 1.411,
+      "peak_heap_mb": 1.411
     },
     "workload_250": {
       "workload_target_events": 250,
       "total_streamed_events": 271,
-      "enqueued_events": 271,
+      "submitted_events": 271,
+      "accepted_events": 271,
       "completed_events": 268,
       "failed_events": 0,
       "retry_count": 0,
-      "duplicate_count": 0,
-      "rejected_count": 0,
+      "total_duplicate_events": 3,
+      "ingest_duplicate_events": 0,
+      "in_queue_duplicate_events": 3,
+      "rejected_events": 0,
       "dead_letter_count": 0,
       "inference_failure_count": 0,
-      "duration_seconds": 3.6846,
-      "enqueue_duration_seconds": 0.8143,
-      "completed_detection_throughput_eps": 72.74,
+      "unexplained_loss": 0,
+      "reconciliation_passed": true,
+      "duration_seconds": 3.7413,
+      "enqueue_duration_seconds": 1.1912,
+      "completed_detection_throughput_eps": 71.63,
       "queue_wait_ms": {
-        "p50": 1324.101,
-        "p95": 2576.382,
-        "mean": 1322.366
+        "p50": 1270.544,
+        "p95": 2368.264,
+        "mean": 1265.8
       },
       "processing_time_ms": {
-        "p50": 13.328,
-        "p95": 15.196,
-        "mean": 13.735
+        "p50": 13.366,
+        "p95": 15.304,
+        "mean": 13.947
       },
       "end_to_end_latency_ms": {
-        "p50": 1537.546,
-        "p95": 2782.319,
-        "mean": 1534.733
+        "p50": 1483.176,
+        "p95": 2576.376,
+        "mean": 1481.884
       },
-      "peak_queue_depth": 207,
+      "peak_queue_depth": 191,
       "final_queue_depth": 0,
       "stable_operating_point": true,
       "backlog_accumulated": false,
-      "memory_growth_mb": 1.888,
-      "peak_heap_mb": 1.888
+      "memory_growth_mb": 1.886,
+      "peak_heap_mb": 1.886
     },
     "workload_500": {
       "workload_target_events": 500,
       "total_streamed_events": 542,
-      "enqueued_events": 542,
+      "submitted_events": 542,
+      "accepted_events": 542,
       "completed_events": 537,
       "failed_events": 0,
       "retry_count": 0,
-      "duplicate_count": 0,
-      "rejected_count": 0,
+      "total_duplicate_events": 5,
+      "ingest_duplicate_events": 0,
+      "in_queue_duplicate_events": 5,
+      "rejected_events": 0,
       "dead_letter_count": 0,
       "inference_failure_count": 0,
-      "duration_seconds": 7.5338,
-      "enqueue_duration_seconds": 2.1755,
-      "completed_detection_throughput_eps": 71.28,
+      "unexplained_loss": 0,
+      "reconciliation_passed": true,
+      "duration_seconds": 7.5614,
+      "enqueue_duration_seconds": 2.4066,
+      "completed_detection_throughput_eps": 71.02,
       "queue_wait_ms": {
-        "p50": 2596.16,
-        "p95": 5043.047,
-        "mean": 2589.34
+        "p50": 2660.635,
+        "p95": 4841.267,
+        "mean": 2567.595
       },
       "processing_time_ms": {
-        "p50": 13.485,
-        "p95": 15.397,
-        "mean": 14.016
+        "p50": 13.495,
+        "p95": 15.517,
+        "mean": 14.067
       },
       "end_to_end_latency_ms": {
-        "p50": 2812.526,
-        "p95": 5279.794,
-        "mean": 2811.225
+        "p50": 2867.505,
+        "p95": 5056.291,
+        "mean": 2790.349
       },
-      "peak_queue_depth": 398,
+      "peak_queue_depth": 382,
       "final_queue_depth": 0,
       "stable_operating_point": true,
       "backlog_accumulated": false,
-      "memory_growth_mb": 3.032,
-      "peak_heap_mb": 3.032
+      "memory_growth_mb": 3.033,
+      "peak_heap_mb": 3.033
     },
     "workload_1000": {
       "workload_target_events": 1000,
       "total_streamed_events": 1084,
-      "enqueued_events": 792,
-      "completed_events": 786,
+      "submitted_events": 1084,
+      "accepted_events": 756,
+      "completed_events": 749,
       "failed_events": 0,
       "retry_count": 0,
-      "duplicate_count": 0,
-      "rejected_count": 292,
+      "total_duplicate_events": 7,
+      "ingest_duplicate_events": 0,
+      "in_queue_duplicate_events": 7,
+      "rejected_events": 328,
       "dead_letter_count": 0,
       "inference_failure_count": 0,
-      "duration_seconds": 11.5001,
-      "enqueue_duration_seconds": 4.3995,
-      "completed_detection_throughput_eps": 68.35,
+      "unexplained_loss": 0,
+      "reconciliation_passed": true,
+      "duration_seconds": 11.045,
+      "enqueue_duration_seconds": 4.0476,
+      "completed_detection_throughput_eps": 67.81,
       "queue_wait_ms": {
-        "p50": 4543.289,
-        "p95": 7058.945,
-        "mean": 4250.714
+        "p50": 4427.744,
+        "p95": 7106.892,
+        "mean": 4111.577
       },
       "processing_time_ms": {
-        "p50": 14.094,
-        "p95": 15.757,
-        "mean": 14.617
+        "p50": 14.331,
+        "p95": 16.523,
+        "mean": 14.731
       },
       "end_to_end_latency_ms": {
-        "p50": 4761.525,
-        "p95": 7309.455,
-        "mean": 4488.05
+        "p50": 4645.74,
+        "p95": 7323.465,
+        "mean": 4345.198
       },
       "peak_queue_depth": 500,
       "final_queue_depth": 0,
       "stable_operating_point": true,
       "backlog_accumulated": false,
-      "memory_growth_mb": 5.102,
-      "peak_heap_mb": 5.102
+      "memory_growth_mb": 5.072,
+      "peak_heap_mb": 5.072
     }
   },
   "queue_saturation_test": {
     "workload_target_events": 150,
     "total_streamed_events": 163,
-    "enqueued_events": 73,
-    "completed_events": 72,
+    "submitted_events": 163,
+    "accepted_events": 81,
+    "completed_events": 80,
     "failed_events": 0,
     "retry_count": 0,
-    "duplicate_count": 0,
-    "rejected_count": 90,
+    "total_duplicate_events": 1,
+    "ingest_duplicate_events": 0,
+    "in_queue_duplicate_events": 1,
+    "rejected_events": 82,
     "dead_letter_count": 0,
     "inference_failure_count": 0,
-    "duration_seconds": 1.5292,
-    "enqueue_duration_seconds": 0.5361,
-    "completed_detection_throughput_eps": 47.08,
+    "unexplained_loss": 0,
+    "reconciliation_passed": true,
+    "duration_seconds": 1.7681,
+    "enqueue_duration_seconds": 0.7534,
+    "completed_detection_throughput_eps": 45.25,
     "queue_wait_ms": {
-      "p50": 742.28,
-      "p95": 1023.447,
-      "mean": 629.96
+      "p50": 705.46,
+      "p95": 1047.586,
+      "mean": 648.428
     },
     "processing_time_ms": {
-      "p50": 19.549,
-      "p95": 24.269,
-      "mean": 21.221
+      "p50": 21.675,
+      "p95": 26.071,
+      "mean": 22.085
     },
     "end_to_end_latency_ms": {
-      "p50": 820.085,
-      "p95": 1100.857,
-      "mean": 709.449
+      "p50": 787.322,
+      "p95": 1139.252,
+      "mean": 732.946
     },
     "peak_queue_depth": 50,
     "final_queue_depth": 0,
     "stable_operating_point": true,
     "backlog_accumulated": false,
-    "memory_growth_mb": 1.418,
-    "peak_heap_mb": 1.418
+    "memory_growth_mb": 1.43,
+    "peak_heap_mb": 1.43
   },
   "conclusions": {
     "stable_operating_points": true,
     "backlog_accumulation": false,
     "memory_bounded": true,
     "dead_letter_protection_verified": false,
-    "retry_exponential_backoff_verified": false
+    "retry_exponential_backoff_verified": false,
+    "accounting_reconciliation_verified": true,
+    "zero_unexplained_loss": true
   }
 }
