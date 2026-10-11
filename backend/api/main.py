@@ -34,6 +34,7 @@ try:
         UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry,
         IngestionEventRequest, IngestionBatchRequest, IngestionItemResult,
         IngestionBatchResponse, StreamingIngestionStats, ReplayRequest, ReplayResponse,
+        QueueMetrics, DeadLetterItem, AsyncQueueConfig, EventProcessingState,
     )
     from backend.detection.isolation_forest import IsolationForestDetector
     from backend.detection.baseline_profiler import BehavioralBaselineProfiler
@@ -48,6 +49,9 @@ try:
     from backend.ingestion.streaming_ingestion import StreamingIngestionManager
     from backend.ingestion.normalizer import NormalizerPipeline, NormalizationError
     from backend.ingestion.replay import DeterministicEventReplayer, ReplayConfig
+    from backend.ingestion.async_queue import (
+        AsyncDetectionQueue, TransientDetectionError, PermanentDetectionError,
+    )
 except ModuleNotFoundError:
     from core.config import (
         CONFIDENCE_ALERT_MIN,
@@ -62,6 +66,7 @@ except ModuleNotFoundError:
         UnifiedEvent, DetectionResult, Alert, Incident, TimelineEntry,
         IngestionEventRequest, IngestionBatchRequest, IngestionItemResult,
         IngestionBatchResponse, StreamingIngestionStats, ReplayRequest, ReplayResponse,
+        QueueMetrics, DeadLetterItem, AsyncQueueConfig, EventProcessingState,
     )
     from detection.isolation_forest import IsolationForestDetector
     from detection.baseline_profiler import BehavioralBaselineProfiler
@@ -76,6 +81,9 @@ except ModuleNotFoundError:
     from ingestion.streaming_ingestion import StreamingIngestionManager
     from ingestion.normalizer import NormalizerPipeline, NormalizationError
     from ingestion.replay import DeterministicEventReplayer, ReplayConfig
+    from ingestion.async_queue import (
+        AsyncDetectionQueue, TransientDetectionError, PermanentDetectionError,
+    )
 
 
 
@@ -117,14 +125,28 @@ async def lifespan(application: FastAPI):
     application.state._logged_errs = set()
     application.state.isolated_ips = set()
     _load_models_from_disk(application.state)
+
+    # Initialize Phase 27 bounded async detection worker pool
+    application.state.async_queue = AsyncDetectionQueue(
+        config=AsyncQueueConfig(
+            max_queue_size=int(os.getenv("AEGIS_QUEUE_MAX_SIZE", "1000")),
+            worker_concurrency=int(os.getenv("AEGIS_QUEUE_WORKERS", "2")),
+        ),
+        detection_handler=lambda ev: _evaluate_event_detection(ev, application.state),
+    )
+    await application.state.async_queue.start()
+
     worker_task = asyncio.create_task(dataset_worker(application.state))
     yield
-    # Shutdown: cancel background worker gracefully
+    # Shutdown: cancel background worker and stop async detection queue gracefully
     worker_task.cancel()
     try:
         await worker_task
     except asyncio.CancelledError:
         pass
+
+    if hasattr(application.state, "async_queue") and application.state.async_queue:
+        await application.state.async_queue.stop()
 
 
 # ── App & CORS Setup ──────────────────────────────────────────────────────────
@@ -1106,6 +1128,15 @@ def _evaluate_event_detection(
 
 def _get_ingestion_manager(state) -> StreamingIngestionManager:
     """Helper to lazily retrieve or initialize StreamingIngestionManager."""
+    if not hasattr(state, "async_queue") or state.async_queue is None:
+        state.async_queue = AsyncDetectionQueue(
+            config=AsyncQueueConfig(
+                max_queue_size=int(os.getenv("AEGIS_QUEUE_MAX_SIZE", "1000")),
+                worker_concurrency=int(os.getenv("AEGIS_QUEUE_WORKERS", "2")),
+            ),
+            detection_handler=lambda ev: _evaluate_event_detection(ev, state),
+        )
+
     if not hasattr(state, "ingestion_manager") or state.ingestion_manager is None:
         seq_tracker = getattr(state, "sequence_tracker", None)
         graph_tracker = getattr(state, "graph_tracker", None)
@@ -1113,34 +1144,46 @@ def _get_ingestion_manager(state) -> StreamingIngestionManager:
             sequence_tracker=seq_tracker,
             graph_tracker=graph_tracker,
             detection_handler=lambda ev: _evaluate_event_detection(ev, state),
+            async_queue=state.async_queue,
         )
-    elif getattr(state.ingestion_manager, "detection_handler", None) is None:
-        state.ingestion_manager.detection_handler = lambda ev: _evaluate_event_detection(ev, state)
+    else:
+        if getattr(state.ingestion_manager, "detection_handler", None) is None:
+            state.ingestion_manager.detection_handler = lambda ev: _evaluate_event_detection(ev, state)
+        if getattr(state.ingestion_manager, "async_queue", None) is None:
+            state.ingestion_manager.async_queue = state.async_queue
     return state.ingestion_manager
 
 
-# ── Phase 25 Ingestion Endpoints ──────────────────────────────────────────────
+# ── Phase 25 & 27 Ingestion Endpoints ─────────────────────────────────────────
 
 @app.post("/api/ingest/event", response_model=IngestionItemResult)
 def ingest_single_event(
     request: Union[IngestionEventRequest, Dict[str, Any]],
-    detect: Optional[bool] = Query(None, description="Trigger detection pipeline for accepted event"),
+    detect: Optional[bool] = Query(None, description="Trigger detection pipeline synchronously for accepted event"),
+    async_mode: Optional[bool] = Query(None, alias="async", description="Enqueue accepted event for asynchronous detection worker"),
 ):
     """
     Ingest, validate, normalize, and deduplicate a single telemetry event.
-    Returns structured IngestionItemResult with accepted, duplicate, or rejected status.
+    Returns structured IngestionItemResult with accepted, duplicate, rejected, or queued status.
     """
     mgr = _get_ingestion_manager(app.state)
     raw_ev = request.raw_event if isinstance(request, IngestionEventRequest) else request
     src_sys = request.source_system if isinstance(request, IngestionEventRequest) else None
     trigger_det = detect if detect is not None else (request.trigger_detection if isinstance(request, IngestionEventRequest) else False)
-    return mgr.ingest_event(raw_ev, source_system=src_sys, trigger_detection=trigger_det)
+    is_async = async_mode if async_mode is not None else (request.async_detection if isinstance(request, IngestionEventRequest) else False)
+    return mgr.ingest_event(
+        raw_ev,
+        source_system=src_sys,
+        trigger_detection=trigger_det,
+        async_detection=is_async,
+    )
 
 
 @app.post("/api/ingest/batch", response_model=IngestionBatchResponse)
 def ingest_batch_events(
     request: IngestionBatchRequest,
-    detect: Optional[bool] = Query(None, description="Trigger detection pipeline for accepted events"),
+    detect: Optional[bool] = Query(None, description="Trigger detection pipeline synchronously for accepted events"),
+    async_mode: Optional[bool] = Query(None, alias="async", description="Enqueue accepted events for asynchronous detection worker"),
 ):
     """
     Ingest, validate, normalize, and deduplicate a batch of telemetry events.
@@ -1153,19 +1196,42 @@ def ingest_batch_events(
         )
     mgr = _get_ingestion_manager(app.state)
     trigger_det = detect if detect is not None else request.trigger_detection
+    is_async = async_mode if async_mode is not None else request.async_detection
     return mgr.ingest_batch(
         events=request.events,
         source_system=request.source_system,
         max_batch_size=500,
         trigger_detection=trigger_det,
+        async_detection=is_async,
     )
 
 
 @app.get("/api/ingest/stats", response_model=StreamingIngestionStats)
 def get_ingestion_stats():
-    """Get streaming ingestion metrics, counters, and high-watermark timestamp."""
+    """Get streaming ingestion metrics, counters, high-watermark timestamp, and queue metrics."""
     mgr = _get_ingestion_manager(app.state)
     return mgr.stats
+
+
+@app.get("/api/ingest/queue/metrics", response_model=QueueMetrics)
+def get_queue_metrics():
+    """Get real-time observability metrics for the asynchronous detection queue."""
+    mgr = _get_ingestion_manager(app.state)
+    if mgr.async_queue and hasattr(mgr.async_queue, "get_metrics"):
+        return mgr.async_queue.get_metrics()
+    return QueueMetrics(worker_health="stopped", active_workers=0)
+
+
+@app.get("/api/ingest/queue/dead-letter", response_model=List[DeadLetterItem])
+def get_queue_dead_letter(
+    x_aegis_admin_key: Optional[str] = Header(None, alias="X-AEGIS-Admin-Key"),
+):
+    """Inspect dead-letter queue records for permanently failed events (admin authorization required)."""
+    _require_admin_authorization(x_aegis_admin_key, action_description="/api/ingest/queue/dead-letter")
+    mgr = _get_ingestion_manager(app.state)
+    if mgr.async_queue and hasattr(mgr.async_queue, "get_dead_letter_items"):
+        return mgr.async_queue.get_dead_letter_items()
+    return []
 
 
 @app.post("/api/ingest/reset")

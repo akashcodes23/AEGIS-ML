@@ -1,0 +1,101 @@
+{
+  "metadata": {
+    "benchmark_phase": "Phase 27: Asynchronous Detection Pipeline",
+    "timestamp": "2026-10-11T05:01:34.015828+00:00",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "python_version": "3.10.12",
+    "cpu_architecture": "arm64",
+    "cores": 10,
+    "disclaimer": "Measurements reflect single-machine local runtime performance on macOS. The in-memory queue provides process-isolated concurrency and non-blocking ingestion, but does NOT provide durable recovery across process restarts."
+  },
+  "results": {
+    "workload_100": {
+      "synchronous": {
+        "mode": "synchronous",
+        "total_events": 100,
+        "accepted_events": 100,
+        "elapsed_seconds": 4.0813,
+        "ingestion_throughput_eps": 24.5,
+        "completed_detection_throughput_eps": 24.5,
+        "latency_p50_ms": 40.782,
+        "latency_p95_ms": 41.773,
+        "latency_mean_ms": 40.813,
+        "peak_memory_mb": 0.895
+      },
+      "asynchronous": {
+        "mode": "asynchronous_2_workers",
+        "total_events": 100,
+        "accepted_events": 100,
+        "completed_events": 100,
+        "failed_events": 0,
+        "retries": 0,
+        "elapsed_ingest_seconds": 0.0149,
+        "elapsed_total_seconds": 4.6762,
+        "ingestion_throughput_eps": 6722.01,
+        "completed_detection_throughput_eps": 21.38,
+        "ingest_latency_p50_ms": 0.145,
+        "ingest_latency_p95_ms": 0.175,
+        "queue_wait_time_ms": {
+          "p50": 2341.983,
+          "p95": 4428.03,
+          "mean": 2294.793
+        },
+        "worker_proc_time_ms": {
+          "p50": 93.128,
+          "p95": 139.55,
+          "mean": 92.437
+        },
+        "end_to_end_latency_ms": {
+          "p50": 2434.818,
+          "p95": 4523.289,
+          "mean": 2387.236
+        },
+        "peak_memory_mb": 1.462
+      }
+    },
+    "workload_250": {
+      "synchronous": {
+        "mode": "synchronous",
+        "total_events": 250,
+        "accepted_events": 250,
+        "elapsed_seconds": 10.2386,
+        "ingestion_throughput_eps": 24.42,
+        "completed_detection_throughput_eps": 24.42,
+        "latency_p50_ms": 40.509,
+        "latency_p95_ms": 42.959,
+        "latency_mean_ms": 40.953,
+        "peak_memory_mb": 1.1
+      },
+      "asynchronous": {
+        "mode": "asynchronous_2_workers",
+        "total_events": 250,
+        "accepted_events": 250,
+        "completed_events": 250,
+        "failed_events": 0,
+        "retries": 0,
+        "elapsed_ingest_seconds": 0.0379,
+        "elapsed_total_seconds": 11.6825,
+        "ingestion_throughput_eps": 6589.52,
+        "completed_detection_throughput_eps": 21.4,
+        "ingest_latency_p50_ms": 0.15,
+        "ingest_latency_p95_ms": 0.163,
+        "queue_wait_time_ms": {
+          "p50": 5816.304,
+          "p95": 11045.717,
+          "mean": 5794.813
+        },
+        "worker_proc_time_ms": {
+          "p50": 92.764,
+          "p95": 94.68,
+          "mean": 93.14
+        },
+        "end_to_end_latency_ms": {
+          "p50": 5911.33,
+          "p95": 11137.827,
+          "mean": 5887.958
+        },
+        "peak_memory_mb": 2.631
+      }
+    }
+  }
+}

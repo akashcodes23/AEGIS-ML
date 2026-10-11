@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal, List, Dict, Any
 from datetime import datetime, timezone
+from enum import Enum
 import uuid
 
 class UnifiedEvent(BaseModel):
@@ -220,13 +221,76 @@ class Incident(BaseModel):
     priority_calculation_breakdown: Dict[str, Any] = {}
 
 
-# ── Phase 25 Ingestion & Streaming Schemas ───────────────────────────────────
+# ── Phase 25 & 27 Ingestion, Streaming, and Queue Schemas ─────────────────────
+
+class EventProcessingState(str, Enum):
+    """Explicit lifecycle state of an event in the AEGIS-ML ingestion and detection pipeline."""
+    ACCEPTED = "accepted"            # Normalized and accepted into process memory
+    QUEUED = "queued"                # Enqueued onto in-memory detection worker queue
+    PROCESSING = "processing"        # Dequeued; actively undergoing feature extraction or ML inference
+    COMPLETED = "completed"          # Finished detection and incident correlation
+    DUPLICATE = "duplicate"          # Rejected as exact event_id or sliding-window payload duplicate
+    REJECTED = "rejected"            # Rejected due to schema validation or normalizer failure
+    RETRY_PENDING = "retry_pending"  # Transient failure encountered; waiting for backoff retry
+    FAILED = "failed"                # Permanent failure or retry limit exhausted (dead letter)
+
+
+class QueueBackpressurePolicy(str, Enum):
+    """Policy applied when the bounded in-memory detection queue is saturated."""
+    REJECT = "reject"                # Immediately reject with queue_full reason
+    BLOCK_TIMEOUT = "block_timeout"  # Wait up to timeout_seconds before rejecting with queue_saturated
+
+
+class AsyncQueueConfig(BaseModel):
+    """Configuration for bounded asynchronous detection worker pool."""
+    max_queue_size: int = 1000
+    worker_concurrency: int = 2
+    backpressure_policy: QueueBackpressurePolicy = QueueBackpressurePolicy.REJECT
+    timeout_seconds: float = 0.5
+    max_retries: int = 3
+    retry_backoff_base_seconds: float = 0.05
+    retry_backoff_multiplier: float = 2.0
+    dead_letter_capacity: int = 500
+
+
+class DeadLetterItem(BaseModel):
+    """Record of an event that permanently failed detection processing."""
+    event_id: Optional[str] = None
+    event: Optional[Dict[str, Any]] = None
+    failed_at: datetime = Field(default_factory=datetime.utcnow)
+    attempts: int = 0
+    failure_reason: str
+    transient: bool = False
+
+
+class QueueMetrics(BaseModel):
+    """Real-time observability metrics for the asynchronous detection queue."""
+    queue_depth: int = 0
+    queue_capacity: int = 1000
+    accepted_events: int = 0
+    queued_events: int = 0
+    processing_events: int = 0
+    completed_events: int = 0
+    failed_events: int = 0
+    retry_count: int = 0
+    duplicate_count: int = 0
+    rejected_count: int = 0
+    dead_letter_count: int = 0
+    queue_wait_time_ms: Dict[str, float] = Field(default_factory=lambda: {"p50": 0.0, "p95": 0.0, "mean": 0.0})
+    processing_time_ms: Dict[str, float] = Field(default_factory=lambda: {"p50": 0.0, "p95": 0.0, "mean": 0.0})
+    end_to_end_latency_ms: Dict[str, float] = Field(default_factory=lambda: {"p50": 0.0, "p95": 0.0, "mean": 0.0})
+    worker_health: str = "healthy"  # "healthy", "degraded", "stopped"
+    active_workers: int = 0
+    is_durable: bool = False
+    durability_guarantee: str = "in_memory_volatile_queue_loss_possible_on_process_restart"
+
 
 class IngestionEventRequest(BaseModel):
     raw_event: Dict[str, Any]
     source_system: Optional[str] = None
     schema_version: Optional[str] = "25.0.0"
     trigger_detection: bool = False
+    async_detection: bool = False
 
 
 class IngestionBatchRequest(BaseModel):
@@ -234,17 +298,20 @@ class IngestionBatchRequest(BaseModel):
     source_system: Optional[str] = None
     schema_version: Optional[str] = "25.0.0"
     trigger_detection: bool = False
+    async_detection: bool = False
 
 
 class IngestionItemResult(BaseModel):
     event_id: Optional[str] = None
-    status: Literal["accepted", "duplicate", "rejected"]
+    status: Literal["accepted", "duplicate", "rejected", "queued"] = "accepted"
     reason: Optional[str] = None
     is_late_arriving: bool = False
     clock_skew_detected: bool = False
     event: Optional[UnifiedEvent] = None
     detection: Optional[DetectionResult] = None
     alert: Optional[Alert] = None
+    processing_state: Optional[str] = None
+    queue_position: Optional[int] = None
 
 
 class IngestionBatchResponse(BaseModel):
@@ -263,6 +330,7 @@ class StreamingIngestionStats(BaseModel):
     total_clock_skew: int
     watermark_timestamp: Optional[datetime] = None
     active_hosts_tracked: int
+    queue_metrics: Optional[QueueMetrics] = None
 
 
 class ReplayRequest(BaseModel):
@@ -280,5 +348,6 @@ class ReplayResponse(BaseModel):
     summary: Dict[str, Any]
     alerts_generated: int
     incidents_created: int
+
 
 

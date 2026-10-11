@@ -54,6 +54,7 @@ class StreamingIngestionManager:
         sequence_tracker: Optional[Any] = None,
         graph_tracker: Optional[Any] = None,
         detection_handler: Optional[Any] = None,
+        async_queue: Optional[Any] = None,
     ):
         self.dedup_window_seconds = float(dedup_window_seconds)
         self.late_tolerance_seconds = float(late_tolerance_seconds)
@@ -61,6 +62,7 @@ class StreamingIngestionManager:
         self.sequence_tracker = sequence_tracker
         self.graph_tracker = graph_tracker
         self.detection_handler = detection_handler
+        self.async_queue = async_queue
 
         # In-memory deduplication state
         self._seen_event_ids: OrderedDict[str, datetime] = OrderedDict()
@@ -80,7 +82,7 @@ class StreamingIngestionManager:
     def reset(self) -> None:
         """
         Reset all streaming ingestion state, deduplication buffers,
-        watermarks, and underlying causal trackers.
+        watermarks, underlying causal trackers, and async queue.
         """
         self._seen_event_ids.clear()
         self._seen_fingerprints.clear()
@@ -96,6 +98,8 @@ class StreamingIngestionManager:
             self.sequence_tracker.reset()
         if self.graph_tracker and hasattr(self.graph_tracker, "reset"):
             self.graph_tracker.reset()
+        if self.async_queue and hasattr(self.async_queue, "reset"):
+            self.async_queue.reset()
 
         logger.info("[StreamingIngestionManager] Ingestion state and trackers reset successfully.")
 
@@ -212,10 +216,12 @@ class StreamingIngestionManager:
         source_system: Optional[str] = None,
         dispatch_trackers: bool = True,
         trigger_detection: bool = False,
+        async_detection: bool = False,
     ) -> IngestionItemResult:
         """
         Normalize, validate, deduplicate, and process a single incoming telemetry event.
-        Optionally triggers calibrated ML detection and alert correlation.
+        Optionally triggers calibrated ML detection and alert correlation synchronously
+        or enqueues onto bounded asynchronous detection queue.
         """
         # 1. Normalize
         if isinstance(raw_event, UnifiedEvent):
@@ -234,6 +240,7 @@ class StreamingIngestionManager:
                     event_id=raw_event.get("event_id") if isinstance(raw_event, dict) else None,
                     status="rejected",
                     reason=f"validation_error: {exc.message} (field={exc.field})",
+                    processing_state="rejected",
                 )
             except Exception as exc:
                 self.total_rejected += 1
@@ -241,6 +248,7 @@ class StreamingIngestionManager:
                     event_id=raw_event.get("event_id") if isinstance(raw_event, dict) else None,
                     status="rejected",
                     reason=f"unexpected_error: {str(exc)}",
+                    processing_state="rejected",
                 )
 
         if event is None:
@@ -249,6 +257,7 @@ class StreamingIngestionManager:
                 event_id=None,
                 status="rejected",
                 reason="unable_to_normalize",
+                processing_state="rejected",
             )
 
         # 2. Deduplicate
@@ -262,6 +271,7 @@ class StreamingIngestionManager:
                 is_late_arriving=bool(event.is_late_arriving),
                 clock_skew_detected=bool(event.clock_skew_detected),
                 event=event,
+                processing_state="duplicate",
             )
 
         # 3. Timing and Watermark
@@ -275,14 +285,33 @@ class StreamingIngestionManager:
         if dispatch_trackers:
             self.dispatch_causal_trackers(event)
 
-        # 6. End-to-End Detection Trigger (Audit 3)
+        # 6. Detection Trigger: Asynchronous or Synchronous
         det_result = None
         alert_result = None
-        if trigger_detection and self.detection_handler:
+        processing_state = "accepted"
+        q_pos = None
+
+        if async_detection and self.async_queue:
+            enq_ok, enq_reason, q_pos = self.async_queue.enqueue_nowait(event)
+            if not enq_ok:
+                return IngestionItemResult(
+                    event_id=event.event_id,
+                    status="rejected" if enq_reason == "queue_full" else "duplicate",
+                    reason=enq_reason,
+                    is_late_arriving=bool(event.is_late_arriving),
+                    clock_skew_detected=bool(event.clock_skew_detected),
+                    event=event,
+                    processing_state="failed" if enq_reason == "queue_full" else "duplicate",
+                )
+            processing_state = "queued"
+
+        elif trigger_detection and self.detection_handler:
             try:
                 det_result, alert_result = self.detection_handler(event)
+                processing_state = "completed"
             except Exception as exc:
                 logger.error("Detection handler execution failed: %s", exc)
+                processing_state = "failed"
 
         return IngestionItemResult(
             event_id=event.event_id,
@@ -293,6 +322,8 @@ class StreamingIngestionManager:
             event=event,
             detection=det_result,
             alert=alert_result,
+            processing_state=processing_state,
+            queue_position=q_pos,
         )
 
     def ingest_batch(
@@ -302,6 +333,7 @@ class StreamingIngestionManager:
         max_batch_size: int = 500,
         dispatch_trackers: bool = True,
         trigger_detection: bool = False,
+        async_detection: bool = False,
     ) -> IngestionBatchResponse:
         """
         Batch ingestion with partial failure tolerance and per-item results.
@@ -320,6 +352,7 @@ class StreamingIngestionManager:
                 source_system=source_system,
                 dispatch_trackers=dispatch_trackers,
                 trigger_detection=trigger_detection,
+                async_detection=async_detection,
             )
             results.append(res)
             if res.status == "accepted":
@@ -339,7 +372,12 @@ class StreamingIngestionManager:
 
     @property
     def stats(self) -> StreamingIngestionStats:
-        """Return real-time ingestion counters and watermark."""
+        """Return real-time ingestion counters, watermark, and queue metrics."""
+        q_metrics = (
+            self.async_queue.get_metrics()
+            if (self.async_queue and hasattr(self.async_queue, "get_metrics"))
+            else None
+        )
         return StreamingIngestionStats(
             total_ingested=self.total_ingested,
             total_duplicates=self.total_duplicates,
@@ -348,4 +386,5 @@ class StreamingIngestionManager:
             total_clock_skew=self.total_clock_skew,
             watermark_timestamp=self.watermark_timestamp,
             active_hosts_tracked=len(self._active_hosts),
+            queue_metrics=q_metrics,
         )
