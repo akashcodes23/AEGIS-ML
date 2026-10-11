@@ -1,7 +1,7 @@
 {
   "metadata": {
     "evaluation_phase": "Phase 28: Detection Quality & Error Analysis",
-    "timestamp": "2026-10-11T05:18:47.134695+00:00",
+    "timestamp": "2026-10-11T05:52:04.143591+00:00",
     "dataset": "/Users/akashgpatil/major_project/AEGIS-ML/data/raw/behavioral_diversity_labeled.jsonl",
     "split_method": "scenario_grouped_stratified_70_10_20",
     "seed": 42,
@@ -15,24 +15,24 @@
     "disclaimer": "Evaluation evaluated against scenario-grouped synthetic benchmarks. Real-world generalization on organic enterprise network telemetry has not been independently established."
   },
   "aggregate_metrics": {
-    "accuracy": 0.9963,
-    "balanced_accuracy": 0.9889,
-    "macro_f1": 0.9932,
-    "weighted_f1": 0.9963,
-    "benign_false_positive_rate": 0.0,
-    "benign_fp_count": 0,
+    "accuracy": 0.9945,
+    "balanced_accuracy": 0.9873,
+    "macro_f1": 0.9909,
+    "weighted_f1": 0.9944,
+    "benign_false_positive_rate": 0.0015,
+    "benign_fp_count": 1,
     "benign_total_count": 679,
-    "attack_recall": 0.9926,
-    "attack_tp_count": 403,
+    "attack_recall": 0.9901,
+    "attack_tp_count": 402,
     "attack_total_count": 406,
-    "log_loss": 0.1468,
-    "brier_score": 0.0042
+    "log_loss": 0.2132,
+    "brier_score": 0.006
   },
   "per_class_metrics": {
     "benign": {
-      "precision": 0.9956,
-      "recall": 1.0,
-      "f1_score": 0.9978,
+      "precision": 0.9941,
+      "recall": 0.9985,
+      "f1_score": 0.9963,
       "support": 679
     },
     "brute_force": {
@@ -49,24 +49,24 @@
     },
     "data_exfiltration": {
       "precision": 0.9935,
-      "recall": 1.0,
-      "f1_score": 0.9968,
+      "recall": 0.9935,
+      "f1_score": 0.9935,
       "support": 154
     },
     "lateral_movement": {
-      "precision": 1.0,
+      "precision": 0.9855,
       "recall": 0.9444,
-      "f1_score": 0.9714,
+      "f1_score": 0.9645,
       "support": 72
     }
   },
   "confusion_matrix": [
     [
-      679,
+      678,
       0,
       0,
       0,
-      0
+      1
     ],
     [
       0,
@@ -83,10 +83,10 @@
       0
     ],
     [
+      1,
       0,
       0,
-      0,
-      154,
+      153,
       0
     ],
     [
@@ -118,9 +118,11 @@
     },
     "bulk_read_archive": {
       "total_events": 47,
-      "false_alarms": 0,
-      "false_alarm_rate": 0.0,
-      "common_misclassifications": {}
+      "false_alarms": 1,
+      "false_alarm_rate": 0.0213,
+      "common_misclassifications": {
+        "lateral_movement": 1
+      }
     },
     "large_file_transfer": {
       "total_events": 29,
@@ -142,16 +144,16 @@
       "false_negative_rate": 0.0417,
       "missed_lacking_endpoint_context": 0
     },
-    "data_exfiltration": {
-      "total_attack_events": 154,
-      "missed_as_benign": 0,
-      "false_negative_rate": 0.0,
-      "missed_lacking_endpoint_context": 0
-    },
     "c2_beaconing": {
       "total_attack_events": 30,
       "missed_as_benign": 0,
       "false_negative_rate": 0.0,
+      "missed_lacking_endpoint_context": 0
+    },
+    "data_exfiltration": {
+      "total_attack_events": 154,
+      "missed_as_benign": 1,
+      "false_negative_rate": 0.0065,
       "missed_lacking_endpoint_context": 0
     },
     "brute_force": {

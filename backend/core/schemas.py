@@ -281,6 +281,7 @@ class QueueMetrics(BaseModel):
     end_to_end_latency_ms: Dict[str, float] = Field(default_factory=lambda: {"p50": 0.0, "p95": 0.0, "mean": 0.0})
     worker_health: str = "healthy"  # "healthy", "degraded", "stopped"
     active_workers: int = 0
+    inference_failure_count: int = 0
     is_durable: bool = False
     durability_guarantee: str = "in_memory_volatile_queue_loss_possible_on_process_restart"
 

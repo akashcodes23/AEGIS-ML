@@ -1,0 +1,199 @@
+{
+  "metadata": {
+    "evaluation_phase": "Phase 29.5: Sustained-Load Testing and Observability",
+    "timestamp": "2026-10-11T05:48:51.989014+00:00",
+    "python_version": "3.10.12",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "model_version": "23.0.0",
+    "disclaimer": "Local sustained-load benchmark on workstation hardware. Throughput and latencies reflect single-node execution and do not represent distributed cloud capacity."
+  },
+  "workloads": {
+    "workload_100": {
+      "workload_target_events": 100,
+      "total_streamed_events": 109,
+      "enqueued_events": 109,
+      "completed_events": 108,
+      "failed_events": 0,
+      "retry_count": 0,
+      "duplicate_count": 0,
+      "rejected_count": 0,
+      "dead_letter_count": 0,
+      "inference_failure_count": 0,
+      "duration_seconds": 1.5227,
+      "enqueue_duration_seconds": 0.2143,
+      "completed_detection_throughput_eps": 70.93,
+      "queue_wait_ms": {
+        "p50": 494.172,
+        "p95": 1099.566,
+        "mean": 530.8
+      },
+      "processing_time_ms": {
+        "p50": 13.556,
+        "p95": 15.592,
+        "mean": 14.086
+      },
+      "end_to_end_latency_ms": {
+        "p50": 700.919,
+        "p95": 1397.793,
+        "mean": 744.102
+      },
+      "peak_queue_depth": 93,
+      "final_queue_depth": 0,
+      "stable_operating_point": true,
+      "backlog_accumulated": false,
+      "memory_growth_mb": 1.409,
+      "peak_heap_mb": 1.409
+    },
+    "workload_250": {
+      "workload_target_events": 250,
+      "total_streamed_events": 271,
+      "enqueued_events": 271,
+      "completed_events": 268,
+      "failed_events": 0,
+      "retry_count": 0,
+      "duplicate_count": 0,
+      "rejected_count": 0,
+      "dead_letter_count": 0,
+      "inference_failure_count": 0,
+      "duration_seconds": 3.6846,
+      "enqueue_duration_seconds": 0.8143,
+      "completed_detection_throughput_eps": 72.74,
+      "queue_wait_ms": {
+        "p50": 1324.101,
+        "p95": 2576.382,
+        "mean": 1322.366
+      },
+      "processing_time_ms": {
+        "p50": 13.328,
+        "p95": 15.196,
+        "mean": 13.735
+      },
+      "end_to_end_latency_ms": {
+        "p50": 1537.546,
+        "p95": 2782.319,
+        "mean": 1534.733
+      },
+      "peak_queue_depth": 207,
+      "final_queue_depth": 0,
+      "stable_operating_point": true,
+      "backlog_accumulated": false,
+      "memory_growth_mb": 1.888,
+      "peak_heap_mb": 1.888
+    },
+    "workload_500": {
+      "workload_target_events": 500,
+      "total_streamed_events": 542,
+      "enqueued_events": 542,
+      "completed_events": 537,
+      "failed_events": 0,
+      "retry_count": 0,
+      "duplicate_count": 0,
+      "rejected_count": 0,
+      "dead_letter_count": 0,
+      "inference_failure_count": 0,
+      "duration_seconds": 7.5338,
+      "enqueue_duration_seconds": 2.1755,
+      "completed_detection_throughput_eps": 71.28,
+      "queue_wait_ms": {
+        "p50": 2596.16,
+        "p95": 5043.047,
+        "mean": 2589.34
+      },
+      "processing_time_ms": {
+        "p50": 13.485,
+        "p95": 15.397,
+        "mean": 14.016
+      },
+      "end_to_end_latency_ms": {
+        "p50": 2812.526,
+        "p95": 5279.794,
+        "mean": 2811.225
+      },
+      "peak_queue_depth": 398,
+      "final_queue_depth": 0,
+      "stable_operating_point": true,
+      "backlog_accumulated": false,
+      "memory_growth_mb": 3.032,
+      "peak_heap_mb": 3.032
+    },
+    "workload_1000": {
+      "workload_target_events": 1000,
+      "total_streamed_events": 1084,
+      "enqueued_events": 792,
+      "completed_events": 786,
+      "failed_events": 0,
+      "retry_count": 0,
+      "duplicate_count": 0,
+      "rejected_count": 292,
+      "dead_letter_count": 0,
+      "inference_failure_count": 0,
+      "duration_seconds": 11.5001,
+      "enqueue_duration_seconds": 4.3995,
+      "completed_detection_throughput_eps": 68.35,
+      "queue_wait_ms": {
+        "p50": 4543.289,
+        "p95": 7058.945,
+        "mean": 4250.714
+      },
+      "processing_time_ms": {
+        "p50": 14.094,
+        "p95": 15.757,
+        "mean": 14.617
+      },
+      "end_to_end_latency_ms": {
+        "p50": 4761.525,
+        "p95": 7309.455,
+        "mean": 4488.05
+      },
+      "peak_queue_depth": 500,
+      "final_queue_depth": 0,
+      "stable_operating_point": true,
+      "backlog_accumulated": false,
+      "memory_growth_mb": 5.102,
+      "peak_heap_mb": 5.102
+    }
+  },
+  "queue_saturation_test": {
+    "workload_target_events": 150,
+    "total_streamed_events": 163,
+    "enqueued_events": 73,
+    "completed_events": 72,
+    "failed_events": 0,
+    "retry_count": 0,
+    "duplicate_count": 0,
+    "rejected_count": 90,
+    "dead_letter_count": 0,
+    "inference_failure_count": 0,
+    "duration_seconds": 1.5292,
+    "enqueue_duration_seconds": 0.5361,
+    "completed_detection_throughput_eps": 47.08,
+    "queue_wait_ms": {
+      "p50": 742.28,
+      "p95": 1023.447,
+      "mean": 629.96
+    },
+    "processing_time_ms": {
+      "p50": 19.549,
+      "p95": 24.269,
+      "mean": 21.221
+    },
+    "end_to_end_latency_ms": {
+      "p50": 820.085,
+      "p95": 1100.857,
+      "mean": 709.449
+    },
+    "peak_queue_depth": 50,
+    "final_queue_depth": 0,
+    "stable_operating_point": true,
+    "backlog_accumulated": false,
+    "memory_growth_mb": 1.418,
+    "peak_heap_mb": 1.418
+  },
+  "conclusions": {
+    "stable_operating_points": true,
+    "backlog_accumulation": false,
+    "memory_bounded": true,
+    "dead_letter_protection_verified": false,
+    "retry_exponential_backoff_verified": false
+  }
+}

@@ -622,12 +622,45 @@ async def dataset_worker(state):
 def health_check():
     fitted = getattr(getattr(app.state, "classifier", None), "is_fitted", False)
     csv_count = len(list(DATASET_DIR.glob("*.csv"))) if DATASET_DIR.exists() else 0
+
+    model_readiness = {
+        "loaded": hasattr(app.state, "classifier") and app.state.classifier is not None,
+        "is_fitted": fitted,
+        "model_version": getattr(getattr(app.state, "classifier", None), "model_version", "1.0.0"),
+        "calibrated": getattr(getattr(app.state, "classifier", None), "is_calibrated", False),
+        "feature_count": getattr(getattr(app.state, "classifier", None), "n_features", 48),
+        "artifact_sha256": getattr(getattr(app.state, "classifier", None), "artifact_sha256", None),
+    }
+    if hasattr(app.state, "lifecycle_manager") and app.state.lifecycle_manager and not model_readiness["artifact_sha256"]:
+        active_meta = getattr(app.state.lifecycle_manager, "active_artifact_metadata", None)
+        if active_meta:
+            model_readiness["artifact_sha256"] = active_meta.get("sha256")
+
+    queue_status = None
+    if hasattr(app.state, "async_queue") and app.state.async_queue:
+        qm = app.state.async_queue.get_metrics()
+        queue_status = {
+            "worker_health": qm.worker_health,
+            "active_workers": qm.active_workers,
+            "queue_depth": qm.queue_depth,
+            "queue_capacity": qm.queue_capacity,
+            "accepted_events": qm.accepted_events,
+            "completed_events": qm.completed_events,
+            "failed_events": qm.failed_events,
+            "rejected_events": qm.rejected_count,
+            "retry_count": qm.retry_count,
+            "dead_letter_count": qm.dead_letter_count,
+            "inference_failure_count": qm.inference_failure_count,
+        }
+
     return {
         "status": "ok",
         "models_loaded": hasattr(app.state, "classifier"),
         "classifier_fitted": fitted,
         "dataset_dir": str(DATASET_DIR),
         "csv_count": csv_count,
+        "model_readiness": model_readiness,
+        "queue_status": queue_status,
     }
 
 
@@ -927,17 +960,34 @@ def detect_single_event(event: UnifiedEvent):
         )
 
 
+def _extract_admin_token(
+    x_aegis_admin_key: Optional[str] = None,
+    authorization: Optional[str] = None,
+) -> Optional[str]:
+    """Extract authentication token from X-AEGIS-Admin-Key or Authorization Bearer header."""
+    if x_aegis_admin_key and x_aegis_admin_key.strip():
+        return x_aegis_admin_key.strip()
+    if authorization and authorization.strip():
+        auth_str = authorization.strip()
+        if auth_str.lower().startswith("bearer "):
+            return auth_str[7:].strip()
+        return auth_str
+    return None
+
+
 def _require_admin_authorization(
-    x_aegis_admin_key: Optional[str],
+    token: Optional[str],
     action_description: str = "administrative action",
 ) -> None:
     """
     Validate administrative caller authorization using constant-time comparison.
     Enforces key requirement in production/staging and checks configured AEGIS_ADMIN_KEY.
+    Fails closed in exposed deployments when required credentials are missing.
     """
     configured_key = os.environ.get("AEGIS_ADMIN_KEY")
     env = os.environ.get("AEGIS_ENV", os.environ.get("ENV", "development")).lower()
-    is_exposed = env in ("production", "prod", "staging")
+    require_auth = os.environ.get("AEGIS_REQUIRE_ADMIN_AUTH", "false").lower() in ("true", "1", "yes")
+    is_exposed = env in ("production", "prod", "staging") or require_auth
 
     if is_exposed and not configured_key:
         logger.error(
@@ -951,7 +1001,7 @@ def _require_admin_authorization(
         )
 
     if configured_key:
-        if not x_aegis_admin_key or not hmac.compare_digest(x_aegis_admin_key, configured_key):
+        if not token or not hmac.compare_digest(token, configured_key):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Unauthorized: invalid or missing admin authorization key."
@@ -1140,7 +1190,7 @@ def _evaluate_batch_detection(
 
     except Exception as exc:
         logger.error("Error during streaming detection evaluation: %s", exc)
-        return [(None, None) for _ in events]
+        raise
 
 
 def _evaluate_event_detection(
@@ -1252,9 +1302,11 @@ def get_queue_metrics():
 @app.get("/api/ingest/queue/dead-letter", response_model=List[DeadLetterItem])
 def get_queue_dead_letter(
     x_aegis_admin_key: Optional[str] = Header(None, alias="X-AEGIS-Admin-Key"),
+    authorization: Optional[str] = Header(None),
 ):
     """Inspect dead-letter queue records for permanently failed events (admin authorization required)."""
-    _require_admin_authorization(x_aegis_admin_key, action_description="/api/ingest/queue/dead-letter")
+    token = _extract_admin_token(x_aegis_admin_key, authorization)
+    _require_admin_authorization(token, action_description="/api/ingest/queue/dead-letter")
     mgr = _get_ingestion_manager(app.state)
     if mgr.async_queue and hasattr(mgr.async_queue, "get_dead_letter_items"):
         return mgr.async_queue.get_dead_letter_items()
@@ -1264,6 +1316,7 @@ def get_queue_dead_letter(
 @app.post("/api/ingest/reset")
 def reset_ingestion(
     x_aegis_admin_key: Optional[str] = Header(None, alias="X-AEGIS-Admin-Key"),
+    authorization: Optional[str] = Header(None),
 ):
     """Reset ingestion buffers, watermark, and tracker histories."""
     allow_reset = os.environ.get("AEGIS_ALLOW_INGESTION_RESET", "true").lower()
@@ -1273,7 +1326,8 @@ def reset_ingestion(
             detail="Ingestion reset is administratively disabled in this deployment."
         )
 
-    _require_admin_authorization(x_aegis_admin_key, action_description="/api/ingest/reset")
+    token = _extract_admin_token(x_aegis_admin_key, authorization)
+    _require_admin_authorization(token, action_description="/api/ingest/reset")
     mgr = _get_ingestion_manager(app.state)
     mgr.reset()
     return {"status": "success", "message": "Streaming ingestion state and trackers reset."}
@@ -1283,12 +1337,25 @@ def reset_ingestion(
 def replay_event_sequence(
     request: ReplayRequest,
     x_aegis_admin_key: Optional[str] = Header(None, alias="X-AEGIS-Admin-Key"),
+    authorization: Optional[str] = Header(None),
 ):
     """
     Deterministically replay an event sequence in an isolated execution sandbox.
     Never modifies live production streaming ingestion buffers or active incident streams.
     """
-    _require_admin_authorization(x_aegis_admin_key, action_description="/api/ingest/replay")
+    token = _extract_admin_token(x_aegis_admin_key, authorization)
+    _require_admin_authorization(token, action_description="/api/ingest/replay")
+
+    if not request.events:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Replay sequence is empty."
+        )
+    if len(request.events) > 2000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Replay batch exceeds maximum allowed limit ({len(request.events)} > 2000 events)."
+        )
 
     config = ReplayConfig(
         mode=request.mode or "chronological",
@@ -1379,13 +1446,15 @@ def validate_model_artifact(req: ArtifactValidationRequest):
 @app.post("/api/model/reload")
 def reload_model_artifact(
     req: ModelReloadRequest,
-    x_aegis_admin_key: Optional[str] = Header(None, alias="X-AEGIS-Admin-Key")
+    x_aegis_admin_key: Optional[str] = Header(None, alias="X-AEGIS-Admin-Key"),
+    authorization: Optional[str] = Header(None),
 ):
     """
     Safely validate and activate a candidate model artifact.
     Preserves currently active model if validation or activation fails.
     """
-    _require_admin_authorization(x_aegis_admin_key, action_description="/api/model/reload")
+    token = _extract_admin_token(x_aegis_admin_key, authorization)
+    _require_admin_authorization(token, action_description="/api/model/reload")
 
     if not hasattr(app.state, "lifecycle_manager"):
         raise HTTPException(

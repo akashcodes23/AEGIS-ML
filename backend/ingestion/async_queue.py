@@ -55,6 +55,15 @@ except ModuleNotFoundError:
         QueueMetrics,
     )
 
+try:
+    from backend.ingestion.normalizer import redact_sensitive_payload
+except ModuleNotFoundError:
+    try:
+        from ingestion.normalizer import redact_sensitive_payload
+    except ModuleNotFoundError:
+        def redact_sensitive_payload(d):
+            return d
+
 logger = logging.getLogger("aegis.async_queue")
 
 
@@ -127,6 +136,7 @@ class AsyncDetectionQueue:
         self.retry_count: int = 0
         self.duplicate_count: int = 0
         self.rejected_count: int = 0
+        self.inference_failure_count: int = 0
 
         # Latency sliding windows (ms)
         self._wait_times: deque[float] = deque(maxlen=1000)
@@ -140,6 +150,10 @@ class AsyncDetectionQueue:
     def queue_depth(self) -> int:
         """Current number of items waiting in the in-memory queue."""
         return self._queue.qsize()
+
+    def set_fault_hook(self, hook: Optional[Callable[[UnifiedEvent, int], None]]) -> None:
+        """Register or clear a fault injection hook for testing error classifications and retries."""
+        self._fault_hook = hook
 
     @property
     def is_running(self) -> bool:
@@ -162,10 +176,17 @@ class AsyncDetectionQueue:
         try:
             queue_loop = getattr(self._queue, "_loop", None)
             if queue_loop is not None and queue_loop != running_loop:
-                if self._queue.empty():
-                    self._queue = asyncio.Queue(maxsize=self.config.max_queue_size)
-                    self._master_host_lock = asyncio.Lock()
-                    self._host_locks.clear()
+                old_items = []
+                while not self._queue.empty():
+                    try:
+                        old_items.append(self._queue.get_nowait())
+                    except Exception:
+                        break
+                self._queue = asyncio.Queue(maxsize=self.config.max_queue_size)
+                for item in old_items:
+                    self._queue.put_nowait(item)
+                self._master_host_lock = asyncio.Lock()
+                self._host_locks.clear()
         except Exception:
             pass
 
@@ -390,6 +411,7 @@ class AsyncDetectionQueue:
                                         if len(self._completed_event_ids) > self._max_completed_ids:
                                             self._completed_event_ids.popitem(last=False)
                             except Exception as batch_err:
+                                self.inference_failure_count += 1
                                 logger.warning(f"[Worker-{worker_id}] Batch handler error, falling back to sequential retries: {batch_err}")
                                 for it in active_items:
                                     await self._process_item_with_retries(it, loop)
@@ -460,6 +482,7 @@ class AsyncDetectionQueue:
                 return
 
             except TransientDetectionError as exc:
+                self.inference_failure_count += 1
                 item.attempts += 1
                 self.retry_count += 1
                 item.last_error = str(exc)
@@ -488,6 +511,7 @@ class AsyncDetectionQueue:
                     return
 
             except Exception as exc:
+                self.inference_failure_count += 1
                 # Permanent failure -> Immediate Dead Letter
                 item.state = EventProcessingState.FAILED
                 self.failed_events += 1
@@ -501,15 +525,16 @@ class AsyncDetectionQueue:
         failure_reason: str,
         transient: bool,
     ) -> None:
-        """Store terminal failure in bounded dead-letter record."""
+        """Store terminal failure in bounded dead-letter record with sensitive field redaction."""
         raw_dict = (
             item.event.model_dump()
             if hasattr(item.event, "model_dump")
             else (item.event.dict() if hasattr(item.event, "dict") else {})
         )
+        redacted_dict = redact_sensitive_payload(raw_dict)
         dl_item = DeadLetterItem(
             event_id=item.event.event_id,
-            event=raw_dict,
+            event=redacted_dict,
             failed_at=datetime.now(timezone.utc),
             attempts=item.attempts,
             failure_reason=failure_reason,
@@ -554,6 +579,7 @@ class AsyncDetectionQueue:
             retry_count=self.retry_count,
             duplicate_count=self.duplicate_count,
             rejected_count=self.rejected_count,
+            inference_failure_count=self.inference_failure_count,
             dead_letter_count=len(self._dead_letter_queue),
             queue_wait_time_ms=self._calculate_percentiles(self._wait_times),
             processing_time_ms=self._calculate_percentiles(self._processing_times),
@@ -591,4 +617,5 @@ class AsyncDetectionQueue:
         self.retry_count = 0
         self.duplicate_count = 0
         self.rejected_count = 0
+        self.inference_failure_count = 0
         logger.info("[AsyncDetectionQueue] Reset queue state and metrics.")

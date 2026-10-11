@@ -1,0 +1,64 @@
+{
+  "metadata": {
+    "evaluation_phase": "Phase 29.6: Evaluation Reproducibility & Rigor Audit",
+    "timestamp": "2026-10-11T05:52:46.693190+00:00",
+    "python_version": "3.10.12",
+    "dataset": "/Users/akashgpatil/major_project/AEGIS-ML/data/raw/behavioral_diversity_labeled.jsonl",
+    "baseline_results": "/Users/akashgpatil/major_project/AEGIS-ML/data/models/detection_quality_results.json"
+  },
+  "scenario_split_audit": {
+    "total_scenarios": 116,
+    "train_scenarios_count": 81,
+    "val_scenarios_count": 11,
+    "test_scenarios_count": 24,
+    "train_test_overlap_count": 0,
+    "train_val_overlap_count": 0,
+    "val_test_overlap_count": 0,
+    "zero_scenario_leakage_guaranteed": true
+  },
+  "fitting_boundary_audit": {
+    "model_version": "23.0.0",
+    "classes": [
+      "benign",
+      "brute_force",
+      "c2_beaconing",
+      "data_exfiltration",
+      "lateral_movement"
+    ],
+    "is_calibrated": true,
+    "preprocessors_fit_strictly_on_train": true,
+    "no_test_set_fitting": true,
+    "no_threshold_selection_on_test": true
+  },
+  "reproducibility_audit": {
+    "test_samples_count": 1085,
+    "confusion_matrix_exact_match": true,
+    "accuracy_match": true,
+    "macro_f1_match": true,
+    "cm_row_sum_consistent": true,
+    "benign_fpr_calculation_consistent": true
+  },
+  "synthetic_generator_template_audit": {
+    "template_reuse_across_scenarios": true,
+    "shared_attacker_ips_sample": [
+      "185.220.101.45",
+      "185.220.101.46",
+      "185.220.101.47"
+    ],
+    "shared_endpoints_sample": [
+      "/api/login"
+    ],
+    "rigorous_interpretation": "Synthetic scenario-grouped split isolates scenario IDs and temporal realizations, preventing event-level leakage. However, generator templates reuse shared attacker IP pools, fixed ports, and common endpoint paths across distinct scenario IDs. Consequently, high evaluation scores demonstrate generalization across parameterized scenario instances of modeled templates, but DO NOT constitute proof of out-of-distribution generalization to organic enterprise networks."
+  },
+  "external_benchmark_status": {
+    "cic_ids2017": {
+      "status": "BLOCKED",
+      "reason": "CIC-IDS2017 lacks necessary endpoint, process tree, authentication, and user identity telemetry fields required by the AEGIS-ML 48-feature causal detection contract. Status remains blocked pending availability of genuine compatible multimodal telemetry."
+    }
+  },
+  "audit_verdict": {
+    "reproducibility_verified": true,
+    "methodology_rigorous": true,
+    "claims_calibrated": true
+  }
+}

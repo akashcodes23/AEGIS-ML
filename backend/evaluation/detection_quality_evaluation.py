@@ -86,9 +86,9 @@ def scenario_grouped_split(
     n_train = int(n_total * train_ratio)
     n_val = int(n_total * val_ratio)
 
-    train_scenarios = set(scenario_keys[:n_train])
-    val_scenarios = set(scenario_keys[n_train:n_train + n_val])
-    test_scenarios = set(scenario_keys[n_train + n_val:])
+    train_scenarios = sorted(list(set(scenario_keys[:n_train])))
+    val_scenarios = sorted(list(set(scenario_keys[n_train:n_train + n_val])))
+    test_scenarios = sorted(list(set(scenario_keys[n_train + n_val:])))
 
     train_events = [e for k in train_scenarios for e in scenario_map[k]]
     val_events = [e for k in val_scenarios for e in scenario_map[k]]
@@ -136,7 +136,7 @@ def evaluate_detection_quality() -> Dict[str, Any]:
     sequence_tracker = CausalSequenceTracker(window_seconds=300.0)
 
     # Sort test chronologically to respect temporal watermarks
-    test_ev_sorted = sorted(test_ev, key=lambda e: e.timestamp)
+    test_ev_sorted = sorted(test_ev, key=lambda e: (e.timestamp, e.event_id or ""))
     X_test_list = []
     y_test_list = []
     valid_test_ev = []
