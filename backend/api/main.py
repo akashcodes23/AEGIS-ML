@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ── Path resolution ───────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DATASET_DIR = PROJECT_ROOT / "datasets"
+DATASET_DIR = Path(os.getenv("AEGIS_DATASET_DIR", str(PROJECT_ROOT / "datasets")))
 
 # ── Core & ML imports ─────────────────────────────────────────────────────────
 try:
@@ -159,9 +159,21 @@ app = FastAPI(
 )
 
 # Configurable CORS
-cors_default = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000,https://aegis-ml-navv.vercel.app"
-cors_env = os.getenv("CORS_ORIGINS", cors_default)
-allowed_origins = [orig.strip() for orig in cors_env.split(",") if orig.strip()]
+base_allowed = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "https://aegis-ml-navv.vercel.app",
+]
+cors_env = os.getenv("CORS_ORIGINS", "")
+allowed_origins = list(base_allowed)
+if cors_env:
+    for orig in cors_env.split(","):
+        orig_clean = orig.strip()
+        if orig_clean and orig_clean not in allowed_origins:
+            allowed_origins.append(orig_clean)
+
 if "*" in allowed_origins or os.getenv("AEGIS_ALLOW_ALL_ORIGINS", "false").lower() == "true":
     allowed_origins = ["*"]
 
@@ -266,7 +278,7 @@ def _build_graph(alerts: list, incidents: Optional[list] = None) -> dict:
     # 2. Inferred correlation hypotheses from multi-stage incidents
     if incidents:
         for inc in incidents:
-            rel_ev = getattr(inc, "relationship_evidence", []) or []
+            rel_ev = inc.get("relationship_evidence", []) if isinstance(inc, dict) else (getattr(inc, "relationship_evidence", []) or [])
             if isinstance(rel_ev, list):
                 for rel in rel_ev:
                     r_src = rel.get("source_entity")
@@ -582,7 +594,7 @@ async def dataset_worker(state):
                             "is_synthetic": is_synthetic,
                             "total_events": state.total_events,
                             "total_alerts": len(state.alerts),
-                            "total_incidents": len(state.correlator.incidents),
+                            "total_incidents": len(state.correlator.incidents) if hasattr(state, "correlator") else len(state.incidents),
                             "events_per_second": state.eps,
                             "false_positive_rate": None,
                             "alerts_by_severity": state.alerts_by_severity,
@@ -622,7 +634,8 @@ async def dataset_worker(state):
 
 
 # ── REST API Endpoints ─────────────────────────────────────────────────────────
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health_check():
     fitted = getattr(getattr(app.state, "classifier", None), "is_fitted", False)
     csv_count = len(list(DATASET_DIR.glob("*.csv"))) if DATASET_DIR.exists() else 0
@@ -726,6 +739,7 @@ def get_incident(incident_id: str):
 
 
 @app.get("/api/stats/summary")
+@app.get("/stats/summary")
 def get_stats_summary():
     discovered = _discover_dataset_files()
     files = [f.name for f in discovered]
@@ -741,6 +755,7 @@ def get_stats_summary():
 
 
 @app.get("/api/analysis/files")
+@app.get("/analysis/files")
 def list_dataset_files():
     discovered = _discover_dataset_files()
     files = []
@@ -756,9 +771,16 @@ def list_dataset_files():
 
 
 @app.post("/api/analysis/start")
+@app.post("/analysis/start")
 def start_analysis():
     if app.state.analysis_running:
         return {"status": "already_running"}
+    discovered = _discover_dataset_files()
+    if not discovered:
+        raise HTTPException(
+            status_code=400,
+            detail="No dataset files found in datasets/ or data/raw/. Please provide dataset files to begin analysis."
+        )
     # Reset stream state
     app.state.alerts = []
     app.state.incidents = []
@@ -772,21 +794,24 @@ def start_analysis():
 
     fitted = _load_models_from_disk(app.state)
     app.state.analysis_running = True
-    return {"status": "analysis_started", "classifier_fitted": fitted}
+    return {"status": "analysis_started", "classifier_fitted": fitted, "dataset_count": len(discovered)}
 
 
 @app.post("/api/analysis/stop")
+@app.post("/analysis/stop")
 def stop_analysis():
     app.state.analysis_running = False
     return {"status": "analysis_stopped"}
 
 
 @app.post("/api/simulation/start")
+@app.post("/simulation/start")
 def start_simulation():
     return start_analysis()
 
 
 @app.post("/api/simulation/stop")
+@app.post("/simulation/stop")
 def stop_simulation():
     return stop_analysis()
 

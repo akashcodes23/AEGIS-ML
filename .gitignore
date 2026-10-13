@@ -45,6 +45,7 @@ frontend/dist/
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
+!frontend/.env.production
 
 # OS files
 .DS_Store

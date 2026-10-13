@@ -48,8 +48,9 @@ Add the following in the **Environment Variables** tab:
 | `PYTHON_VERSION` | `3.10.12` | Ensures consistent Python runtime |
 | `AEGIS_ENV` | `production` | Enables production security mode |
 | `AEGIS_ADMIN_KEY` | *(generate a strong random string)* | Protects admin endpoints (`/api/model/reload`, `/api/ingest/reset`, etc.) |
+| `AEGIS_DATASET_DIR` | *(optional / mounted disk)* | Custom path for dataset discovery (e.g. Render Disk mount). Discovers datasets alongside `data/raw/` |
 | `CORS_ORIGIN_REGEX` | `https://.*\.vercel\.app` | Automatically allows all Vercel deployment preview and production domains |
-| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list of allowed origins |
+| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list of allowed origins (production Vercel domain is always preserved) |
 | `AEGIS_QUEUE_MAX_SIZE` | `1000` | Bounded capacity for async detection queue |
 | `AEGIS_QUEUE_WORKERS` | `2` | Number of concurrent background detection workers |
 
@@ -153,9 +154,9 @@ When exposing the demo to the public:
 
 ## 6. Known Limitations on Free Hosting
 
-- **Render Free Tier Cold Starts:** Free Render instances spin down after 15 minutes of inactivity. The first request after idle may take 30–50 seconds to initialize while the Python process starts and loads the ML models into memory.
+- **Render Free Tier Cold Starts:** Free Render instances spin down after 15 minutes of inactivity. The first request after idle may take 30–50 seconds to initialize while the Python process starts and loads the ML models into memory. The frontend automatically performs exponential backoff reconnection up to 60 attempts (~5 minutes) and provides an interactive retry button.
 - **In-Memory Queue Volatility:** The event queue and dynamic topology graph are held in application memory. When Render restarts or redeploys the container, historical in-memory counters reset to zero.
-- **WebSocket Timeout on Free Proxies:** Some free edge proxies terminate idle WebSocket connections after 60–100 seconds. The frontend includes automatic exponential backoff reconnection (`RECONNECT_DELAY_MS=2000`) to restore connections seamlessly.
+- **WebSocket Timeout on Free Proxies:** Some free edge proxies terminate idle WebSocket connections after 60–100 seconds. The frontend includes automatic exponential backoff reconnection to restore connections seamlessly.
 
 ---
 
@@ -164,8 +165,9 @@ When exposing the demo to the public:
 | Symptom | Cause | Solution |
 |:---|:---|:---|
 | **CORS Error in Browser** | `CORS_ORIGINS` or `CORS_ORIGIN_REGEX` missing frontend domain | Set `CORS_ORIGIN_REGEX=https://.*\.vercel\.app` or add exact Vercel URL to `CORS_ORIGINS` in Render. |
-| **WebSocket Connection Failed** | Mixed content blocked by browser | Ensure Vercel connects via `wss://`, not `ws://`. Set `VITE_WS_URL=wss://<backend>/ws/live`. |
+| **WebSocket Connection Failed / System Offline** | Missing production URLs or premature disconnect | The frontend now builds with `frontend/.env.production` pointing to `https://aegis-ml-api.onrender.com` by default. If on cold start, wait for Render container initialization or click the status badge to retry. |
+| **No Datasets Found** | Datasets directory empty on cloud host | Commit benchmark files (e.g. `data/raw/behavioral_diversity_labeled.jsonl`) or configure `AEGIS_DATASET_DIR` to a mounted Render Disk. |
 | **Model Load Error on Render** | Model artifact missing or path incorrect | Verify `calibrated_threat_classifier.pkl` is committed and `AEGIS_MODEL_DIR` is default `data/models`. |
 | **Render Build Fails on Python Version** | Defaulting to older Python | Set `PYTHON_VERSION=3.10.12` in Render Environment Variables or commit `.python-version`. |
 | **SciPy Build Failure ("Unknown compiler(s): gfortran")** | Pip defaulted to building SciPy from source instead of using prebuilt wheel | Upgrade pip before installing (`pip install --upgrade pip setuptools wheel && pip install -r backend/requirements.txt`) and ensure Python 3.10+ is active. |
-| **Vercel Build Fails (404 on subpaths)** | Missing SPA rewrites | Ensure `frontend/vercel.json` contains SPA rewrite rule to `/index.html`. |
+| **Vercel Build Fails (404 on subpaths)** | Missing SPA rewrites | Ensure `frontend/vercel.json` contains reverse-proxy rewrites for `/api/:path*` and `/health` to Render, plus SPA fallback to `/index.html`. |

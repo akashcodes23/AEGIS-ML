@@ -6,15 +6,29 @@
  * and automatic protocol promotion (https -> wss).
  */
 
+export const DEFAULT_PRODUCTION_API_URL = 'https://aegis-ml-api.onrender.com'
+
 /**
  * Returns the configured REST API base URL.
  * In local development, if VITE_API_BASE_URL is unset, returns an empty string
  * so requests leverage Vite's local development proxy (e.g., '/api/...').
+ * In production or when hosted on external domains (e.g. Vercel), falls back
+ * to DEFAULT_PRODUCTION_API_URL if unset.
  */
 export const getApiBaseUrl = () => {
   const envUrl = import.meta.env?.VITE_API_BASE_URL
   if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
     return envUrl.trim().replace(/\/+$/, '')
+  }
+  // When running in production build or deployed on a public host (e.g. Vercel),
+  // fall back to the known production Render backend if no env var was injected.
+  if (
+    import.meta.env?.PROD ||
+    (typeof window !== 'undefined' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1')
+  ) {
+    return DEFAULT_PRODUCTION_API_URL
   }
   return ''
 }
@@ -68,7 +82,7 @@ export const getWsUrl = () => {
     return target
   }
 
-  // 2. Derive from VITE_API_BASE_URL if configured
+  // 2. Derive from VITE_API_BASE_URL if configured or production fallback
   const apiBase = getApiBaseUrl()
   if (apiBase) {
     let wsBase = apiBase
@@ -83,6 +97,11 @@ export const getWsUrl = () => {
   if (typeof window !== 'undefined') {
     const isHttps = window.location.protocol === 'https:'
     const host = window.location.hostname || '127.0.0.1'
+
+    // If on a remote host (e.g. *.vercel.app) without apiBase, point to production backend WS
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      return 'wss://aegis-ml-api.onrender.com/ws/live'
+    }
 
     if (isHttps) {
       return `wss://${host}/ws/live`

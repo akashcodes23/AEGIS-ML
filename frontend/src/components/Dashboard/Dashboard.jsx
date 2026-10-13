@@ -7,8 +7,6 @@ import AttackGraph from './AttackGraph'
 import IncidentCard from './IncidentCard'
 import { getApiUrl } from '../../config/api'
 
-const API = getApiUrl('/api')
-
 /* ── Stat card ────────────────────────────────────────────────────────────── */
 function StatCard({ label, value, unit = '', accentVar, icon: Icon, delay = 0 }) {
   return (
@@ -50,12 +48,31 @@ function StatCard({ label, value, unit = '', accentVar, icon: Icon, delay = 0 })
 /* ── Dataset files mini-panel ─────────────────────────────────────────────── */
 function DatasetPanel({ currentFile }) {
   const [files, setFiles] = useState([])
-  useEffect(() => {
-    fetch(`${API}/analysis/files`)
-      .then(r => r.json())
-      .then(d => setFiles(d.files || []))
-      .catch(() => {})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const fetchFiles = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    fetch(getApiUrl('/api/analysis/files'))
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then(d => {
+        setFiles(d.files || [])
+        setError(null)
+      })
+      .catch(err => {
+        console.error('[AEGIS] Dataset fetch failed:', err)
+        setError(err.message)
+      })
+      .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    fetchFiles()
+  }, [fetchFiles])
 
   return (
     <div className="glass-panel animate-slide-up" style={{
@@ -70,7 +87,28 @@ function DatasetPanel({ currentFile }) {
       </div>
       <div style={{ width: 1, height: 20, background: 'var(--border-light)' }} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, alignItems: 'center' }}>
-        {files.map(f => {
+        {loading && (
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="animate-spin" style={{ display: 'inline-block', width: 10, height: 10, border: '2px solid var(--text-tertiary)', borderTopColor: 'transparent', borderRadius: '50%' }} />
+            Discovering datasets...
+          </span>
+        )}
+        {!loading && error && (
+          <span style={{ fontSize: 12, color: 'var(--accent-critical)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>Failed to load datasets ({error})</span>
+            <button
+              onClick={fetchFiles}
+              style={{
+                fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                background: 'rgba(220, 38, 38, 0.1)', color: 'var(--accent-critical)',
+                border: '1px solid rgba(220, 38, 38, 0.2)', cursor: 'pointer'
+              }}
+            >
+              Retry
+            </button>
+          </span>
+        )}
+        {!loading && !error && files.map(f => {
           const isSynth = f.is_synthetic || f.name.includes('.jsonl') || f.name.includes('synthetic') || f.name.includes('combined_labeled')
           const isSelected = currentFile === f.name
           return (
@@ -99,7 +137,9 @@ function DatasetPanel({ currentFile }) {
             </span>
           )
         })}
-        {files.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No analysis files available in datasets.</span>}
+        {!loading && !error && files.length === 0 && (
+          <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No analysis files available in datasets.</span>
+        )}
       </div>
     </div>
   )
@@ -111,7 +151,8 @@ export default function Dashboard() {
   const simulationRunning = useAlertStore(s => s.simulationRunning)
   const setSimulationRunning = useAlertStore(s => s.setSimulationRunning)
   const alerts = useAlertStore(s => s.alerts)
-  const { connected } = useWebSocket()
+  const { connected, connecting, error: wsError, reconnect } = useWebSocket()
+  const [actionError, setActionError] = useState(null)
 
   const [bruteForceWarning, setBruteForceWarning] = useState(null)
   const prevAlertCount = useRef(0)
@@ -133,8 +174,11 @@ export default function Dashboard() {
 
   // Initial stats sync on mount
   useEffect(() => {
-    fetch(`${API}/stats/summary`)
-      .then(r => r.json())
+    fetch(getApiUrl('/api/stats/summary'))
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(d => {
         if (d && typeof d.total_events === 'number') {
           useAlertStore.getState().updateStats(d)
@@ -147,21 +191,27 @@ export default function Dashboard() {
   }, [setSimulationRunning])
 
   const startAnalysis = useCallback(async () => {
+    setActionError(null)
     try {
-      const res = await fetch(`${API}/analysis/start`, { method: 'POST' })
+      const res = await fetch(getApiUrl('/api/analysis/start'), { method: 'POST' })
       if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        const msg = errData.detail || errData.message || `HTTP ${res.status}: ${res.statusText}`
+        setActionError(`Failed to start analysis: ${msg}`)
         console.error('[AEGIS] Start analysis failed:', res.status, res.statusText)
         return
       }
       setSimulationRunning(true)
     } catch (err) {
+      setActionError(`Network error starting analysis: ${err.message}`)
       console.error('[AEGIS] Failed to start analysis:', err)
     }
   }, [setSimulationRunning])
 
   const stopAnalysis = useCallback(async () => {
+    setActionError(null)
     try {
-      const res = await fetch(`${API}/analysis/stop`, { method: 'POST' })
+      const res = await fetch(getApiUrl('/api/analysis/stop'), { method: 'POST' })
       if (!res.ok) {
         console.error('[AEGIS] Stop analysis failed:', res.status, res.statusText)
       }
@@ -235,19 +285,24 @@ export default function Dashboard() {
         {/* Controls */}
         <div style={{ display:'flex', alignItems:'center', gap:20 }}>
           {/* Status Badge */}
-          <div style={{
-            display:'flex', alignItems:'center', gap:8,
-            padding: '6px 16px', borderRadius: 24,
-            background: connected ? 'rgba(5, 150, 105, 0.08)' : 'rgba(220, 38, 38, 0.08)',
-            border: `1px solid ${connected ? 'rgba(5, 150, 105, 0.2)' : 'rgba(220, 38, 38, 0.2)'}`
-          }}>
+          <div
+            onClick={!connected ? reconnect : undefined}
+            title={!connected ? "Click to retry connecting to backend stream" : "Live WebSocket connected"}
+            style={{
+              display:'flex', alignItems:'center', gap:8,
+              padding: '6px 16px', borderRadius: 24,
+              cursor: !connected ? 'pointer' : 'default',
+              background: connected ? 'rgba(5, 150, 105, 0.08)' : connecting ? 'rgba(217, 119, 6, 0.08)' : 'rgba(220, 38, 38, 0.08)',
+              border: `1px solid ${connected ? 'rgba(5, 150, 105, 0.2)' : connecting ? 'rgba(217, 119, 6, 0.2)' : 'rgba(220, 38, 38, 0.2)'}`
+            }}
+          >
             <div style={{
               width: 8, height: 8, borderRadius: '50%',
-              background: connected ? 'var(--accent-success)' : 'var(--accent-critical)',
-              boxShadow: `0 0 12px ${connected ? 'var(--accent-success)' : 'var(--accent-critical)'}`
-            }} className={connected ? 'animate-pulse-slow' : ''} />
-            <span style={{ fontSize:12, fontWeight:700, color: connected ? 'var(--accent-success)' : 'var(--accent-critical)', letterSpacing: 0.5 }}>
-              {connected ? 'System Online' : 'Offline'}
+              background: connected ? 'var(--accent-success)' : connecting ? 'var(--accent-high)' : 'var(--accent-critical)',
+              boxShadow: `0 0 12px ${connected ? 'var(--accent-success)' : connecting ? 'var(--accent-high)' : 'var(--accent-critical)'}`
+            }} className={(connected || connecting) ? 'animate-pulse-slow' : ''} />
+            <span style={{ fontSize:12, fontWeight:700, color: connected ? 'var(--accent-success)' : connecting ? 'var(--accent-high)' : 'var(--accent-critical)', letterSpacing: 0.5 }}>
+              {connected ? 'System Online' : connecting ? 'Connecting...' : 'Offline (Retry)'}
             </span>
           </div>
 
@@ -282,6 +337,33 @@ export default function Dashboard() {
           </button>
         </div>
       </header>
+
+      {/* ── Action Error Banner ─────────────────────────────────────────── */}
+      {actionError && (
+        <div className="animate-slide-up" style={{
+          gridColumn: '1 / -1',
+          background: 'rgba(220, 38, 38, 0.08)',
+          border: '1px solid rgba(220, 38, 38, 0.3)',
+          color: 'var(--accent-critical)',
+          padding: '12px 20px', borderRadius: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          fontSize: 13, fontWeight: 600,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <AlertTriangle size={18} />
+            <span>{actionError}</span>
+          </div>
+          <button
+            onClick={() => setActionError(null)}
+            style={{
+              background: 'transparent', border: 'none', color: 'var(--accent-critical)',
+              cursor: 'pointer', fontWeight: 700, fontSize: 13,
+            }}
+          >
+            ✕ Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── Brute Force Toast popup ────────────────────────────────────── */}
       {bruteForceWarning && (

@@ -6,11 +6,13 @@ const getDefaultWsUrl = () => {
   return getWsUrl()
 }
 
-const RECONNECT_DELAY_MS = 2000
-const MAX_RECONNECT_ATTEMPTS = 15
+const INITIAL_RECONNECT_DELAY_MS = 2000
+const MAX_RECONNECT_DELAY_MS = 6000
+const MAX_RECONNECT_ATTEMPTS = 60
 
 const useWebSocket = (url = null) => {
   const [connected, setConnected] = useState(false)
+  const [connecting, setConnecting] = useState(true)
   const [error, setError] = useState(null)
 
   const wsRef = useRef(null)
@@ -42,7 +44,12 @@ const useWebSocket = (url = null) => {
             }
             break
           case 'incident_update':
-            useAlertStore.getState().updateAlertStatus(data.event_id, data.status)
+            if (data?.incident_id) {
+              useAlertStore.getState().updateIncident(data)
+            }
+            if (data?.event_id) {
+              useAlertStore.getState().updateAlertStatus(data.event_id, data.status)
+            }
             break
           default:
             console.warn('[WS] Unknown message type:', type)
@@ -57,14 +64,16 @@ const useWebSocket = (url = null) => {
   const connect = useCallback(() => {
     if (!mountedRef.current) return
     if (attemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      setConnecting(false)
       setError(`Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached.`)
       return
     }
 
     try {
+      setConnecting(true)
       let targetUrl = url || getDefaultWsUrl()
       // If previous attempt failed, alternate between localhost and 127.0.0.1 to handle dual-stack IPv4/IPv6
-      if (attemptsRef.current > 0 && !url) {
+      if (attemptsRef.current > 0 && !url && (targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1'))) {
         if (attemptsRef.current % 2 === 1) {
           targetUrl = targetUrl.replace('localhost', '127.0.0.1')
         } else {
@@ -79,6 +88,7 @@ const useWebSocket = (url = null) => {
         if (!mountedRef.current) return
         attemptsRef.current = 0
         setConnected(true)
+        setConnecting(false)
         setError(null)
         console.log('[WS] Connected to', targetUrl)
       }
@@ -93,14 +103,36 @@ const useWebSocket = (url = null) => {
       ws.onclose = (e) => {
         if (!mountedRef.current) return
         setConnected(false)
-        console.warn(`[WS] Closed (code=${e.code}). Reconnecting in ${RECONNECT_DELAY_MS}ms...`)
         attemptsRef.current += 1
-        reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS)
+        const delay = Math.min(
+          INITIAL_RECONNECT_DELAY_MS + attemptsRef.current * 500,
+          MAX_RECONNECT_DELAY_MS
+        )
+        if (attemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          setConnecting(true)
+          console.warn(`[WS] Closed (code=${e.code}). Reconnecting in ${delay}ms (attempt ${attemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})...`)
+          reconnectTimerRef.current = setTimeout(connect, delay)
+        } else {
+          setConnecting(false)
+          setError(`Disconnected from backend stream after ${MAX_RECONNECT_ATTEMPTS} attempts.`)
+        }
       }
     } catch (err) {
+      setConnecting(false)
       setError(err.message)
     }
   }, [url, handleMessage])
+
+  const manualReconnect = useCallback(() => {
+    attemptsRef.current = 0
+    setError(null)
+    if (wsRef.current) {
+      try { wsRef.current.close() } catch {}
+      wsRef.current = null
+    }
+    clearTimeout(reconnectTimerRef.current)
+    connect()
+  }, [connect])
 
   useEffect(() => {
     mountedRef.current = true
@@ -117,7 +149,7 @@ const useWebSocket = (url = null) => {
     }
   }, [connect])
 
-  return { connected, error }
+  return { connected, connecting, error, reconnect: manualReconnect }
 }
 
 export default useWebSocket

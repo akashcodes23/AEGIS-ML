@@ -26,6 +26,18 @@ const useAlertStore = create((set, get) => ({
       incidents: [inc, ...state.incidents],
     })),
 
+  updateIncident: (inc) =>
+    set((state) => {
+      const incId = inc.incident_id || inc.event_id
+      const idx = state.incidents.findIndex((i) => (i.incident_id || i.event_id) === incId)
+      if (idx >= 0) {
+        const next = [...state.incidents]
+        next[idx] = { ...next[idx], ...inc }
+        return { incidents: next }
+      }
+      return { incidents: [inc, ...state.incidents] }
+    }),
+
   updateGraph: (data) => set({ graphData: data }),
 
   // MERGE stats — partial WS updates won't wipe unrelated fields
