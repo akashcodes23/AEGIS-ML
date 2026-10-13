@@ -9,6 +9,7 @@ import {
   UNKNOWN_DEPTH,
   normalizeKillChainStage,
 } from '../../utils/depth'
+import { stateAsOf } from '../../utils/scrubber'
 
 cytoscape.use(dagre)
 
@@ -47,8 +48,6 @@ const CY_STYLE = [
       'height': 'data(node_size)',
       'opacity': 'data(depth_opacity)',
       'z-index': 'data(depth_z_index)',
-      'transition-property': 'background-color, border-color, width, height, opacity',
-      'transition-duration': '0.25s',
     },
   },
   // ── Node shapes by type ──
@@ -338,6 +337,10 @@ export default memo(function AttackGraph() {
   const graphData = useAlertStore(s => s.graphData)
   const alerts = useAlertStore(s => s.alerts)
   const incidents = useAlertStore(s => s.incidents)
+  const selectedIncidentId = useAlertStore(s => s.selectedIncident || s.focusIncidentId)
+  const scrubberTime = useAlertStore(s => s.scrubberTime)
+  const selectIncident = useAlertStore(s => s.selectIncident)
+  const setFocusIncidentId = useAlertStore(s => s.setFocusIncidentId)
   const reducedMotion = useReducedMotion()
 
   const [tooltip, setTooltip] = useState(null)
@@ -441,6 +444,8 @@ export default memo(function AttackGraph() {
       userPanningEnabled: true,
       minZoom: 0.2,
       maxZoom: 4,
+      hideEdgesOnViewport: true,
+      textureOnViewport: true,
     })
     cyRef.current = cy
     if (typeof window !== 'undefined') {
@@ -557,6 +562,125 @@ export default memo(function AttackGraph() {
     setAnomalousCount(cy.edges().filter('[?is_anomalous]').length)
   }, [graphData, applyDynamicStyles, reducedMotion, resolveNodeStage])
 
+  /* ── Camera Glide & Focus on Incident Selection ── */
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+
+    if (!selectedIncidentId) {
+      applyDynamicStyles(cy)
+      return
+    }
+
+    const inc = incidents.find(i =>
+      i.incident_id === selectedIncidentId ||
+      i.event_id === selectedIncidentId ||
+      (Array.isArray(i.alert_ids) && i.alert_ids.includes(selectedIncidentId))
+    )
+
+    if (!inc) return
+
+    const involved = new Set(
+      inc.affected_entities ||
+      [inc.src_entity, inc.dst_entity, inc.primary_attacker, inc.primary_target].filter(Boolean)
+    )
+
+    if (Array.isArray(inc.relationship_evidence)) {
+      inc.relationship_evidence.forEach(r => {
+        if (r.source_entity) involved.add(r.source_entity)
+        if (r.target_entity) involved.add(r.target_entity)
+      })
+    }
+
+    const targetNodes = cy.nodes().filter(n => involved.has(n.id()))
+    if (targetNodes.length > 0) {
+      // 1. Camera Glide
+      if (reducedMotion) {
+        cy.fit(targetNodes, 40)
+      } else {
+        cy.animate({
+          fit: { eles: targetNodes, padding: 50 },
+          duration: 420,
+          easing: 'ease-in-out-cubic',
+        })
+      }
+
+      // 2. Dim unrelated nodes and highlight involved nodes
+      cy.batch(() => {
+        cy.nodes().forEach(n => {
+          if (involved.has(n.id())) {
+            n.style({ opacity: 1.0, 'border-width': 3.5 })
+          } else {
+            n.style({ opacity: 0.18 })
+          }
+        })
+
+        // 3. Highlight only edges backed by real relationship evidence or direct entity interaction
+        const relPairs = new Set()
+        if (Array.isArray(inc.relationship_evidence)) {
+          inc.relationship_evidence.forEach(r => {
+            if (r.source_entity && r.target_entity) {
+              relPairs.add(`${r.source_entity}->${r.target_entity}`)
+            }
+          })
+        }
+
+        cy.edges().forEach(e => {
+          const pair = `${e.source().id()}->${e.target().id()}`
+          const isDirectInvolved = involved.has(e.source().id()) && involved.has(e.target().id())
+          if (relPairs.has(pair) || isDirectInvolved) {
+            e.style({ opacity: 1.0, width: 3.0 })
+          } else {
+            e.style({ opacity: 0.08 })
+          }
+        })
+      })
+    }
+  }, [selectedIncidentId, incidents, reducedMotion, applyDynamicStyles])
+
+  /* ── Historical Scrubber Filtering Effect ── */
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+
+    if (scrubberTime === null) {
+      cy.batch(() => {
+        cy.nodes().style('display', 'element')
+        cy.edges().style('display', 'element')
+      })
+      setNodeCount(cy.nodes().length)
+      setEdgeCount(cy.edges().length)
+      return
+    }
+
+    const historical = stateAsOf(alerts, incidents, scrubberTime)
+    cy.batch(() => {
+      cy.nodes().forEach(n => {
+        if (historical.visibleEntityIds.has(n.id())) {
+          n.style('display', 'element')
+        } else {
+          n.style('display', 'none')
+        }
+      })
+
+      const visibleEdgeKeys = new Set(
+        historical.visibleEdges.map(e => `${e.source}->${e.target}`)
+      )
+      cy.edges().forEach(e => {
+        const key = `${e.source().id()}->${e.target().id()}`
+        if (visibleEdgeKeys.has(key) ||
+            (historical.visibleEntityIds.has(e.source().id()) && historical.visibleEntityIds.has(e.target().id()))) {
+          e.style('display', 'element')
+        } else {
+          e.style('display', 'none')
+        }
+      })
+    })
+
+    setNodeCount(cy.nodes(':visible').length)
+    setEdgeCount(cy.edges(':visible').length)
+  }, [scrubberTime, alerts, incidents])
+
   /* Graph controls */
   const fitGraph = useCallback(() => {
     if (cyRef.current) cyRef.current.fit(undefined, 30)
@@ -630,6 +754,36 @@ export default memo(function AttackGraph() {
         </div>
 
         <div style={{ display: 'flex', gap: 6 }}>
+          {selectedIncidentId && (
+            <button
+              type="button"
+              onClick={() => {
+                selectIncident(null)
+                setFocusIncidentId(null)
+                if (cyRef.current) {
+                  applyDynamicStyles(cyRef.current)
+                  cyRef.current.fit(undefined, 30)
+                }
+              }}
+              style={{
+                background: 'rgba(251, 146, 60, 0.15)',
+                border: '1px solid rgba(251, 146, 60, 0.35)',
+                color: 'var(--severity-high-fg)',
+                borderRadius: 8,
+                padding: '5px 12px',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                transition: 'all var(--duration-quick) ease',
+              }}
+            >
+              <span>✕</span>
+              <span>Reset Focus</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={fitGraph}

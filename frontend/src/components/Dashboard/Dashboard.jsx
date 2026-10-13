@@ -16,10 +16,12 @@ import SyntheticDemoRibbon from '../Common/SyntheticDemoRibbon'
 import AmbientField from '../Atmosphere/AmbientField'
 import NavigationDock from '../Navigation/NavigationDock'
 import StatusArea from '../Navigation/StatusArea'
+import TemporalScrubber from '../Common/TemporalScrubber'
 import { isSyntheticData } from '../../utils/dataMode'
 
 /* ── Stat card ────────────────────────────────────────────────────────────── */
-function StatCard({ label, value, unit = '', accentVar, icon: Icon, delay = 0 }) {
+function StatCard({ label, value, unit = '', accentVar, icon, delay = 0 }) {
+  const CardIcon = icon
   return (
     <div 
       className="glass-panel animate-slide-up"
@@ -42,7 +44,7 @@ function StatCard({ label, value, unit = '', accentVar, icon: Icon, delay = 0 })
         color: `var(${accentVar})`,
         zIndex: 1
       }}>
-        <Icon size={22} strokeWidth={2.2} />
+        <CardIcon size={22} strokeWidth={2.2} />
       </div>
       <div>
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 4 }}>
@@ -83,7 +85,7 @@ function DatasetPanel({ currentFile }) {
   }, [])
 
   useEffect(() => {
-    fetchFiles()
+    void Promise.resolve().then(fetchFiles)
   }, [fetchFiles])
 
   return (
@@ -447,6 +449,9 @@ export default function Dashboard() {
                 <StatCard delay={250} icon={Bell} label="Correlated Incidents" value={stats.total_incidents !== undefined && stats.total_incidents !== null ? stats.total_incidents : (incidents.length || (alerts.length > 0 ? 1 : 0))} unit={alerts.length ? `(${alerts.length} alerts)` : ''} accentVar="--severity-high-fg" />
                 <StatCard delay={300} icon={AlertTriangle} label="False Positives (Unlabelled)" value={falsePosValue} unit={falsePosUnit} accentVar="--severity-critical-fg" />
               </div>
+
+              {/* ── Row 1.5: Temporal Scrubber ───────────────────────────────── */}
+              <TemporalScrubber />
 
               {/* ── Row 2: Main Topology & Alert Feed ─────────────────────────── */}
               <div style={{ display: 'grid', gridTemplateColumns: '60fr 40fr', gap: 24, minHeight: 600 }}>

@@ -146,7 +146,7 @@ function StageNode({ stage, status, showTooltip, onHover }) {
         }}>
           {/* Arrow */}
           <div style={{
-            position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
+            position: 'absolute', top: -6, left: '50%',
             width: 12, height: 12,
             background: 'rgba(255,255,255,0.97)',
             border: '1px solid rgba(249,115,22,0.3)',

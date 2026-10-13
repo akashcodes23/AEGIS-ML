@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import useAlertStore from '../../store/alertStore'
 import KillChainViewer from '../Incident/KillChainViewer'
+import EvidenceTrail from '../Common/EvidenceTrail'
 import { getApiUrl } from '../../config/api'
 
 const SEV_STYLE = {
@@ -98,7 +99,6 @@ export default function ThreatHunting() {
     if (!activeAlert) return
     const eventId = activeAlert.event_id || activeAlert.alert_id
     updateAlertStatus(eventId, newStatus)
-    activeAlert.status = newStatus
 
     // If isolating, call remediation endpoint if incident exists
     if (newStatus === 'isolated' && activeAlert.incident_id) {
@@ -214,7 +214,7 @@ export default function ThreatHunting() {
                   padding: '5px 12px', borderRadius: 16, fontSize: 11, fontWeight: 700,
                   border: `1px solid ${selectedSev === sev ? 'var(--text-primary)' : 'var(--border-light)'}`,
                   background: selectedSev === sev ? 'var(--text-primary)' : 'transparent',
-                  color: selectedSev === sev ? '#fff' : 'var(--text-secondary)',
+                  color: selectedSev === sev ? 'var(--surface-0)' : 'var(--text-secondary)',
                   cursor: 'pointer', textTransform: 'capitalize', transition: 'all 0.15s'
                 }}
               >
@@ -547,6 +547,11 @@ export default function ThreatHunting() {
                   </div>
                 </div>
               )}
+
+              {/* Evidence Trail Provenance Chain */}
+              <div>
+                <EvidenceTrail alert={activeAlert} incident={associatedIncident} />
+              </div>
 
               {/* Kill Chain Stage Tracking */}
               <div>

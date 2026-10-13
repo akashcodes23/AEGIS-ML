@@ -14,6 +14,8 @@ import {
 import useAlertStore from '../../store/alertStore'
 import useReducedMotion from '../../hooks/useReducedMotion'
 import { SEVERITY_TOKENS, confidenceToFocus } from '../../utils/depth'
+import EvidenceTrail from '../Common/EvidenceTrail'
+import { stateAsOf } from '../../utils/scrubber'
 
 /* ── Severity Badge ───────────────────────────────────────────────────────── */
 function SeverityBadge({ severity }) {
@@ -54,6 +56,7 @@ function SeverityBadge({ severity }) {
 function AlertRow({ alert, index }) {
   const selectIncident = useAlertStore(s => s.selectIncident)
   const reducedMotion = useReducedMotion()
+  const [showEvidence, setShowEvidence] = useState(false)
   const rawTs = alert.timestamp || alert.created_at
   const ts = rawTs
     ? new Date(rawTs).toLocaleTimeString([], {
@@ -236,6 +239,36 @@ function AlertRow({ alert, index }) {
               </span>
             )}
           </div>
+
+          {/* Inspect Evidence Trail toggle */}
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              aria-label={`Inspect evidence trail for alert ${alert.alert_id || alert.event_id || ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowEvidence(prev => !prev)
+              }}
+              style={{
+                background: showEvidence ? 'var(--surface-3)' : 'transparent',
+                border: '1px solid var(--border-subtle)',
+                color: showEvidence ? 'var(--text-primary)' : 'var(--accent-cyan)',
+                borderRadius: 6,
+                padding: '3px 8px',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {showEvidence ? 'Hide Provenance' : 'Inspect Evidence Trail'}
+            </button>
+          </div>
+
+          {showEvidence && (
+            <div style={{ marginTop: 10 }} onClick={(e) => e.stopPropagation()}>
+              <EvidenceTrail alert={alert} />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -247,15 +280,21 @@ const MemoizedAlertRow = memo(AlertRow, (prev, next) => prev.alert.event_id === 
 /* ── Main AlertFeed Component ─────────────────────────────────────────────── */
 export default function AlertFeed() {
   const alerts = useAlertStore(s => s.alerts)
+  const incidents = useAlertStore(s => s.incidents)
+  const scrubberTime = useAlertStore(s => s.scrubberTime)
   const clearAlerts = useAlertStore(s => s.clearAlerts)
   const [page, setPage] = useState(1)
 
+  const activeAlerts = scrubberTime !== null
+    ? stateAsOf(alerts, incidents, scrubberTime).alerts
+    : alerts
+
   const itemsPerPage = 8
-  const totalPages = Math.max(1, Math.ceil(alerts.length / itemsPerPage))
+  const totalPages = Math.max(1, Math.ceil(activeAlerts.length / itemsPerPage))
 
   if (page > totalPages) setPage(totalPages)
 
-  const visibleAlerts = alerts.slice().reverse().slice((page - 1) * itemsPerPage, page * itemsPerPage)
+  const visibleAlerts = activeAlerts.slice().reverse().slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
   return (
     <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>

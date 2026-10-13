@@ -15,6 +15,9 @@ const useAlertStore = create((set) => ({
   },
   simulationRunning: false,
   selectedIncident: null,
+  scrubberTime: null,
+  liveAlertBuffer: [],
+  focusIncidentId: null,
 
   setAlerts: (alerts) =>
     set({ alerts: Array.isArray(alerts) ? alerts.slice(0, 200) : [] }),
@@ -22,11 +25,30 @@ const useAlertStore = create((set) => ({
   setIncidents: (incidents) =>
     set({ incidents: Array.isArray(incidents) ? incidents : [] }),
 
+  setScrubberTime: (t) => set({ scrubberTime: t }),
+
+  setFocusIncidentId: (id) => set({ focusIncidentId: id }),
+
+  jumpToLatest: () =>
+    set((state) => {
+      const mergedAlerts = [...state.liveAlertBuffer, ...state.alerts].slice(0, 200)
+      return {
+        scrubberTime: null,
+        liveAlertBuffer: [],
+        alerts: mergedAlerts,
+      }
+    }),
+
   addAlert: (alert) =>
     set((state) => {
       const alertId = alert.alert_id || alert.event_id
       if (alertId && state.alerts.some((a) => (a.alert_id || a.event_id) === alertId)) {
         return state
+      }
+      if (state.scrubberTime !== null) {
+        return {
+          liveAlertBuffer: [alert, ...state.liveAlertBuffer],
+        }
       }
       return {
         alerts: [alert, ...state.alerts].slice(0, 200),
@@ -76,6 +98,9 @@ const useAlertStore = create((set) => ({
     set({
       alerts: [],
       incidents: [],
+      scrubberTime: null,
+      liveAlertBuffer: [],
+      focusIncidentId: null,
       stats: {
         total_events: 0,
         events_per_second: 0,

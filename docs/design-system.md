@@ -145,16 +145,77 @@ Alert cards translate model calibration certainty into visual sharpness:
   - The decorative background wash saturation.
 - **Informative Legend**: The Alert Feed includes an explicit operator legend: *"Crisper card halo indicates higher calibrated confidence. Uncalibrated alerts receive neutral treatment. Visuals reflect model certainty, not ground-truth detection accuracy."*
 
-### 5.3 Crimson Rarity Guardrail
-- Crimson (`#ff3366` / `--severity-critical`) is strictly reserved for Critical Severity alerts, compromised network nodes, and host isolation containment triggers.
+### 5.3 Crimson Allowlist & Rarity Guardrail
+- Crimson (`#ff3366` / `--severity-critical`) is strictly reserved for:
+  1. **Critical Severity alerts**: High-risk, high-confidence detections requiring immediate triage.
+  2. **Compromised network nodes**: Identified hosts with confirmed active exploitation in the topology.
+  3. **Containment triggers**: High-impact isolation / firewall block actions.
+- **Strict Prohibition**: High severity alerts MUST use Amber/Orange (`#fb923c`), medium severity uses Golden Yellow (`#facc15`), and low severity uses Cyan (`#38bdf8`). Crimson is NEVER permitted for high, medium, low, info, or neutral UI decoration.
 - Verified by automated unit test `frontend/src/utils/crimson_guardrail.test.js`, which scans all CSS and JSX files for unauthorized occurrences.
 
 ---
 
-## 6. Architectural Extension Points (Roadmap to Stage 3+)
+## 6. Stage 3: Evidence Trail & Temporal Scrubber
 
-1. **Provenance Filament & Camera Glide**: Isolated overlay layer rendering quadratic Bezier filaments between correlated incident entities, gliding camera to active investigation hubs.
-2. **Temporal Scrubber**: Time-slice scrubbing across correlated incidents with spatial replay along the kill-chain depth axis.
-3. **Command Palette**: Spatial quick-action bar utilizing Elevation 4 tokens with keyboard navigation.
-4. **Threat Hunting Query Scene Changes**: Dynamic background transitions responding to empirical query filters.
+### 6.1 Evidence Trail Architecture (`buildEvidenceChain`)
+The Evidence Trail provides a visual and accessible provenance thread reconstructing the exact detection sequence:
+`Supporting Event → Feature Deviation → Model Score → Detection Alert → Correlated Incident`.
+
+- **Pure Functional Pipeline**: Constructed via pure function `buildEvidenceChain(alert, incident, context)`. Every link is evaluated against real fields in active payloads.
+- **Truthful Link Status**:
+  - `present`: Field exists with authentic value. Renders with solid SVG filament and cyan/amber/crimson glowing node.
+  - `absent`: Field is missing or null. Renders as a **dashed line with a labeled gap ("not recorded")**. Missing data is NEVER fabricated or inferred.
+  - `partial`: Field exists but has qualified provenance (e.g. uncalibrated model score or model-level global importance).
+- **Global vs. Local Feature Importance Labeling**:
+  - **Local Feature Importance**: Per-alert behavioral deviation against entity historical baseline. Labeled *"Primary deviating features (local alert deviation)"* with specific feature deltas.
+  - **Global Model-Level Importance**: Random Forest Gini impurity calculated during offline model training. If an alert lacks local deviations and only reports global importance, the status is marked `partial` and explicitly labeled:
+    > *"Model-level feature importance (not specific to this alert)"*
+  - **Rule**: Never present global feature importance as an alert-specific explanation.
+- **Confidence Node Rules**:
+  - Calibrated only when `is_calibrated === true` and `calibrated_confidence` is present.
+  - Uncalibrated scores are marked `partial` and labeled *"Uncalibrated raw score (no isotonic calibration applied)"*.
+  - Missing confidence is marked `absent` and labeled *"No confidence reported"*.
+- **Screen Reader Accessibility Equivalent**:
+  - The SVG filament is strictly visual and marked `aria-hidden="true"`.
+  - An ordered list (`<ol className="sr-only">` or interactive DOM list) provides the semantic primary content for assistive technologies, announcing each link's stage, label, value, and recorded status.
+  - Operators can toggle *"Inspect Provenance (N links)"* to examine raw field paths (`activeAlert.raw_event`, `alert.feature_importance`, `alert.calibrated_confidence`, etc.).
+
+### 6.2 Entity Graph Camera Glide & Relationship Honesty
+- **Incident Camera Glide**: When an incident is selected, the Entity Graph executes `cy.animate({ fit: { eles: targetNodes, padding: 60 } })` over `600ms`.
+- **Reduced Motion Compliance**: When `useReducedMotion()` is active or the OS requests reduced motion, `cy.fit(targetNodes, 60)` executes immediately with duration `0ms` (no animation).
+- **Spatial Dimming**: Uninvolved entities and edges are dimmed to `opacity: 0.18`, visually isolating the investigation cluster while maintaining structural context.
+- **Relationship Honesty**: Edges between nodes are drawn **only** when supported by verified `relationship_evidence` or observed communication events. The UI never creates synthetic links.
+- **Reset View Control**: When an incident is focused, a visible floating *"Reset Focus (Clear Dimming)"* control allows operators to return instantly to the full topology.
+
+### 6.3 Temporal Scrubber Architecture (`stateAsOf`)
+The Temporal Scrubber enables temporal replay of how an incident unfolded over time:
+
+- **Pure Functional Filtering**: `stateAsOf(alerts, incidents, t)` returns the exact historical slice of visible alerts, incidents, graph nodes, and edges as of timestamp `t`.
+- **Timestamp Basis & Honesty**:
+  - The UI explicitly states the timestamp basis in text: *"Basis: Event Time (from packet captures and log telemetry)"* or *"Basis: Ingest Time (wall-clock stream arrival)"*.
+  - Session Scope Disclosure: *"Session replay of N alerts held in this browser session. Synthetic Demo timestamps reflect dataset replay times."*
+  - Missing Timestamps: Items lacking timestamps are excluded from the timeline and counted in `excludedMissingCount` with a visible warning; timestamps are NEVER guessed or fabricated.
+- **Live-Stream Buffering (`liveAlertBuffer`)**:
+  - When the playhead is moved into the past (`scrubberTime < maxTime`), live WebSocket streaming is NOT dropped.
+  - Incoming alerts are buffered in `liveAlertBuffer`.
+  - The UI presents an unobtrusive status pill: *"Viewing past state (N alerts buffered in live memory)"*.
+  - Clicking *"Jump to Latest"* sets `scrubberTime` to `null`, flushes the buffer into the primary alert stream, and returns the view to real-time telemetry.
+- **Cytoscape 500-Node Pan & Zoom Performance**:
+  - Enabled `hideEdgesOnViewport: true` and `textureOnViewport: true`.
+  - Removed global CSS transitions on node elements (`transition: all 0.2s`) to prevent layout thrashing.
+  - Measured panning performance on 500 nodes improved from **34.4 FPS to 60.4 FPS** with long tasks $<50\text{ms}$.
+
+---
+
+## 7. Architectural Extension Points (Roadmap to Stage 4)
+
+1. **Command Palette (`Cmd+K` / `Ctrl+K`)**:
+   - Universal fast-action modal utilizing Elevation 4 tokens and keyboard navigation.
+   - Jump to incidents, filter by MITRE technique, toggle 3D ambient atmosphere, or jump to temporal landmarks.
+2. **Threat Hunting Query Scene Changes**:
+   - Dynamic, subtle background field transitions and camera shifts in response to empirical query filters (e.g. pivoting to C2 cluster zooms into high-entropy outbound nodes).
+3. **Skippable Cinematic Briefing Intro**:
+   - Optional atmospheric entry sequence for SOC presentations, respecting `prefers-reduced-motion` and skippable via `Escape`.
+4. **Briefing-Mode Report Covers**:
+   - High-fidelity PDF/HTML executive briefing report covers with cryptographic hash verification and spatial evidence diagrams.
 

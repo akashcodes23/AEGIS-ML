@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import useAlertStore from '../../store/alertStore'
 import { getApiUrl } from '../../config/api'
+import EvidenceTrail from '../Common/EvidenceTrail'
 
 const TABS = [
   'Executive Summary',
@@ -45,7 +46,8 @@ function FeatureBar({ label, value }) {
   )
 }
 
-function InsightChip({ icon: Icon, label, value, subtext = null }) {
+function InsightChip({ icon, label, value, subtext = null }) {
+  const ChipIcon = icon
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
@@ -53,7 +55,7 @@ function InsightChip({ icon: Icon, label, value, subtext = null }) {
       borderRadius: 12, border: '1px solid var(--border-light)'
     }}>
       <div style={{ color: 'var(--accent-brand)' }}>
-        <Icon size={16} strokeWidth={2} />
+        <ChipIcon size={16} strokeWidth={2} />
       </div>
       <div style={{ overflow: 'hidden' }}>
         <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-tertiary)', fontWeight: 700 }}>{label}</div>
@@ -71,7 +73,6 @@ export default memo(function IncidentCard() {
   const alerts = useAlertStore(s => s.alerts)
   const incidents = useAlertStore(s => s.incidents)
   const selectedId = useAlertStore(s => s.selectedIncident)
-  const selectIncident = useAlertStore(s => s.selectIncident)
 
   // Find targeted incident or fallback
   const incident = incidents.find(i => i.incident_id === selectedId) ||
@@ -260,6 +261,9 @@ export default memo(function IncidentCard() {
                 </div>
               </div>
             </div>
+
+            {/* ── Evidence Provenance Trail ── */}
+            <EvidenceTrail incident={incident} />
 
             {/* Local ML Feature Contributions */}
             <div>

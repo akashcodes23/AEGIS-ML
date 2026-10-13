@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { Network, ShieldAlert, Cpu, Share2, Layers } from 'lucide-react'
 import AttackGraph from './AttackGraph'
 import useAlertStore from '../../store/alertStore'
+import TemporalScrubber from '../Common/TemporalScrubber'
 
 export default memo(function EntityGraphView() {
   const graphData = useAlertStore(s => s.graphData)
@@ -93,6 +94,9 @@ export default memo(function EntityGraphView() {
           </div>
         </div>
       </div>
+
+      {/* ── Temporal Scrubber ────────────────────────────────────────── */}
+      <TemporalScrubber />
 
       {/* ── Main Graph Container ───────────────────────────────────────── */}
       <div className="glass-panel" style={{ minHeight: 700, overflow: 'hidden', padding: 12 }}>

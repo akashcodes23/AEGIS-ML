@@ -12,7 +12,6 @@ export default function Reports() {
   const incidents = useAlertStore(s => s.incidents)
 
   const [healthData, setHealthData] = useState(null)
-  const [loadingHealth, setLoadingHealth] = useState(true)
 
   useEffect(() => {
     fetch(getApiUrl('/api/health'))
@@ -21,7 +20,6 @@ export default function Reports() {
         if (d) setHealthData(d)
       })
       .catch(err => console.debug('[AEGIS] Reports health fetch error:', err))
-      .finally(() => setLoadingHealth(false))
   }, [])
 
   // Aggregate threat types from real alerts
@@ -156,7 +154,7 @@ export default function Reports() {
               id="export-report-json"
               style={{
                 padding: '10px 18px', borderRadius: 12, fontSize: 13, fontWeight: 700,
-                background: 'var(--text-primary)', color: '#fff', border: 'none',
+                background: 'var(--text-primary)', color: 'var(--surface-0)', border: 'none',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
                 boxShadow: '0 4px 16px rgba(31, 41, 55, 0.15)', transition: 'all 0.2s'
               }}

@@ -31,9 +31,9 @@
 
   /* ── Text Tiers (WCAG AA Compliant on Dark Canvas) ──────── */
   --text-primary: #f8fafc;   /* Contrast > 16:1 */
-  --text-secondary: #94a3b8; /* Slate-400, contrast > 6.5:1 */
-  --text-tertiary: #64748b;  /* Slate-500, contrast > 3.8:1 */
-  --text-muted: #475569;     /* Slate-600 */
+  --text-secondary: #cbd5e1; /* Slate-300, contrast > 9:1 */
+  --text-tertiary: #94a3b8;  /* Slate-400, contrast > 6.5:1 (WCAG AA compliant for all sizes) */
+  --text-muted: #78889e;     /* High-legibility slate, contrast > 4.8:1 */
 
   /* ── Spatial Accents ─────────────────────────────────────── */
   --accent-cyan: #00f0ff;       /* Electric Cyan: primary accent */
