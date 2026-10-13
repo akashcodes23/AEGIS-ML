@@ -1,0 +1,113 @@
+/**
+ * AEGIS-ML Design System Tokens: "Depth is Data"
+ * 
+ * Aesthetic Core:
+ * - Obsidian-black canvas with midnight-navy elevation layers.
+ * - Electric Cyan primary accent (data focus & spatial telemetry).
+ * - Plasma Violet secondary accent (structural topology & correlation).
+ * - Crimson strictly reserved for Critical Severity (rare, high urgency).
+ * - One primary glow source per view rule.
+ */
+
+:root {
+  /* ── Spatial Elevation Palette (Midnight Navy) ──────────── */
+  --surface-0: #07090e; /* Obsidian canvas base */
+  --surface-1: #0c111c; /* Elevation 1: background panels */
+  --surface-2: #121927; /* Elevation 2: interactive cards & rails */
+  --surface-3: #182236; /* Elevation 3: raised modals & overlays */
+  --surface-4: #202d47; /* Elevation 4: active tooltips & popovers */
+
+  /* Aliases for legacy component compatibility */
+  --bg-page: var(--surface-0);
+  --bg-surface: var(--surface-1);
+
+  /* ── Hairlines & Borders ─────────────────────────────────── */
+  --border-hairline: rgba(255, 255, 255, 0.07);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --border-medium: rgba(255, 255, 255, 0.18);
+  --border-focus: rgba(0, 240, 255, 0.6);
+  --border-light: var(--border-hairline);
+
+  /* ── Text Tiers (WCAG AA Compliant on Dark Canvas) ──────── */
+  --text-primary: #f8fafc;   /* Contrast > 16:1 */
+  --text-secondary: #94a3b8; /* Slate-400, contrast > 6.5:1 */
+  --text-tertiary: #64748b;  /* Slate-500, contrast > 3.8:1 */
+  --text-muted: #475569;     /* Slate-600 */
+
+  /* ── Spatial Accents ─────────────────────────────────────── */
+  --accent-cyan: #00f0ff;       /* Electric Cyan: primary accent */
+  --accent-cyan-glow: rgba(0, 240, 255, 0.25);
+  --accent-violet: #a855f7;     /* Plasma Violet: secondary accent */
+  --accent-violet-glow: rgba(168, 85, 247, 0.22);
+  --accent-brand: var(--accent-cyan);
+
+  /* ── Severity Tokens (Rule: Crimson is strictly Critical) ─ */
+  --severity-critical-fg: #ff3366;
+  --severity-critical-bg: rgba(255, 51, 102, 0.12);
+  --severity-critical-border: rgba(255, 51, 102, 0.35);
+
+  --severity-high-fg: #fb923c;
+  --severity-high-bg: rgba(251, 146, 60, 0.12);
+  --severity-high-border: rgba(251, 146, 60, 0.35);
+
+  --severity-medium-fg: #facc15;
+  --severity-medium-bg: rgba(250, 204, 21, 0.12);
+  --severity-medium-border: rgba(250, 204, 21, 0.35);
+
+  --severity-low-fg: #38bdf8;
+  --severity-low-bg: rgba(56, 189, 248, 0.12);
+  --severity-low-border: rgba(56, 189, 248, 0.35);
+
+  --severity-info-fg: #818cf8;
+  --severity-info-bg: rgba(129, 140, 248, 0.12);
+  --severity-info-border: rgba(129, 140, 248, 0.35);
+
+  --severity-success-fg: #34d399;
+  --severity-success-bg: rgba(52, 211, 153, 0.12);
+  --severity-success-border: rgba(52, 211, 153, 0.35);
+
+  /* Legacy variable mappings */
+  --accent-critical: var(--severity-critical-fg);
+  --accent-high: var(--severity-high-fg);
+  --accent-success: var(--severity-success-fg);
+  --accent-info: var(--severity-info-fg);
+
+  /* ── Glass Surface Properties & Shadows ─────────────────── */
+  --glass-bg: rgba(12, 17, 28, 0.78);
+  --glass-bg-raised: rgba(18, 25, 39, 0.85);
+  --glass-blur: blur(14px);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --shadow-elevation-1: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --shadow-elevation-2: 0 8px 32px rgba(0, 0, 0, 0.55);
+  --shadow-elevation-3: 0 16px 48px rgba(0, 0, 0, 0.7);
+  --shadow-soft: var(--shadow-elevation-1);
+  --shadow-float: var(--shadow-elevation-2);
+  --shadow-inner: var(--glass-highlight);
+
+  /* ── Restrained Glow Tokens (Max 1 Primary Glow Per View) ── */
+  --glow-primary: 0 0 24px -4px var(--accent-cyan-glow);
+  --glow-secondary: 0 0 24px -4px var(--accent-violet-glow);
+  --glow-critical: 0 0 28px -2px rgba(255, 51, 102, 0.35);
+
+  /* ── Motion & Choreography Tokens ───────────────────────── */
+  --duration-instant: 0ms;
+  --duration-quick: 140ms;
+  --duration-smooth: 280ms;
+  --duration-cinematic: 550ms;
+
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-snappy: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ── Typography & Tabular Numerals ──────────────────────── */
+  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+/* ── Fallback for browsers without backdrop-filter ────────── */
+@supports not (backdrop-filter: blur(10px)) {
+  :root {
+    --glass-bg: rgba(12, 17, 28, 0.96);
+    --glass-bg-raised: rgba(18, 25, 39, 0.98);
+  }
+}
