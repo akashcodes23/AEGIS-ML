@@ -115,10 +115,46 @@ If any of the following conditions occur, `AmbientStaticFallback` is rendered in
 
 ---
 
-## 5. Architectural Extension Points (Roadmap to Stage 2+)
+## 5. Stage 2: Depth & Confidence on Real Data
 
-1. **Kill-Chain Depth on Entity Graph**: Stage 1 introduces `KILL_CHAIN_DEPTH`. In Stage 2, Cytoscape nodes will project along the spatial $z$-axis according to their identified kill-chain progression.
-2. **Confidence Defocus on Live Alerts**: Stage 1 delivers `confidenceToFocus()`. Stage 2 will bind this utility to `AlertFeed` items, applying calibrated CSS filter strings based on model probabilities.
-3. **Provenance Filament & Camera Glide**: Extending the Three.js canvas to accept an isolated telemetry overlay layer that renders Bezier filaments between correlated incident entities without mixing decorative particles with real data.
-4. **Temporal Scrubber**: Integrating time-travel log playback with the kill-chain depth plane.
-5. **Command Palette**: Spatial quick-action overlay utilizing Elevation 4 tokens.
+### 5.1 Kill-Chain Depth Encoding on Entity Graph (Cytoscape.js)
+The Entity Graph uses Cytoscape.js in 2D with spatial depth projection along visual perception dimensions rather than 3D geometry replacement:
+
+- **Source of Truth**: Derived from real event payloads (`current_kill_chain_stage`, alert stage, incident stage) via `normalizeKillChainStage()`.
+- **Truthful Stage Fallback**: If an entity stage is unrecognized or absent, it is assigned `UNKNOWN_DEPTH` (`stage: 'Unknown'`, `isKnown: false`). The UI never fabricates or guesses a stage.
+- **Multi-Property Visual Attenuation**:
+  - **Node Size**: Attenuates from $26\text{px}$ (Reconnaissance) to $48\text{px}$ (Impact). Unknown nodes render at a neutral $32\text{px}$.
+  - **Opacity**: Attenuates from $0.65$ (deep atmospheric recession) to $1.0$ (foreground focus). Unknown nodes render at $0.72$.
+  - **Border Width**: Attenuates from $1.5\text{px}$ to $3.5\text{px}$.
+  - **Z-Index Layering**: Nodes layer cleanly from $z=10$ (Reconnaissance) to $z=17$ (Impact), ensuring foreground nodes cleanly overlap earlier background nodes during pan and zoom.
+- **Compromised Entities**: Nodes marked `is_compromised` receive `--severity-critical` (`#ff3366`) borders and elevated glow; all other nodes follow severity or tier tokens.
+- **Compact Depth Legend**: A sticky legend (`Recon → Weaponize → Delivery → Exploit → Install → C2 → Exfiltrate → Impact → Unknown`) ensures no visual encoding relies on color alone.
+- **Node Dossier / Tooltip**: Every entity card explicitly states its stage in text (`Kill-Chain Progression: Reconnaissance (Depth 1/8)`) or states `Unknown Stage (No alert stage)`.
+- **Reduced Motion**: Disables animation durations ($0\text{ms}$ layout transition) and retains static spatial sizing and opacity.
+
+### 5.2 Confidence as Focus on the Alert Feed
+Alert cards translate model calibration certainty into visual sharpness:
+
+- **Source of Truth**: Uses `calibrated_confidence` **only when** `is_calibrated === true`.
+- **Uncalibrated Scores**: When `is_calibrated === false`, the alert displays `% Uncalibrated Score` and receives the **neutral focus treatment** (`opacity: 0.85, saturate: 0.85, blur: 0px`). It is never sharpened as if it were calibrated.
+- **Missing Confidence**: When confidence is missing or null, the card displays `No confidence reported` with neutral treatment.
+- **STRICT ACCESSIBILITY RULE: NEVER BLUR TEXT**:
+  Text elements remain 100% sharp at all times to satisfy WCAG AA legibility standards. The `confidenceToFocus()` filter string (`filter: blur(...)`) is applied **exclusively to non-text decorative layers**:
+  - The card's outer glow halo (`boxShadow`).
+  - The severity indicator border softness.
+  - The decorative background wash saturation.
+- **Informative Legend**: The Alert Feed includes an explicit operator legend: *"Crisper card halo indicates higher calibrated confidence. Uncalibrated alerts receive neutral treatment. Visuals reflect model certainty, not ground-truth detection accuracy."*
+
+### 5.3 Crimson Rarity Guardrail
+- Crimson (`#ff3366` / `--severity-critical`) is strictly reserved for Critical Severity alerts, compromised network nodes, and host isolation containment triggers.
+- Verified by automated unit test `frontend/src/utils/crimson_guardrail.test.js`, which scans all CSS and JSX files for unauthorized occurrences.
+
+---
+
+## 6. Architectural Extension Points (Roadmap to Stage 3+)
+
+1. **Provenance Filament & Camera Glide**: Isolated overlay layer rendering quadratic Bezier filaments between correlated incident entities, gliding camera to active investigation hubs.
+2. **Temporal Scrubber**: Time-slice scrubbing across correlated incidents with spatial replay along the kill-chain depth axis.
+3. **Command Palette**: Spatial quick-action bar utilizing Elevation 4 tokens with keyboard navigation.
+4. **Threat Hunting Query Scene Changes**: Dynamic background transitions responding to empirical query filters.
+

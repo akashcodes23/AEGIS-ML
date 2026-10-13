@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-const useAlertStore = create((set, get) => ({
+const useAlertStore = create((set) => ({
   alerts: [],
   incidents: [],
   graphData: { nodes: [], edges: [] },
@@ -87,5 +87,9 @@ const useAlertStore = create((set, get) => ({
       },
     }),
 }))
+
+if (typeof window !== 'undefined') {
+  window.useAlertStore = useAlertStore
+}
 
 export default useAlertStore

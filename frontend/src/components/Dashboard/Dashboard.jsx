@@ -16,6 +16,7 @@ import SyntheticDemoRibbon from '../Common/SyntheticDemoRibbon'
 import AmbientField from '../Atmosphere/AmbientField'
 import NavigationDock from '../Navigation/NavigationDock'
 import StatusArea from '../Navigation/StatusArea'
+import { isSyntheticData } from '../../utils/dataMode'
 
 /* ── Stat card ────────────────────────────────────────────────────────────── */
 function StatCard({ label, value, unit = '', accentVar, icon: Icon, delay = 0 }) {
@@ -208,13 +209,7 @@ export default function Dashboard() {
   const analysisComplete = stats.analysis_complete || false
 
   // Empirical honesty check: Is synthetic demo data currently loaded?
-  const isSynthetic = Boolean(
-    stats.is_synthetic ||
-    stats.dataset_type === 'synthetic' ||
-    (currentFile && (currentFile.includes('synthetic') || currentFile.includes('.jsonl') || currentFile.includes('behavioral'))) ||
-    // Default demo dataset is behavioral_diversity_labeled.jsonl
-    (!currentFile)
-  )
+  const isSynthetic = isSyntheticData(stats, currentFile)
 
   // Initial stats, alerts, and incidents sync on mount
   useEffect(() => {

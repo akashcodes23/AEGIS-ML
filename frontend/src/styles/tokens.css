@@ -20,6 +20,7 @@
   /* Aliases for legacy component compatibility */
   --bg-page: var(--surface-0);
   --bg-surface: var(--surface-1);
+  --bg-card: var(--surface-2);
 
   /* ── Hairlines & Borders ─────────────────────────────────── */
   --border-hairline: rgba(255, 255, 255, 0.07);
