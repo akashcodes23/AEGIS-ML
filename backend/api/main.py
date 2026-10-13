@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union, Tuple
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status, Header, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -101,10 +102,11 @@ class WebSocketManager:
             self.active_connections.remove(ws)
 
     async def broadcast(self, message: dict):
+        payload = jsonable_encoder(message)
         dead = []
         for ws in self.active_connections:
             try:
-                await ws.send_json(message)
+                await ws.send_json(payload)
             except Exception:
                 dead.append(ws)
         for ws in dead:
@@ -122,6 +124,7 @@ async def lifespan(application: FastAPI):
     application.state.eps = 0.0
     application.state.alerts_by_severity = {}
     application.state.analysis_running = False
+    application.state.current_file = None
     application.state._logged_errs = set()
     application.state.isolated_ips = set()
     _load_models_from_disk(application.state)
@@ -397,6 +400,7 @@ async def dataset_worker(state):
             if not state.analysis_running:
                 break
 
+            state.current_file = file_path.name
             is_synthetic = (
                 file_path.suffix.lower() == ".jsonl" or
                 "synthetic" in file_path.name.lower() or
@@ -415,6 +419,7 @@ async def dataset_worker(state):
                     "false_positive_rate": None,  # Ground-truth unlabelled stream: represented as null (N/A)
                     "alerts_by_severity": state.alerts_by_severity,
                     "analysis_complete": False,
+                    "analysis_running": True,
                 }
             })
 
@@ -599,6 +604,7 @@ async def dataset_worker(state):
                             "false_positive_rate": None,
                             "alerts_by_severity": state.alerts_by_severity,
                             "analysis_complete": False,
+                            "analysis_running": True,
                         }
                     })
 
@@ -613,6 +619,7 @@ async def dataset_worker(state):
                 await asyncio.sleep(0.01)
 
         state.analysis_running = False
+        state.current_file = None
         final_incs = state.correlator.get_all_incidents() if hasattr(state, "correlator") else []
         await state.ws_manager.broadcast({"type": "graph_update", "data": _build_graph(state.alerts, final_incs)})
         await state.ws_manager.broadcast({
@@ -627,6 +634,7 @@ async def dataset_worker(state):
                 "false_positive_rate": None,
                 "alerts_by_severity": state.alerts_by_severity,
                 "analysis_complete": True,
+                "analysis_running": False,
             }
         })
 
@@ -682,14 +690,16 @@ def health_check():
 
 
 @app.get("/api/alerts")
+@app.get("/alerts")
 def get_alerts():
-    return app.state.alerts[-100:]
+    return jsonable_encoder(app.state.alerts[-100:])
 
 
 @app.get("/api/incidents")
+@app.get("/incidents")
 def get_incidents():
     if hasattr(app.state, "correlator") and app.state.correlator.incidents:
-        return [
+        return jsonable_encoder([
             {
                 **inc.dict(),
                 "created_at": inc.created_at.isoformat() if hasattr(inc.created_at, "isoformat") else str(inc.created_at),
@@ -703,8 +713,8 @@ def get_incidents():
                 ]
             }
             for inc in app.state.correlator.get_all_incidents()
-        ]
-    return app.state.incidents
+        ])
+    return jsonable_encoder(app.state.incidents)
 
 
 @app.get("/api/incident/{incident_id}")
@@ -743,12 +753,16 @@ def get_incident(incident_id: str):
 def get_stats_summary():
     discovered = _discover_dataset_files()
     files = [f.name for f in discovered]
+    inc_count = len(app.state.correlator.incidents) if hasattr(app.state, "correlator") else len(app.state.incidents)
     return {
         "total_events": app.state.total_events,
         "total_alerts": len(app.state.alerts),
-        "total_incidents": len(app.state.correlator.incidents) if hasattr(app.state, "correlator") else len(app.state.incidents),
+        "total_incidents": inc_count,
+        "events_per_second": app.state.eps,
         "false_positive_rate": None,
         "analysis_running": app.state.analysis_running,
+        "current_file": getattr(app.state, "current_file", None),
+        "analysis_complete": not app.state.analysis_running and app.state.total_events > 0,
         "dataset_files": files,
         "alerts_by_severity": app.state.alerts_by_severity,
     }
@@ -801,6 +815,7 @@ def start_analysis():
 @app.post("/analysis/stop")
 def stop_analysis():
     app.state.analysis_running = False
+    app.state.current_file = None
     return {"status": "analysis_stopped"}
 
 
@@ -1530,37 +1545,51 @@ def reload_model_artifact(
 async def websocket_endpoint(websocket: WebSocket):
     await app.state.ws_manager.connect(websocket)
     try:
-        # Provide immediate telemetry snapshot upon connection
         inc_list = app.state.correlator.get_all_incidents() if hasattr(app.state, "correlator") else []
-        await websocket.send_json({
-            "type": "stats_update",
+        stats_payload = {
+            "current_file": getattr(app.state, "current_file", None),
+            "is_synthetic": False,
+            "total_events": app.state.total_events,
+            "total_alerts": len(app.state.alerts),
+            "total_incidents": len(inc_list) if inc_list else len(app.state.incidents),
+            "events_per_second": app.state.eps,
+            "false_positive_rate": None,
+            "alerts_by_severity": app.state.alerts_by_severity,
+            "analysis_complete": not app.state.analysis_running and app.state.total_events > 0,
+            "analysis_running": app.state.analysis_running,
+        }
+        graph_data = _build_graph(app.state.alerts, inc_list)
+        recent_alerts = app.state.alerts[-20:]
+        recent_incidents = [
+            inc.dict() if hasattr(inc, "dict") else inc
+            for inc in inc_list[-10:]
+        ] if inc_list else app.state.incidents[-10:]
+
+        # 1. Send atomic snapshot for instant dashboard hydration
+        snapshot_msg = {
+            "type": "snapshot",
             "data": {
-                "current_file": None,
-                "is_synthetic": False,
-                "total_events": app.state.total_events,
-                "total_alerts": len(app.state.alerts),
-                "total_incidents": len(inc_list),
-                "events_per_second": app.state.eps,
-                "false_positive_rate": None,
-                "alerts_by_severity": app.state.alerts_by_severity,
-                "analysis_complete": not app.state.analysis_running and app.state.total_events > 0,
+                "stats": stats_payload,
+                "alerts": recent_alerts,
+                "incidents": recent_incidents,
+                "graph": graph_data,
             }
-        })
-        if app.state.alerts:
-            for alert in app.state.alerts[-20:]:
-                await websocket.send_json({"type": "new_alert", "data": alert})
-            if inc_list:
-                for inc in inc_list[-10:]:
-                    inc_dict = inc.dict() if hasattr(inc, "dict") else inc
-                    if isinstance(inc_dict.get("created_at"), datetime):
-                        inc_dict["created_at"] = inc_dict["created_at"].isoformat()
-                    if isinstance(inc_dict.get("updated_at"), datetime):
-                        inc_dict["updated_at"] = inc_dict["updated_at"].isoformat()
-                    await websocket.send_json({"type": "new_incident", "data": inc_dict})
-            await websocket.send_json({
-                "type": "graph_update",
-                "data": _build_graph(app.state.alerts, inc_list)
-            })
+        }
+        await websocket.send_json(jsonable_encoder(snapshot_msg))
+
+        # 2. Backward-compatible individual telemetry events
+        await websocket.send_json(jsonable_encoder({
+            "type": "stats_update",
+            "data": stats_payload
+        }))
+        for alert in recent_alerts:
+            await websocket.send_json(jsonable_encoder({"type": "new_alert", "data": alert}))
+        for inc_dict in recent_incidents:
+            await websocket.send_json(jsonable_encoder({"type": "new_incident", "data": inc_dict}))
+        await websocket.send_json(jsonable_encoder({
+            "type": "graph_update",
+            "data": graph_data
+        }))
 
         while True:
             try:

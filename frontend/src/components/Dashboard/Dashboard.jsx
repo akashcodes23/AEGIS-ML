@@ -151,6 +151,7 @@ export default function Dashboard() {
   const simulationRunning = useAlertStore(s => s.simulationRunning)
   const setSimulationRunning = useAlertStore(s => s.setSimulationRunning)
   const alerts = useAlertStore(s => s.alerts)
+  const incidents = useAlertStore(s => s.incidents)
   const { connected, connecting, error: wsError, reconnect } = useWebSocket()
   const [actionError, setActionError] = useState(null)
 
@@ -172,7 +173,7 @@ export default function Dashboard() {
   const currentFile = stats.current_file || null
   const analysisComplete = stats.analysis_complete || false
 
-  // Initial stats sync on mount
+  // Initial stats, alerts, and incidents sync on mount
   useEffect(() => {
     fetch(getApiUrl('/api/stats/summary'))
       .then(r => {
@@ -184,10 +185,36 @@ export default function Dashboard() {
           useAlertStore.getState().updateStats(d)
           if (d.analysis_running) {
             setSimulationRunning(true)
+          } else {
+            setSimulationRunning(false)
           }
         }
       })
       .catch(err => console.debug('[AEGIS] Stats summary sync failed:', err))
+
+    fetch(getApiUrl('/api/alerts'))
+      .then(r => r.ok ? r.json() : [])
+      .then(alertsData => {
+        if (Array.isArray(alertsData) && alertsData.length > 0) {
+          const currentAlerts = useAlertStore.getState().alerts
+          if (currentAlerts.length === 0) {
+            useAlertStore.getState().setAlerts(alertsData)
+          }
+        }
+      })
+      .catch(err => console.debug('[AEGIS] Alerts initial sync failed:', err))
+
+    fetch(getApiUrl('/api/incidents'))
+      .then(r => r.ok ? r.json() : [])
+      .then(incidentsData => {
+        if (Array.isArray(incidentsData) && incidentsData.length > 0) {
+          const currentIncidents = useAlertStore.getState().incidents
+          if (currentIncidents.length === 0) {
+            useAlertStore.getState().setIncidents(incidentsData)
+          }
+        }
+      })
+      .catch(err => console.debug('[AEGIS] Incidents initial sync failed:', err))
   }, [setSimulationRunning])
 
   const startAnalysis = useCallback(async () => {
@@ -400,7 +427,7 @@ export default function Dashboard() {
               Analysis finished. Your network looks secure.
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-              Successfully processed <span className="mono-font" style={{fontWeight: 600, color: 'var(--text-primary)'}}>{stats.total_events?.toLocaleString()}</span> events. We detected {stats.total_alerts} anomalies across your infrastructure.
+              Successfully processed <span className="mono-font" style={{fontWeight: 600, color: 'var(--text-primary)'}}>{stats.total_events?.toLocaleString() || 0}</span> events. We detected {stats.total_alerts ?? alerts.length} anomalies across your infrastructure.
             </div>
           </div>
         </div>
@@ -410,7 +437,7 @@ export default function Dashboard() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:24 }}>
         <StatCard delay={150} icon={Activity} label="Network Pulse" value={stats.events_per_second || 0} unit="eps" accentVar="--accent-brand" />
         <StatCard delay={200} icon={Server} label="Events Processed" value={stats.total_events?.toLocaleString() || 0} accentVar="--accent-info" />
-        <StatCard delay={250} icon={Bell} label="Correlated Incidents" value={stats.total_incidents || (alerts.length > 0 ? 1 : 0)} unit={alerts.length ? `(${alerts.length} alerts)` : ''} accentVar="--accent-high" />
+        <StatCard delay={250} icon={Bell} label="Correlated Incidents" value={stats.total_incidents !== undefined && stats.total_incidents !== null ? stats.total_incidents : (incidents.length || (alerts.length > 0 ? 1 : 0))} unit={alerts.length ? `(${alerts.length} alerts)` : ''} accentVar="--accent-high" />
         <StatCard delay={300} icon={AlertTriangle} label="False Positives (Unlabelled)" value={falsePosValue} unit={falsePosUnit} accentVar="--accent-critical" />
       </div>
 

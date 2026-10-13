@@ -174,3 +174,98 @@ def test_calibrated_model_48_feature_schema_readiness():
     assert clf.is_calibrated is True
     assert clf.n_features == 48, f"Expected 48 features, got {clf.n_features}"
     assert len(clf.feature_names) == 48
+
+
+def test_websocket_initial_snapshot_and_serialization(prod_client):
+    """Verify WebSocket /ws/live sends atomic snapshot and serializes datetimes without dropping connection."""
+    from datetime import datetime
+    from backend.core.schemas import UnifiedEvent, Alert, Incident, TimelineEntry
+
+    ev = UnifiedEvent(
+        event_id="test-ev-ws-1",
+        timestamp=datetime.utcnow(),
+        src_entity="192.168.1.50",
+        dst_entity="10.0.0.5",
+        src_internal=True,
+        dst_internal=False,
+        layer="network",
+    )
+    alert = Alert(
+        event_id=ev.event_id,
+        timestamp=ev.timestamp,
+        threat_type="brute_force",
+        severity="high",
+        src_entity=ev.src_entity,
+        dst_entity=ev.dst_entity,
+        layer=ev.layer,
+        raw_event=ev.dict(),
+    )
+    inc = Incident(
+        incident_id="INC-WS-001",
+        threat_type="brute_force",
+        supporting_events=[ev.dict()],
+        timeline=[
+            TimelineEntry(
+                timestamp=datetime.utcnow(),
+                entity="192.168.1.50",
+                title="Suspicious Activity",
+                description="Failed authentication spike",
+                claim_type="observation",
+                evidence_type="Network Flow",
+            )
+        ],
+    )
+    app.state.alerts = [alert.dict()]
+    app.state.incidents = [inc.dict()]
+    app.state.total_events = 42
+    app.state.eps = 12.5
+
+    with prod_client.websocket_connect("/ws/live") as ws:
+        msg1 = ws.receive_json()
+        assert msg1["type"] == "snapshot"
+        assert "stats" in msg1["data"]
+        assert "alerts" in msg1["data"]
+        assert "incidents" in msg1["data"]
+        assert "graph" in msg1["data"]
+        assert msg1["data"]["stats"]["total_events"] == 42
+        assert len(msg1["data"]["alerts"]) == 1
+        assert len(msg1["data"]["incidents"]) == 1
+
+        msg2 = ws.receive_json()
+        assert msg2["type"] == "stats_update"
+        assert msg2["data"]["total_events"] == 42
+
+        msg3 = ws.receive_json()
+        assert msg3["type"] == "new_alert"
+        assert msg3["data"]["event_id"] == "test-ev-ws-1"
+
+        msg4 = ws.receive_json()
+        assert msg4["type"] == "new_incident"
+        assert msg4["data"]["incident_id"] == "INC-WS-001"
+
+        msg5 = ws.receive_json()
+        assert msg5["type"] == "graph_update"
+        assert "nodes" in msg5["data"]
+        assert "edges" in msg5["data"]
+
+
+def test_stats_summary_extended_consistency(prod_client):
+    """Verify /api/stats/summary returns all fields needed by Dashboard and agrees with state."""
+    res = prod_client.get("/api/stats/summary")
+    assert res.status_code == 200
+    data = res.json()
+    assert "events_per_second" in data
+    assert "current_file" in data
+    assert "analysis_complete" in data
+    assert "analysis_running" in data
+    assert "total_alerts" in data
+    assert "total_incidents" in data
+    assert "total_events" in data
+
+
+def test_alerts_and_incidents_rest_endpoints(prod_client):
+    """Verify /api/alerts, /alerts, /api/incidents, and /incidents endpoints return serializable JSON lists."""
+    for path in ["/api/alerts", "/alerts", "/api/incidents", "/incidents"]:
+        res = prod_client.get(path)
+        assert res.status_code == 200, f"GET {path} failed: {res.status_code}"
+        assert isinstance(res.json(), list)

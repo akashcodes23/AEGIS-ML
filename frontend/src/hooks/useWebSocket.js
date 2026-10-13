@@ -20,13 +20,32 @@ const useWebSocket = (url = null) => {
   const attemptsRef = useRef(0)
   const mountedRef = useRef(true)
 
-  const { addAlert, addIncident, updateGraph, updateStats, setSimulationRunning } = useAlertStore()
+  const { addAlert, addIncident, updateGraph, updateStats, setSimulationRunning, setAlerts, setIncidents } = useAlertStore()
 
   const handleMessage = useCallback(
     (event) => {
       try {
         const { type, data } = JSON.parse(event.data)
         switch (type) {
+          case 'snapshot':
+            if (data?.stats) {
+              updateStats(data.stats)
+              if (data.stats.analysis_complete || data.stats.analysis_running === false) {
+                setSimulationRunning(false)
+              } else if (data.stats.analysis_running) {
+                setSimulationRunning(true)
+              }
+            }
+            if (Array.isArray(data?.alerts) && data.alerts.length > 0) {
+              setAlerts(data.alerts)
+            }
+            if (Array.isArray(data?.incidents) && data.incidents.length > 0) {
+              setIncidents(data.incidents)
+            }
+            if (data?.graph) {
+              updateGraph(data.graph)
+            }
+            break
           case 'new_alert':
             addAlert(data)
             break
@@ -38,9 +57,11 @@ const useWebSocket = (url = null) => {
             break
           case 'stats_update':
             updateStats(data)
-            // Auto-clear running flag when backend finishes all dataset files
-            if (data.analysis_complete) {
+            // Auto-clear running flag when backend finishes or is idle
+            if (data.analysis_complete || data.analysis_running === false) {
               setSimulationRunning(false)
+            } else if (data.analysis_running) {
+              setSimulationRunning(true)
             }
             break
           case 'incident_update':
@@ -58,7 +79,7 @@ const useWebSocket = (url = null) => {
         console.error('[WS] Failed to parse message:', err)
       }
     },
-    [addAlert, addIncident, updateGraph, updateStats, setSimulationRunning]
+    [addAlert, addIncident, updateGraph, updateStats, setSimulationRunning, setAlerts, setIncidents]
   )
 
   const connect = useCallback(() => {

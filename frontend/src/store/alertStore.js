@@ -16,15 +16,33 @@ const useAlertStore = create((set, get) => ({
   simulationRunning: false,
   selectedIncident: null,
 
+  setAlerts: (alerts) =>
+    set({ alerts: Array.isArray(alerts) ? alerts.slice(0, 200) : [] }),
+
+  setIncidents: (incidents) =>
+    set({ incidents: Array.isArray(incidents) ? incidents : [] }),
+
   addAlert: (alert) =>
-    set((state) => ({
-      alerts: [alert, ...state.alerts].slice(0, 200),
-    })),
+    set((state) => {
+      const alertId = alert.alert_id || alert.event_id
+      if (alertId && state.alerts.some((a) => (a.alert_id || a.event_id) === alertId)) {
+        return state
+      }
+      return {
+        alerts: [alert, ...state.alerts].slice(0, 200),
+      }
+    }),
 
   addIncident: (inc) =>
-    set((state) => ({
-      incidents: [inc, ...state.incidents],
-    })),
+    set((state) => {
+      const incId = inc.incident_id || inc.event_id
+      if (incId && state.incidents.some((i) => (i.incident_id || i.event_id) === incId)) {
+        return state
+      }
+      return {
+        incidents: [inc, ...state.incidents],
+      }
+    }),
 
   updateIncident: (inc) =>
     set((state) => {
