@@ -269,3 +269,19 @@ def test_alerts_and_incidents_rest_endpoints(prod_client):
         res = prod_client.get(path)
         assert res.status_code == 200, f"GET {path} failed: {res.status_code}"
         assert isinstance(res.json(), list)
+
+
+def test_frontend_navigation_routes_and_vercel_spa_rewrites():
+    """Verify frontend navigation routes are defined and vercel.json includes SPA fallback rewrites."""
+    import json
+    vercel_path = PROJECT_ROOT / "frontend" / "vercel.json"
+    assert vercel_path.exists(), "vercel.json must exist"
+    with open(vercel_path, "r") as f:
+        vercel_cfg = json.load(f)
+
+    rewrites = vercel_cfg.get("rewrites", [])
+    has_spa_rewrite = any(
+        r.get("source") in ["/(.*)", "/(.*)/"] and r.get("destination") == "/index.html"
+        for r in rewrites
+    )
+    assert has_spa_rewrite is True, "vercel.json must have SPA wildcard fallback rewrite to /index.html"

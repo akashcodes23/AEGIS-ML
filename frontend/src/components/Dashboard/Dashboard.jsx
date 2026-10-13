@@ -6,6 +6,10 @@ import AlertFeed from './AlertFeed'
 import AttackGraph from './AttackGraph'
 import IncidentCard from './IncidentCard'
 import { getApiUrl } from '../../config/api'
+import { resolveTabFromLocation, TAB_ROUTES, NAV_TABS } from '../../config/navigation'
+import ThreatHunting from '../ThreatHunting/ThreatHunting'
+import EntityGraphView from '../Graph/EntityGraphView'
+import Reports from '../Reports/Reports'
 
 /* ── Stat card ────────────────────────────────────────────────────────────── */
 function StatCard({ label, value, unit = '', accentVar, icon: Icon, delay = 0 }) {
@@ -153,7 +157,28 @@ export default function Dashboard() {
   const alerts = useAlertStore(s => s.alerts)
   const incidents = useAlertStore(s => s.incidents)
   const { connected, connecting, error: wsError, reconnect } = useWebSocket()
+  const [activeTab, setActiveTab] = useState(() => resolveTabFromLocation())
   const [actionError, setActionError] = useState(null)
+
+  const navigateTo = useCallback((tab) => {
+    setActiveTab(tab)
+    const targetPath = TAB_ROUTES[tab] || '/'
+    if (typeof window !== 'undefined' && window.location.pathname !== targetPath) {
+      window.history.pushState({ tab }, '', targetPath)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setActiveTab(resolveTabFromLocation())
+    }
+    window.addEventListener('popstate', handleLocationChange)
+    window.addEventListener('hashchange', handleLocationChange)
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange)
+      window.removeEventListener('hashchange', handleLocationChange)
+    }
+  }, [])
 
   const [bruteForceWarning, setBruteForceWarning] = useState(null)
   const prevAlertCount = useRef(0)
@@ -273,7 +298,11 @@ export default function Dashboard() {
         gap: 32,
       }}>
         {/* Brand */}
-        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+        <div
+          onClick={() => navigateTo('Dashboard')}
+          style={{ display:'flex', alignItems:'center', gap:16, cursor: 'pointer' }}
+          title="Return to AEGIS Dashboard"
+        >
           <div style={{
             width: 48, height: 48, borderRadius: 16,
             background: 'var(--text-primary)',
@@ -294,19 +323,31 @@ export default function Dashboard() {
 
         {/* Navigation */}
         <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
-          {['Dashboard','Threat Hunting','Entity Graph','Reports'].map((tab, i) => (
-            <div key={tab} style={{
-              padding: '8px 20px', borderRadius: 24, fontSize: 14, fontWeight: i === 0 ? 700 : 500,
-              background: i === 0 ? 'var(--bg-page)' : 'transparent',
-              color: i === 0 ? 'var(--text-primary)' : 'var(--text-secondary)',
-              cursor: 'pointer', transition: 'all 0.2s',
-            }}
-              onMouseEnter={e => { if (i !== 0) e.currentTarget.style.color = 'var(--text-primary)' }}
-              onMouseLeave={e => { if (i !== 0) e.currentTarget.style.color = 'var(--text-secondary)' }}
-            >
-              {tab}
-            </div>
-          ))}
+          {NAV_TABS.map((tab) => {
+            const isActive = activeTab === tab
+            const tabId = `nav-${tab.toLowerCase().replace(/\s+/g, '-')}`
+            return (
+              <button
+                key={tab}
+                id={tabId}
+                type="button"
+                onClick={() => navigateTo(tab)}
+                style={{
+                  padding: '8px 20px', borderRadius: 24, fontSize: 14,
+                  fontWeight: isActive ? 700 : 500,
+                  background: isActive ? 'var(--bg-page)' : 'transparent',
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  border: `1px solid ${isActive ? 'var(--border-light)' : 'transparent'}`,
+                  cursor: 'pointer', transition: 'all 0.2s',
+                  outline: 'none',
+                }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = 'var(--text-primary)' }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = 'var(--text-secondary)' }}
+              >
+                {tab}
+              </button>
+            )
+          })}
         </div>
 
         {/* Controls */}
@@ -410,45 +451,56 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Datasets ──────────────────────────────────────────────────────── */}
-      <DatasetPanel currentFile={currentFile} />
+      {/* ── Tab Views ─────────────────────────────────────────────────── */}
+      {activeTab === 'Dashboard' && (
+        <>
+          {/* ── Datasets ──────────────────────────────────────────────────────── */}
+          <DatasetPanel currentFile={currentFile} />
 
-      {/* ── Analysis Complete Banner ─────────────────────────────────────── */}
-      {analysisComplete && (
-        <div className="glass-panel animate-slide-up" style={{
-          padding: '24px 32px', gridColumn: '1 / -1',
-          display: 'flex', alignItems: 'center', gap: 20,
-          background: 'rgba(5, 150, 105, 0.04)',
-          borderColor: 'rgba(5, 150, 105, 0.2)',
-        }}>
-          <CheckCircle size={32} color="var(--accent-success)" strokeWidth={2} />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--text-primary)', marginBottom: 4 }}>
-              Analysis finished. Your network looks secure.
+          {/* ── Analysis Complete Banner ─────────────────────────────────────── */}
+          {analysisComplete && (
+            <div className="glass-panel animate-slide-up" style={{
+              padding: '24px 32px', gridColumn: '1 / -1',
+              display: 'flex', alignItems: 'center', gap: 20,
+              background: 'rgba(5, 150, 105, 0.04)',
+              borderColor: 'rgba(5, 150, 105, 0.2)',
+            }}>
+              <CheckCircle size={32} color="var(--accent-success)" strokeWidth={2} />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Analysis finished. Your network looks secure.
+                </div>
+                <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+                  Successfully processed <span className="mono-font" style={{fontWeight: 600, color: 'var(--text-primary)'}}>{stats.total_events?.toLocaleString() || 0}</span> events. We detected {stats.total_alerts ?? alerts.length} anomalies across your infrastructure.
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-              Successfully processed <span className="mono-font" style={{fontWeight: 600, color: 'var(--text-primary)'}}>{stats.total_events?.toLocaleString() || 0}</span> events. We detected {stats.total_alerts ?? alerts.length} anomalies across your infrastructure.
-            </div>
+          )}
+
+          {/* ── Row 1: Stats ──────────────────────────────────────────────── */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:24 }}>
+            <StatCard delay={150} icon={Activity} label="Network Pulse" value={stats.events_per_second || 0} unit="eps" accentVar="--accent-brand" />
+            <StatCard delay={200} icon={Server} label="Events Processed" value={stats.total_events?.toLocaleString() || 0} accentVar="--accent-info" />
+            <StatCard delay={250} icon={Bell} label="Correlated Incidents" value={stats.total_incidents !== undefined && stats.total_incidents !== null ? stats.total_incidents : (incidents.length || (alerts.length > 0 ? 1 : 0))} unit={alerts.length ? `(${alerts.length} alerts)` : ''} accentVar="--accent-high" />
+            <StatCard delay={300} icon={AlertTriangle} label="False Positives (Unlabelled)" value={falsePosValue} unit={falsePosUnit} accentVar="--accent-critical" />
           </div>
-        </div>
+
+          {/* ── Row 2: Main ───────────────────────────────────────────────── */}
+          <div style={{ display:'grid', gridTemplateColumns:'60fr 40fr', gap:24, minHeight: 600 }}>
+            <AttackGraph />
+            <AlertFeed />
+          </div>
+
+          {/* ── Row 3: Incident detail ────────────────────────────────────── */}
+          <IncidentCard />
+        </>
       )}
 
-      {/* ── Row 1: Stats ──────────────────────────────────────────────── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:24 }}>
-        <StatCard delay={150} icon={Activity} label="Network Pulse" value={stats.events_per_second || 0} unit="eps" accentVar="--accent-brand" />
-        <StatCard delay={200} icon={Server} label="Events Processed" value={stats.total_events?.toLocaleString() || 0} accentVar="--accent-info" />
-        <StatCard delay={250} icon={Bell} label="Correlated Incidents" value={stats.total_incidents !== undefined && stats.total_incidents !== null ? stats.total_incidents : (incidents.length || (alerts.length > 0 ? 1 : 0))} unit={alerts.length ? `(${alerts.length} alerts)` : ''} accentVar="--accent-high" />
-        <StatCard delay={300} icon={AlertTriangle} label="False Positives (Unlabelled)" value={falsePosValue} unit={falsePosUnit} accentVar="--accent-critical" />
-      </div>
+      {activeTab === 'Threat Hunting' && <ThreatHunting />}
 
-      {/* ── Row 2: Main ───────────────────────────────────────────────── */}
-      <div style={{ display:'grid', gridTemplateColumns:'60fr 40fr', gap:24, minHeight: 600 }}>
-        <AttackGraph />
-        <AlertFeed />
-      </div>
+      {activeTab === 'Entity Graph' && <EntityGraphView />}
 
-      {/* ── Row 3: Incident detail ────────────────────────────────────── */}
-      <IncidentCard />
+      {activeTab === 'Reports' && <Reports />}
     </div>
   )
 }

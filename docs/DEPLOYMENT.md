@@ -135,6 +135,16 @@ curl -s -X POST "https://<your-render-backend>.onrender.com/api/ingest/event?det
 3. Verify connection to `wss://<your-render-backend>.onrender.com/ws/live` shows status `101 Switching Protocols`.
 4. The dashboard header should display "LIVE STREAM" with active connection indicator.
 
+### 4.4 Frontend SPA Navigation Routes
+The frontend features full Single Page Application (SPA) URL-based navigation with browser history support (Back/Forward) and direct URL loading:
+
+| Navigation Item | Primary Route | Supported Route Aliases | Description |
+|:---|:---|:---|:---|
+| **Dashboard** | `/` | `/dashboard`, `#/dashboard` | Main telemetry overview, active datasets, stat counters, mini graph, alert stream, and incident inspector |
+| **Threat Hunting** | `/threat-hunting` | `/hunting`, `#/threat-hunting` | Interactive threat query engine, severity/layer/status filtering, MITRE ATT&CK tracking, and host isolation |
+| **Entity Graph** | `/entity-graph` | `/graph`, `#/entity-graph` | Dedicated Cytoscape attack topology canvas, lateral pivot investigation, layout controls, and node drawer |
+| **Reports** | `/reports` | `/report`, `#/reports` | Executive security audit report, model calibration verification, vector distribution, and JSON/CSV export |
+
 ---
 
 ## 5. Public Deployment Security & Safeguards
