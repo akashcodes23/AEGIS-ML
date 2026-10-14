@@ -454,14 +454,25 @@ def evaluate_leakage_resistant_holdouts(
     cut = int(len(valid_time_events) * 0.80)
     time_tr = valid_time_events[:cut]
     time_te = valid_time_events[cut:]
-    time_tr_labels = [
-        e.attack_type or (DATASET_LABEL_MAP.get(e.raw_label.lower()) if e.raw_label else "benign") or "benign"
-        for e in time_tr
-    ]
-    time_te_labels = [
-        e.attack_type or (DATASET_LABEL_MAP.get(e.raw_label.lower()) if e.raw_label else "benign") or "benign"
-        for e in time_te
-    ]
+    def _safe_extract_label(e):
+        if e.attack_type and e.attack_type in CANONICAL_CLASSES:
+            return e.attack_type
+        if e.raw_label:
+            cleaned = e.raw_label.strip().lower()
+            if cleaned in ("", "none", "nan", "null"):
+                return "benign"
+            mapped = DATASET_LABEL_MAP.get(cleaned)
+            if mapped and mapped in CANONICAL_CLASSES:
+                return mapped
+            return None
+        return "benign"
+
+    time_tr_filtered = [(e, _safe_extract_label(e)) for e in time_tr if _safe_extract_label(e) is not None]
+    time_te_filtered = [(e, _safe_extract_label(e)) for e in time_te if _safe_extract_label(e) is not None]
+    time_tr = [item[0] for item in time_tr_filtered]
+    time_tr_labels = [item[1] for item in time_tr_filtered]
+    time_te = [item[0] for item in time_te_filtered]
+    time_te_labels = [item[1] for item in time_te_filtered]
 
     temporal_analysis = {
         "split_strategy": "chronological_80_20_cut",
