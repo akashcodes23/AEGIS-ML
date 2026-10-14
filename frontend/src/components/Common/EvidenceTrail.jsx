@@ -46,9 +46,11 @@ export default memo(function EvidenceTrail({ alert, incident }) {
             }}
             aria-hidden="true"
           />
-          <h4 style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          <div
+            style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: 0.8 }}
+          >
             Evidence Provenance Trail
-          </h4>
+          </div>
         </div>
         <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
           {chain.filter(c => c.status === 'present').length}/{chain.length} verifiable links
@@ -236,7 +238,7 @@ export default memo(function EvidenceTrail({ alert, incident }) {
                   )}
 
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: isPresent ? 'var(--text-primary)' : isPartial ? 'var(--severity-high-fg)' : 'var(--text-muted)' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: isPresent ? 'var(--text-primary)' : isPartial ? 'var(--severity-high-fg)' : 'var(--text-secondary)' }}>
                       {idx + 1}. {link.label}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1 }}>
@@ -262,7 +264,7 @@ export default memo(function EvidenceTrail({ alert, incident }) {
                         ? 'var(--accent-cyan)'
                         : isPartial
                           ? 'var(--severity-high-fg)'
-                          : 'var(--text-muted)',
+                          : 'var(--text-secondary)',
                     }}
                   >
                     {link.status}

@@ -18,6 +18,7 @@ const useAlertStore = create((set) => ({
   scrubberTime: null,
   liveAlertBuffer: [],
   focusIncidentId: null,
+  huntingFocus: null,
 
   setAlerts: (alerts) =>
     set({ alerts: Array.isArray(alerts) ? alerts.slice(0, 200) : [] }),
@@ -28,6 +29,10 @@ const useAlertStore = create((set) => ({
   setScrubberTime: (t) => set({ scrubberTime: t }),
 
   setFocusIncidentId: (id) => set({ focusIncidentId: id }),
+
+  setHuntingFocus: (focus) => set({ huntingFocus: focus }),
+
+  clearHuntingFocus: () => set({ huntingFocus: null }),
 
   jumpToLatest: () =>
     set((state) => {
@@ -101,6 +106,7 @@ const useAlertStore = create((set) => ({
       scrubberTime: null,
       liveAlertBuffer: [],
       focusIncidentId: null,
+      huntingFocus: null,
       stats: {
         total_events: 0,
         events_per_second: 0,

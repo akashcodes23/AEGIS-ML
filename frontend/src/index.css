@@ -170,3 +170,79 @@ html, body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Executive Briefing Print Layout ──────────────────────── */
+@media print {
+  @page {
+    margin: 1.5cm;
+    size: A4 portrait;
+  }
+
+  body, html {
+    background: #ffffff !important;
+    color: #0b0f19 !important;
+  }
+
+  /* Hide background elements, navigation, headers, ribbons, app root */
+  .aegis-app-root,
+  header,
+  nav,
+  .aegis-shell-header,
+  .aegis-nav-dock,
+  .skip-to-content,
+  .no-print,
+  #ambient-canvas,
+  .ambient-field-fallback,
+  .synthetic-disclosure-ribbon,
+  .aegis-status-area,
+  main {
+    display: none !important;
+  }
+
+  /* Make briefing overlay and container take full print sheet */
+  .briefing-modal-overlay {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    display: block !important;
+  }
+
+  .briefing-document-container {
+    max-width: 100% !important;
+    max-height: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .briefing-print-body {
+    padding: 0 !important;
+    color: #0f172a !important;
+  }
+
+  .briefing-synthetic-cover-banner {
+    background: #f5f3ff !important;
+    border: 1px solid #c084fc !important;
+    color: #6b21a8 !important;
+  }
+
+  .briefing-print-page-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex !important;
+    justify-content: space-between;
+    font-size: 8pt;
+    color: #64748b !important;
+    border-top: 1px solid #cbd5e1 !important;
+    padding-top: 6px;
+    background: #ffffff;
+  }
+}

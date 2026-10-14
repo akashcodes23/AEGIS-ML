@@ -338,6 +338,8 @@ export default memo(function AttackGraph() {
   const alerts = useAlertStore(s => s.alerts)
   const incidents = useAlertStore(s => s.incidents)
   const selectedIncidentId = useAlertStore(s => s.selectedIncident || s.focusIncidentId)
+  const huntingFocus = useAlertStore(s => s.huntingFocus)
+  const clearHuntingFocus = useAlertStore(s => s.clearHuntingFocus)
   const scrubberTime = useAlertStore(s => s.scrubberTime)
   const selectIncident = useAlertStore(s => s.selectIncident)
   const setFocusIncidentId = useAlertStore(s => s.setFocusIncidentId)
@@ -638,6 +640,60 @@ export default memo(function AttackGraph() {
     }
   }, [selectedIncidentId, incidents, reducedMotion, applyDynamicStyles])
 
+  /* ── Hunting-Driven Graph Focus Effect (Stage 4) ── */
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+
+    // If an incident is specifically selected, that takes precedence, or if huntingFocus is null/inactive
+    if (selectedIncidentId || !huntingFocus || !huntingFocus.active) {
+      if (!selectedIncidentId) {
+        applyDynamicStyles(cy)
+      }
+      return
+    }
+
+    const matchedIds = new Set(huntingFocus.matchedEntityIds || [])
+    const targetNodes = cy.nodes().filter(n => matchedIds.has(n.id()))
+
+    if (targetNodes.length > 0) {
+      // 1. Camera Glide or reduced-motion snap
+      if (reducedMotion) {
+        cy.fit(targetNodes, 40)
+      } else {
+        cy.animate({
+          fit: { eles: targetNodes, padding: 50 },
+          duration: 420,
+          easing: 'ease-in-out-cubic',
+        })
+      }
+
+      // 2. Dim non-matching nodes, highlight matches
+      cy.batch(() => {
+        cy.nodes().forEach(n => {
+          if (matchedIds.has(n.id())) {
+            n.style({ opacity: 1.0, 'border-width': 3.5 })
+          } else {
+            n.style({ opacity: 0.15 })
+          }
+        })
+
+        // 3. Keep evidence-backed edges only
+        cy.edges().forEach(e => {
+          const isDirectInvolved = matchedIds.has(e.source().id()) && matchedIds.has(e.target().id())
+          if (isDirectInvolved) {
+            e.style({ opacity: 1.0, width: 3.0 })
+          } else {
+            e.style({ opacity: 0.05 })
+          }
+        })
+      })
+    } else {
+      // If no entities match, do NOT zoom or dim to an empty graph
+      applyDynamicStyles(cy)
+    }
+  }, [huntingFocus, selectedIncidentId, reducedMotion, applyDynamicStyles])
+
   /* ── Historical Scrubber Filtering Effect ── */
   useEffect(() => {
     const cy = cyRef.current
@@ -853,23 +909,100 @@ export default memo(function AttackGraph() {
       {/* ── Spatial Depth Scale Legend ── */}
       <DepthLegend />
 
-      {/* ── Canvas Container ── */}
+      {/* ── Canvas Container with Floating Scope Summary ── */}
       <div
-        ref={containerRef}
-        role="region"
-        aria-label="Interactive Cytoscape Entity Graph"
-        tabIndex="0"
         style={{
+          position: 'relative',
           flex: 1,
           width: '100%',
           minHeight: 460,
-          background: 'var(--surface-0)',
-          borderRadius: 12,
-          border: '1px solid var(--border-hairline)',
-          position: 'relative',
-          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
         }}
-      />
+      >
+        {/* Scope Summary Banner for Hunting Focus */}
+        {huntingFocus && huntingFocus.active && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position: 'absolute',
+              top: 14,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 100,
+              background: 'var(--surface-3)',
+              border: '1px solid var(--border-medium)',
+              borderRadius: 9999,
+              padding: '6px 16px',
+              boxShadow: 'var(--shadow-elevation-3)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              fontSize: 12,
+              color: 'var(--text-primary)',
+              backdropFilter: 'var(--glass-blur)',
+              WebkitBackdropFilter: 'var(--glass-blur)',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background:
+                    huntingFocus.hasMatches && huntingFocus.matchedInGraphCount > 0
+                      ? 'var(--accent-cyan)'
+                      : 'var(--text-tertiary)',
+                  boxShadow:
+                    huntingFocus.hasMatches && huntingFocus.matchedInGraphCount > 0
+                      ? '0 0 8px var(--accent-cyan)'
+                      : 'none',
+                }}
+              />
+              {huntingFocus.hasMatches && huntingFocus.matchedInGraphCount > 0
+                ? `Focused on ${huntingFocus.matchedInGraphCount} of ${nodeCount} entities matching: ${huntingFocus.filterSummary}`
+                : `No entities match active hunting filters (${huntingFocus.filterSummary}). Graph remains unfocused.`}
+            </span>
+            <button
+              type="button"
+              onClick={clearHuntingFocus}
+              aria-label="Clear hunting focus"
+              style={{
+                background: 'var(--surface-1)',
+                border: '1px solid var(--border-hairline)',
+                borderRadius: 9999,
+                padding: '3px 10px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all var(--duration-quick) ease',
+              }}
+            >
+              ✕ Clear focus
+            </button>
+          </div>
+        )}
+
+        <div
+          ref={containerRef}
+          role="region"
+          aria-label="Interactive Cytoscape Entity Graph"
+          tabIndex="0"
+          style={{
+            flex: 1,
+            width: '100%',
+            minHeight: 460,
+            background: 'var(--surface-0)',
+            borderRadius: 12,
+            border: '1px solid var(--border-hairline)',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        />
+      </div>
 
       {/* ── Tooltip Dossier ── */}
       <Tooltip node={tooltip?.node} position={tooltip?.position || { x: 0, y: 0 }} />

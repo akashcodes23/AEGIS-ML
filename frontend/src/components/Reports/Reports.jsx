@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import {
   FileText, Download, ShieldCheck, ShieldAlert, Cpu, CheckCircle2,
-  AlertTriangle, Database, Activity, Layers, ExternalLink, HardDrive
+  AlertTriangle, Database, Activity, Layers, ExternalLink, HardDrive, Printer
 } from 'lucide-react'
 import useAlertStore from '../../store/alertStore'
 import { getApiUrl } from '../../config/api'
+
+const BriefingModal = lazy(() => import('./BriefingModal'))
 
 export default function Reports() {
   const stats = useAlertStore(s => s.stats)
@@ -12,6 +14,7 @@ export default function Reports() {
   const incidents = useAlertStore(s => s.incidents)
 
   const [healthData, setHealthData] = useState(null)
+  const [selectedBriefingIncident, setSelectedBriefingIncident] = useState(null)
 
   useEffect(() => {
     fetch(getApiUrl('/api/health'))
@@ -173,6 +176,20 @@ export default function Reports() {
               }}
             >
               <Download size={16} /> Export Alert Log (CSV)
+            </button>
+
+            <button
+              onClick={() => setSelectedBriefingIncident(incidents[0] || alerts[0] || { incident_id: 'INC-AUDIT', threat_type: 'Security Audit Baseline', severity: 'high' })}
+              id="export-executive-briefing"
+              style={{
+                padding: '10px 18px', borderRadius: 12, fontSize: 13, fontWeight: 700,
+                background: 'rgba(0, 240, 255, 0.1)', color: 'var(--accent-cyan)',
+                border: '1px solid var(--accent-cyan)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s',
+                boxShadow: '0 2px 8px rgba(0, 240, 255, 0.15)'
+              }}
+            >
+              <Printer size={16} /> Executive Briefing (Print/PDF)
             </button>
           </div>
         </div>
@@ -383,6 +400,21 @@ export default function Reports() {
           </div>
         )}
       </div>
+
+      {/* ── Executive Incident Briefing Modal (Printable) ─────────────── */}
+      {selectedBriefingIncident && (
+        <Suspense fallback={null}>
+          <BriefingModal
+            isOpen={Boolean(selectedBriefingIncident)}
+            onClose={() => setSelectedBriefingIncident(null)}
+            incident={selectedBriefingIncident}
+            alerts={alerts}
+            isSynthetic={Boolean(stats.current_file?.includes('synthetic') || stats.current_file?.includes('behavioral') || !stats.current_file)}
+            sessionAlertsCount={alerts.length}
+            graphSnapshot={typeof window !== 'undefined' && window.__cytoscape_instance__ ? window.__cytoscape_instance__.png({ full: false, scale: 2, bg: '#07090e' }) : null}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

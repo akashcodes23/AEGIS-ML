@@ -207,15 +207,102 @@ The Temporal Scrubber enables temporal replay of how an incident unfolded over t
 
 ---
 
-## 7. Architectural Extension Points (Roadmap to Stage 4)
+## 7. Stage 4: Command Palette, Hunting Focus, and Executive Briefing Reports
 
-1. **Command Palette (`Cmd+K` / `Ctrl+K`)**:
-   - Universal fast-action modal utilizing Elevation 4 tokens and keyboard navigation.
-   - Jump to incidents, filter by MITRE technique, toggle 3D ambient atmosphere, or jump to temporal landmarks.
-2. **Threat Hunting Query Scene Changes**:
-   - Dynamic, subtle background field transitions and camera shifts in response to empirical query filters (e.g. pivoting to C2 cluster zooms into high-entropy outbound nodes).
-3. **Skippable Cinematic Briefing Intro**:
-   - Optional atmospheric entry sequence for SOC presentations, respecting `prefers-reduced-motion` and skippable via `Escape`.
-4. **Briefing-Mode Report Covers**:
-   - High-fidelity PDF/HTML executive briefing report covers with cryptographic hash verification and spatial evidence diagrams.
+### 7.1 Command Palette Architecture (`CommandPalette` & `searchPalette`)
+The Command Palette (`Cmd+K` / `Ctrl+K`) serves as a keyboard-first navigation and rapid triage launcher across real application state:
+
+- **Pure Functional Search & Ranking**: Powered by `searchPalette(query, sources)` with zero runtime fuzzy-search dependencies. The search algorithm computes deterministic prefix, word-boundary, and substring match scores, ranking exact matches first, followed by title matches, entity identifiers, and metadata.
+- **Included Scope (Real State Only)**:
+  - **Navigation**: Instant routing to Dashboard, Threat Hunting, Entity Graph, and Reports.
+  - **Incidents & Alerts**: Searchable by ID, title, severity, threat type, entity, and kill-chain stage across active store state. Truthfully displays result counts (e.g. `"Showing 20 of 42"`).
+  - **Entity Jump**: Jump directly to an entity in the graph, initiating camera focus and node selection.
+  - **Temporal Scrubber Controls**: "Jump to Latest" (flushing the live buffer) and step forward/backward controls.
+  - **Display Settings**: Quick toggle for "Reduce Visual Effects".
+- **Excluded Actions by Design**:
+  - Destructive and privileged operations (host containment, IP blocking, model reloading, admin settings) are **strictly excluded** from the command palette.
+  - *Rationale*: Safety and accountability. High-impact remediation actions must remain protected behind their existing contextual UI, multi-factor verification, and explicit confirmation modals.
+- **Elevation 4 Token Styling**:
+  - Built using `--surface-4` (`#202d47`), subtle backdrop blur, hairline border (`rgba(255, 255, 255, 0.12)`), and high-contrast focus rings (`var(--accent-cyan)`).
+- **Accessibility & Keyboard Standard (WAI-ARIA 1.2 Combobox/Listbox)**:
+  - Implements `role="dialog"`, `aria-modal="true"`, and `role="combobox"` linked to `role="listbox"` via `aria-controls` and `aria-activedescendant`.
+  - Full keyboard trapping with active focus management; focus restores cleanly to the initiating DOM trigger upon closing.
+  - Navigation keys (`ArrowDown`, `ArrowUp`, `Home`, `End`, `Enter`, `Escape`) fully supported.
+  - Polite live region (`aria-live="polite"`) announces result counts dynamically for screen reader operators.
+  - Dual access: Global keyboard shortcut (`⌘K` / `Ctrl+K`) plus a visible header shell trigger button for discoverability and pointer-only users. Input typing is never hijacked unless accompanied by meta keys.
+
+---
+
+### 7.2 Strict Decorative Isolation: "The Ambient Canvas Never Reacts to Data"
+- **Architectural Guardrail**: The 3D Three.js particle field (`AmbientField`) is strictly an atmospheric depth layer and **must NEVER react to data, alerts, queries, or user filters**.
+- **Rationale**: Visual properties in AEGIS encode empirical ground truth ("Depth is Data"). If ambient background particles pulsed, shifted color, or accelerated in response to threat queries, operators could misinterpret decorative motion as empirical telemetry.
+- **Data-Bearing Component Isolation**: All visual responses to threat hunting filters, incident selection, and evidence exploration are strictly contained within real-data components (Entity Graph, Evidence Trail, and Alert Feed).
+
+---
+
+### 7.3 Hunting-Driven Graph Focus
+Connecting Threat Hunting query state directly to the Entity Graph allows operators to visually isolate matching entities while preserving spatial context:
+
+- **State Integration**: Ingests active filters (`searchQuery`, `selectedSev`, `selectedLayer`, `selectedStatus`, `selectedThreatType`) from `useAlertStore`.
+- **Spatial Attenuation**:
+  - Matched entities retain full opacity (`1.0`) and receive prominent accent rings.
+  - Non-matching entities and irrelevant nodes are dimmed to atmospheric recession (`opacity: 0.18`).
+  - Edges between non-matching nodes are dimmed; only evidence-backed edges connected to matched entities remain illuminated.
+- **Camera Glide & Reduced Motion**:
+  - Under standard motion: smoothly fits the camera to matched nodes (`cy.animate({ fit: { eles, padding: 60 } })` over `600ms`).
+  - Under reduced motion: instant viewport fit (`0ms` duration).
+- **Honest Scope Summary Banner**:
+  - When matches exist: displays a prominent top-pinned badge:
+    > *"Focused on N of M entities matching: [Filter Criteria]"* accompanied by an explicit `✕ Clear focus` control.
+  - When zero entities match: displays a truthful notice:
+    > *"No entities match active hunting filters ([Filter Criteria]). Graph remains unfocused."*
+    The system NEVER dims or zooms into an empty void.
+
+---
+
+### 7.4 Executive Briefing Report Export (`BriefingModal` & `buildBriefingData`)
+The Executive Briefing provides an auditable, high-level briefing document for leadership and external stakeholders without modifying existing JSON or CSV export pipelines:
+
+- **Print-Optimized HTML (`@media print`)**:
+  - Renders a clean, print-ready document utilizing native browser print (`window.print()`).
+  - Requires **zero external PDF libraries**, keeping runtime dependencies lean.
+  - Full `@media print` stylesheet isolates the briefing document, hiding application shells, navigation docks, and canvas backgrounds, applying solid `#ffffff` background with `#0f172a` primary text for crisp readability and zero ink waste.
+- **Empirical Content Structure**:
+  - Executive header with incident ID, title, severity, kill-chain progression, and MITRE ATT&CK techniques.
+  - Timeline sequence differentiating verified **Observations** from analytical **Hypotheses**.
+  - Complete Stage 3 Evidence Provenance Chain, faithfully preserving dashed gaps (`absent` links) and qualified explanations.
+  - Stage 2 Calibrated vs. Uncalibrated confidence status.
+  - Embedded topology snapshot using Cytoscape.js built-in PNG rasterizer (`cy.png()`).
+- **Mandatory Synthetic Demo Disclosures**:
+  - When operating on synthetic or replayed data, the cover carries a prominent banner:
+    > *"Synthetic demo data. Results do not reflect real-world detection accuracy."*
+  - In printed format, this exact disclosure is permanently repeated across the running footer of every printed page.
+- **Audit Metadata & Integrity Checksum**:
+  - Displays generation timestamp, data source mode, timestamp basis (Event Time vs. Ingest Time), application version/commit, and session alert scope.
+  - Computes a SHA-256 digest of the canonical briefing JSON payload using Web Crypto `SubtleCrypto`.
+  - **Strict Naming Standard**: The checksum is labeled exactly as:
+    > *"Integrity checksum (detects accidental changes; not a digital signature)"*
+  - Prohibition: The system NEVER refers to this checksum as "cryptographic validation," "tamper-proof," or "digitally signed."
+  - Graceful Fallback: In environments lacking `SubtleCrypto`, the checksum is omitted with an explicit disclosure (*"SubtleCrypto unavailable in this environment; checksum omitted"*).
+- **Preservation of Existing Pipelines**: All pre-existing incident JSON and CSV exports remain completely untouched and operational.
+
+---
+
+## 8. Architectural Extension Points (Roadmap to Stage 5)
+
+1. **Skippable First-Run Cinematic Intro**:
+   - High-impact atmospheric entry sequence for executive SOC demonstrations.
+   - Strict honesty constraint: Zero fake terminal "booting" text or fabricated system checks; purely decorative spatial emergence.
+   - Fully skippable via `Escape` key, click, or immediate bypass when `prefers-reduced-motion` is detected.
+2. **Mid-Range & Constrained Device Optimization Pass**:
+   - Dynamic canvas resolution scaling and particle count reduction for Intel UHD and mobile GPUs.
+   - Frame budget throttling to ensure stable $60\text{FPS}$ across lower-tier hardware.
+3. **Comprehensive Accessibility Audit**:
+   - Repo-wide screen reader verification across VoiceOver and NVDA.
+   - Comprehensive high-contrast theme validation.
+4. **Interactive Walkthrough & Screenshot Assets**:
+   - Automated visual regression and demonstration captures for README documentation.
+5. **Stacked Branch Merge Strategy**:
+   - Structured rebase and merge order:
+     `feat/stage1-cinematic-foundation` → `feat/stage2-depth-confidence` → `feat/stage3-evidence-scrubber` → `feat/stage4-palette-briefing` → `main`.
 

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, useRef } from 'react'
-import { Activity, Bell, AlertTriangle, Server, Database, CheckCircle } from 'lucide-react'
+import { useCallback, useEffect, useState, useRef, useMemo, lazy, Suspense } from 'react'
+import { Activity, Bell, AlertTriangle, Server, Database, CheckCircle, Search } from 'lucide-react'
 import useAlertStore from '../../store/alertStore'
 import useWebSocket from '../../hooks/useWebSocket'
 import useBackendHealth from '../../hooks/useBackendHealth'
+import useReducedMotion, { setReducedVisualEffectsPreference } from '../../hooks/useReducedMotion'
 import AlertFeed from './AlertFeed'
 import AttackGraph from './AttackGraph'
 import IncidentCard from './IncidentCard'
@@ -18,6 +19,8 @@ import NavigationDock from '../Navigation/NavigationDock'
 import StatusArea from '../Navigation/StatusArea'
 import TemporalScrubber from '../Common/TemporalScrubber'
 import { isSyntheticData } from '../../utils/dataMode'
+
+const CommandPalette = lazy(() => import('../Common/CommandPalette'))
 
 /* ── Stat card ────────────────────────────────────────────────────────────── */
 function StatCard({ label, value, unit = '', accentVar, icon, delay = 0 }) {
@@ -193,7 +196,54 @@ export default function Dashboard() {
   }, [])
 
   const [bruteForceWarning, setBruteForceWarning] = useState(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const paletteTriggerRef = useRef(null)
   const prevAlertCount = useRef(0)
+
+  const graphData = useAlertStore(s => s.graphData)
+  const selectIncident = useAlertStore(s => s.selectIncident)
+  const setFocusIncidentId = useAlertStore(s => s.setFocusIncidentId)
+  const jumpToLatest = useAlertStore(s => s.jumpToLatest)
+  const reducedVisualEffects = useReducedMotion()
+
+  // Global Ctrl/Cmd+K shortcut for launcher
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // Command palette data sources derived from real application store
+  const paletteSources = useMemo(() => {
+    return {
+      routes: [
+        { name: 'Dashboard', description: 'Overview metrics, live topology, and correlated incidents' },
+        { name: 'Threat Hunting', description: 'Triage detections, investigate hypotheses, and filter entities' },
+        { name: 'Entity Graph', description: 'Full spatial topology, lateral pivot links, and blast radius' },
+        { name: 'Reports', description: 'Executive incident briefings, audit exports, and CSV logs' },
+      ],
+      actions: [
+        { id: 'jump-latest', label: 'Jump to Latest Telemetry', category: 'Time', actionKey: 'jumpToLatest', description: 'Exit temporal replay and restore real-time live alert stream' },
+        { id: 'toggle-fx', label: 'Toggle Visual Effects Mode', category: 'Display', actionKey: 'toggleFx', description: 'Switch between 3D Spatial atmosphere and Reduced Visual Effects' },
+      ],
+      incidents,
+      alerts,
+      entities: (graphData?.nodes || []).map(n => ({ id: n.id, node_type: n.node_type, stage: n.current_kill_chain_stage })),
+    }
+  }, [incidents, alerts, graphData])
+
+  const handlePaletteAction = useCallback((actionKey) => {
+    if (actionKey === 'jumpToLatest') {
+      jumpToLatest()
+    } else if (actionKey === 'toggleFx') {
+      setReducedVisualEffectsPreference(!reducedVisualEffects)
+    }
+  }, [jumpToLatest, reducedVisualEffects])
 
   useEffect(() => {
     if (alerts.length > prevAlertCount.current) {
@@ -350,8 +400,47 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Floating Spatial Navigation Dock */}
-          <NavigationDock activeTab={activeTab} onNavigate={navigateTo} />
+          {/* Navigation Dock with Quick Jump Launcher Trigger */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <NavigationDock activeTab={activeTab} onNavigate={navigateTo} />
+            <button
+              ref={paletteTriggerRef}
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Open Command Palette (Cmd+K)"
+              title="Open Command Palette (Cmd+K)"
+              className="aegis-palette-trigger"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 14px',
+                background: 'var(--surface-1)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 9999,
+                color: 'var(--text-secondary)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: 'var(--shadow-elevation-1)',
+                transition: 'all var(--duration-quick) var(--ease-standard)',
+              }}
+            >
+              <Search size={14} color="var(--accent-cyan)" />
+              <span>Search</span>
+              <kbd style={{
+                fontSize: 10,
+                fontFamily: 'var(--font-mono)',
+                padding: '2px 5px',
+                borderRadius: 4,
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border-hairline)',
+                color: 'var(--text-tertiary)',
+              }}>
+                ⌘K
+              </kbd>
+            </button>
+          </div>
 
           {/* Real Telemetry Status Area */}
           <StatusArea
@@ -471,6 +560,36 @@ export default function Dashboard() {
           {activeTab === 'Reports' && <Reports />}
         </main>
       </div>
+
+      {/* ── Command Palette (Lazy Chunk) ─────────────────────────────── */}
+      {paletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            isOpen={paletteOpen}
+            onClose={() => setPaletteOpen(false)}
+            triggerRef={paletteTriggerRef}
+            onNavigate={(tab) => {
+              navigateTo(tab)
+              setPaletteOpen(false)
+            }}
+            onSelectIncident={(id) => {
+              selectIncident(id)
+              navigateTo('Dashboard')
+              setPaletteOpen(false)
+            }}
+            onFocusEntity={(entityId) => {
+              setFocusIncidentId(entityId)
+              navigateTo('Entity Graph')
+              setPaletteOpen(false)
+            }}
+            onAction={(actionKey) => {
+              handlePaletteAction(actionKey)
+              setPaletteOpen(false)
+            }}
+            sources={paletteSources}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
