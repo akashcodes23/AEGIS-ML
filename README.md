@@ -13,10 +13,10 @@ An asynchronous cyber defense platform that ingests heterogeneous security telem
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-Dashboard-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 [![scikit-learn](https://img.shields.io/badge/scikit--learn-RF%20%2B%20IF-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org)
-[![Tests](https://img.shields.io/badge/tests-336%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-345%20passing-brightgreen)](tests/)
 [![Release](https://img.shields.io/badge/release-v1.0.0--rc.1-blue)](CHANGELOG.md)
 
-[Quick Start](#-quick-start) · [Architecture](#-architecture-overview) · [Detection & Correlation](#-detection--correlation-pipeline) · [SOC Views](#-soc-analyst-views) · [API Endpoints](#-api--security-endpoints) · [Evaluation](#-evaluation-methodology--results) · [Honest Scope & Limitations](#-known-limitations--honest-scope)
+[Quick Start](#-quick-start) · [Architecture](#-architecture-overview) · [Detection & Correlation](#-detection--correlation-pipeline) · [Model Evidence](#-model-evidence--detection-validation-stage-6) · [Visual Tour](#-visual-tour-stage-15-interface) · [Performance](#-performance--benchmark-results) · [Honest Scope & Limitations](#-known-limitations--honest-scope)
 
 </div>
 
@@ -25,7 +25,7 @@ An asynchronous cyber defense platform that ingests heterogeneous security telem
 ## 📌 Project Status & Empirical Disclosure
 
 **Current Stage: Release Candidate 1 (`v1.0.0-rc.1`)**  
-AEGIS-ML features an end-to-end detection, probability calibration, and incident correlation pipeline verified across **336 passing automated tests**.
+AEGIS-ML features an end-to-end detection, probability calibration, and incident correlation pipeline verified across **345 passing automated tests**.
 
 > [!IMPORTANT]
 > **Synthetic Demo Data Disclosure:**  
@@ -204,6 +204,57 @@ npm --prefix frontend run build
 ```
 
 ---
+
+## 📊 Model Evidence & Detection Validation (Stage 6)
+
+The model evidence establishes what the AEGIS-ML detector can and cannot do, measured honestly under a pre-registered protocol. All figures below were generated from a single deterministic evaluation run on held-out test data partitioned strictly by scenario instance (`scenario_id`, zero scenario overlap). Preprocessing, baselines, scalers, SMOTE resampling, and probability calibration were fitted strictly on training or validation partitions.
+
+For complete protocol specifications and detailed results, see:
+- Pre-registered Protocol: [`docs/evaluation.md`](docs/evaluation.md)
+- Complete Results & Tables: [`docs/evaluation/RESULTS.md`](docs/evaluation/RESULTS.md)
+- Formal Model Card: [`docs/model-card.md`](docs/model-card.md)
+
+### 1. Headline Detection Results (Synthetic Scenario Benchmark)
+*Dataset: `behavioral_diversity_labeled.jsonl` (SHA-256: `1a8967f3...`) | Split: 70% Train (4,155 ev / 80 sc), 15% Val (676 ev / 17 sc), 15% Test (886 ev / 19 sc)*
+
+| Metric | Point Estimate | 95% Group-Bootstrap Confidence Interval | Interpretation |
+|---|---|---|---|
+| **Macro F1** | **0.9866** | [0.7803, 0.9987] | Unweighted harmonic mean across all 5 classes |
+| **Weighted F1** | **0.9943** | — | Test accuracy weighted by class support |
+| **Benign FPR (Argmax)** | **0.0024** | [0.0000, 0.0097] | 1 false positive out of 419 true benign test samples |
+| **Alerts / 1,000,000 Benign Flows** | **2,386.63** | — | Operational false alarm volume at argmax threshold |
+| **Benign FPR (Operational $\tau=0.40$)** | **0.0024** | — | Evaluated at application alert threshold `CONFIDENCE_ALERT_MIN=0.40` |
+| **Expected Calibration Error (ECE)** | **0.0011** | [0.0003, 0.0120] | Multi-class calibration error across 10 probability bins |
+| **Multi-class Brier Score** | **0.0109** | — | Mean squared probability forecast error |
+
+### 2. Comparative Baseline Analysis
+| Model / Pipeline Configuration | Macro F1 | Weighted F1 | Bal. Acc | Benign FPR | ECE | Brier |
+|---|---|---|---|---|---|---|
+| 1. Majority Class Dummy | 0.1284 | 0.3037 | 0.2000 | 0.0000 | 0.5271 | 1.0542 |
+| 2. L2 Logistic Regression (Scaled 48) | 0.8644 | 0.9044 | 0.9556 | 0.2220 | 0.0709 | 0.1715 |
+| 3. Untuned Random Forest (100 Trees, Raw) | 0.8703 | 0.9270 | 0.9609 | 0.1957 | 0.1060 | 0.1218 |
+| 4. Full AEGIS-ML (Balanced RF + SMOTE, Raw) | 0.8750 | 0.9310 | 0.9632 | 0.1838 | 0.1141 | 0.1144 |
+| **5. Full AEGIS-ML (Balanced RF + SMOTE + Isotonic Cal.)** | **0.9866** | **0.9943** | **0.9810** | **0.0024** | **0.0011** | **0.0109** |
+
+### 3. Zero-Day Generalization (Leave-One-Attack-Type-Out)
+Iteratively removing attack classes from training reveals that the supervised classifier does not generalize across unobserved attack archetypes:
+- **`data_exfiltration` held out:** 100.0% escape as benign.
+- **`lateral_movement` held out:** 94.3% escape as benign (5.7% misclassified as C2).
+- **`brute_force` held out:** 92.4% escape as benign (7.6% misclassified as C2).
+- **`c2_beaconing` held out:** 44.7% escape as benign, 55.3% misclassified as data exfiltration; the unsupervised anomaly layer successfully flagged **38.3%** of unseen C2 instances.
+
+### 4. External Network Flow Benchmark (CIC-IDS2017 Status)
+| Property | Status | Detail |
+|---|---|---|
+| **Dataset Status** | `BLOCKED_AWAITING_LOCAL_COPY` | Interactive registration required by UNB; automated redistribution prohibited |
+| **Local Mirror** | Absent | `datasets/cicids2017/` unpopulated |
+| **Feature Gap** | 17 of 48 features missing (35.4%) | CICFlowMeter lacks host process names, user accounts, and socket telemetry |
+| **Fabrication Policy** | Strictly Enforced | Ground rules prohibit reporting synthetic results as external flow numbers |
+
+### Plain-Language Limitations & Scope:
+1. **Synthetic Simulation Only:** High reported benchmark metrics reflect controlled scenario-grouped synthetic fixtures. Enterprise production deployments face substantial benign complexity, telemetry dropouts, and domain shift.
+2. **Novel Attacks Require Anomaly Layer:** Novel attack types escape the supervised classifier (44% to 100% benign escape rate); defense-in-depth relies on the unsupervised anomaly detector and temporal incident correlation.
+3. **Adversarial Robustness Not Evaluated:** The model has not been tested against deliberate evasion techniques (e.g. mimicry, timing jitter, or payload padding).
 
 ---
 
