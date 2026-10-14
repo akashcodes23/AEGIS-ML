@@ -968,7 +968,6 @@ export default memo(function AttackGraph() {
             <button
               type="button"
               onClick={clearHuntingFocus}
-              aria-label="Clear hunting focus"
               style={{
                 background: 'var(--surface-1)',
                 border: '1px solid var(--border-hairline)',
@@ -981,7 +980,8 @@ export default memo(function AttackGraph() {
                 transition: 'all var(--duration-quick) ease',
               }}
             >
-              ✕ Clear focus
+              <span aria-hidden="true" style={{ marginRight: 4 }}>✕</span>
+              Clear focus
             </button>
           </div>
         )}

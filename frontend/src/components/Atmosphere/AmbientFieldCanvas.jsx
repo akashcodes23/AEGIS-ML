@@ -10,6 +10,7 @@ import {
   FogExp2,
   Color,
 } from 'three'
+import { QUALITY_TIERS, evaluateQualityTier } from '../../utils/adaptiveQuality.js'
 
 /**
  * AmbientFieldCanvas
@@ -21,12 +22,17 @@ import {
  * Technical Specs:
  * - Single draw call using Points with custom vertex attributes.
  * - Gentle mouse-follow parallax with damped lerp.
- * - Adaptive DPR (capped at 1.75).
+ * - Adaptive quality tiers (high -> medium -> low -> fallback) with hysteresis.
  * - Suspends render loop on tab hidden (document.hidden) and when offscreen.
  * - Disposes geometries, materials, and WebGL context cleanly on unmount.
  */
-export default function AmbientFieldCanvas() {
+export default function AmbientFieldCanvas({ onFallback }) {
   const containerRef = useRef(null)
+  const onFallbackRef = useRef(onFallback)
+
+  useEffect(() => {
+    onFallbackRef.current = onFallback
+  }, [onFallback])
 
   useEffect(() => {
     const container = containerRef.current
@@ -118,16 +124,53 @@ export default function AmbientFieldCanvas() {
     }
     window.addEventListener('pointermove', handlePointerMove, { passive: true })
 
-    // 6. Animation Loop with Tab Visibility & Intersection Awareness
+    // 6. Animation Loop with Tab Visibility, Intersection Awareness & Adaptive Quality
     let lastTime = performance.now()
+    let rollingAvgFrameTime = 16.6
+    let qualityState = {
+      currentTier: 'high',
+      consecutiveDegradeFrames: 0,
+      consecutiveRecoverFrames: 0,
+    }
 
     const animate = (currentTime) => {
       if (!isVisible || !isIntersecting) {
         return
       }
 
-      const delta = (currentTime - lastTime) * 0.001
+      const frameDuration = currentTime - lastTime
+      const delta = frameDuration * 0.001
       lastTime = currentTime
+
+      // Rolling frame time estimation (exponential moving average)
+      rollingAvgFrameTime = rollingAvgFrameTime * 0.95 + frameDuration * 0.05
+
+      // Evaluate adaptive quality tier
+      const evalResult = evaluateQualityTier({
+        currentTier: qualityState.currentTier,
+        rollingAvgFrameTime,
+        consecutiveDegradeFrames: qualityState.consecutiveDegradeFrames,
+        consecutiveRecoverFrames: qualityState.consecutiveRecoverFrames,
+      })
+      qualityState = {
+        currentTier: evalResult.nextTier,
+        consecutiveDegradeFrames: evalResult.consecutiveDegradeFrames,
+        consecutiveRecoverFrames: evalResult.consecutiveRecoverFrames,
+      }
+
+      if (evalResult.nextTier === 'fallback') {
+        stopLoop()
+        if (typeof onFallbackRef.current === 'function') {
+          onFallbackRef.current()
+        }
+        return
+      }
+
+      const activeConfig = QUALITY_TIERS[evalResult.nextTier]
+      if (activeConfig) {
+        pointSystem.geometry.setDrawRange(0, activeConfig.particleCount)
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, activeConfig.dprCap))
+      }
 
       // Gentle continuous ambient drift (slow, quiet rotation)
       pointSystem.rotation.y += delta * 0.022

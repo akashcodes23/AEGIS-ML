@@ -244,7 +244,7 @@ function AlertRow({ alert, index }) {
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
             <button
               type="button"
-              aria-label={`Inspect evidence trail for alert ${alert.alert_id || alert.event_id || ''}`}
+              aria-label={showEvidence ? 'Hide Provenance' : `Inspect Evidence Trail for alert ${alert.alert_id || alert.event_id || ''}`}
               onClick={(e) => {
                 e.stopPropagation()
                 setShowEvidence(prev => !prev)

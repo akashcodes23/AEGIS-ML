@@ -375,8 +375,12 @@ export default function CommandPalette({
                               fontSize: 10,
                               textTransform: 'uppercase',
                               fontWeight: 800,
-                              color: item.severity === 'critical' ? '#ff5277' : sevColor,
+                              color: sevColor,
                               letterSpacing: 0.5,
+                              background: '#07090e',
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              border: '1px solid rgba(255, 255, 255, 0.08)',
                             }}
                           >
                             {item.severity}

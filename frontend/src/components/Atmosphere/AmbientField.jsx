@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react'
+import React, { lazy, Suspense, useState } from 'react'
 import useReducedMotion from '../../hooks/useReducedMotion'
 import { shouldEnable3D } from '../../utils/capabilities'
 import AtmosphereErrorBoundary from './AtmosphereErrorBoundary'
@@ -21,20 +21,21 @@ const AmbientFieldCanvas = lazy(() => import('./AmbientFieldCanvas'))
 export default function AmbientField() {
   const reducedMotion = useReducedMotion()
   const featureFlag = import.meta.env.VITE_ENABLE_3D !== 'false'
+  const [runtimeFallback, setRuntimeFallback] = useState(false)
 
   const { canRun } = shouldEnable3D({
     featureFlag,
     reducedMotion,
   })
 
-  if (!canRun) {
+  if (!canRun || runtimeFallback) {
     return <AmbientStaticFallback />
   }
 
   return (
     <AtmosphereErrorBoundary>
       <Suspense fallback={<AmbientStaticFallback />}>
-        <AmbientFieldCanvas />
+        <AmbientFieldCanvas onFallback={() => setRuntimeFallback(true)} />
       </Suspense>
     </AtmosphereErrorBoundary>
   )

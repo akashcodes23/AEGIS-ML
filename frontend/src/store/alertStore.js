@@ -119,7 +119,7 @@ const useAlertStore = create((set) => ({
     }),
 }))
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && (Boolean(import.meta.env?.DEV) || import.meta.env?.VITE_E2E === 'true')) {
   window.useAlertStore = useAlertStore
 }
 

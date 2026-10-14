@@ -75,6 +75,79 @@ Every severity token provides foreground, soft translucent background, and hairl
 - Universal `@media (prefers-reduced-motion: reduce)` zeroes all animations and transitions.
 - The `useReducedMotion()` hook serves as the single source of truth, synchronizing operating system preferences with the in-app "Reduce Visual Effects" toggle.
 
+### 2.8 Comprehensive Programmatic Contrast Audit (WCAG 2.1 AA/AAA)
+
+All token pairs across the five spatial elevations and foreground tiers were mathematically calculated using the W3C relative luminance formula ($L = 0.2126 R + 0.7152 G + 0.0722 B$). Normal body text requires $\ge 4.5:1$ (WCAG AA) or $\ge 7.0:1$ (WCAG AAA); large text ($\ge 18\text{pt}$ or $\ge 14\text{pt}$ bold) and essential graphical UI components require $\ge 3.0:1$.
+
+| Foreground Token | Hex | Surface | Ratio | WCAG AA Normal (4.5:1) | WCAG AA Large (3.0:1) | WCAG AAA (7.0:1) | Role / Usage |
+|---|---|---|---|---|---|---|---|
+| `--text-primary` | `#f8fafc` | `--surface-0` (Canvas) | **19.03:1** | Pass | Pass | Pass | Primary text |
+| `--text-primary` | `#f8fafc` | `--surface-1` (Panels) | **18.04:1** | Pass | Pass | Pass | Primary text |
+| `--text-primary` | `#f8fafc` | `--surface-2` (Cards) | **16.81:1** | Pass | Pass | Pass | Primary text |
+| `--text-primary` | `#f8fafc` | `--surface-3` (Active/Pills) | **15.19:1** | Pass | Pass | Pass | Primary text |
+| `--text-primary` | `#f8fafc` | `--surface-4` (Popovers) | **13.14:1** | Pass | Pass | Pass | Primary text |
+| `--text-secondary` | `#94a3b8` | `--surface-0` (Canvas) | **7.77:1** | Pass | Pass | Pass | Secondary text / labels |
+| `--text-secondary` | `#94a3b8` | `--surface-1` (Panels) | **7.36:1** | Pass | Pass | Pass | Secondary text / labels |
+| `--text-secondary` | `#94a3b8` | `--surface-2` (Cards) | **6.86:1** | Pass | Pass | Fail | Secondary text / labels |
+| `--text-secondary` | `#94a3b8` | `--surface-3` (Active/Pills) | **6.2:1** | Pass | Pass | Fail | Secondary text / labels |
+| `--text-secondary` | `#94a3b8` | `--surface-4` (Popovers) | **5.36:1** | Pass | Pass | Fail | Secondary text / labels |
+| `--text-tertiary` | `#64748b` | `--surface-0` (Canvas) | **4.18:1** | Fail | Pass | Fail | Tertiary metadata (large/decorative) |
+| `--text-tertiary` | `#64748b` | `--surface-1` (Panels) | **3.97:1** | Fail | Pass | Fail | Tertiary metadata (large/decorative) |
+| `--text-tertiary` | `#64748b` | `--surface-2` (Cards) | **3.7:1** | Fail | Pass | Fail | Tertiary metadata (large/decorative) |
+| `--text-tertiary` | `#64748b` | `--surface-3` (Active/Pills) | **3.34:1** | Fail | Pass | Fail | Tertiary metadata (large/decorative) |
+| `--text-tertiary` | `#64748b` | `--surface-4` (Popovers) | **2.89:1** | Fail | Fail | Fail | Tertiary metadata (large/decorative) |
+| `--accent-cyan` | `#00f0ff` | `--surface-0` (Canvas) | **14.14:1** | Pass | Pass | Pass | Primary action / telemetry focus |
+| `--accent-cyan` | `#00f0ff` | `--surface-1` (Panels) | **13.4:1** | Pass | Pass | Pass | Primary action / telemetry focus |
+| `--accent-cyan` | `#00f0ff` | `--surface-2` (Cards) | **12.49:1** | Pass | Pass | Pass | Primary action / telemetry focus |
+| `--accent-cyan` | `#00f0ff` | `--surface-3` (Active/Pills) | **11.29:1** | Pass | Pass | Pass | Primary action / telemetry focus |
+| `--accent-cyan` | `#00f0ff` | `--surface-4` (Popovers) | **9.76:1** | Pass | Pass | Pass | Primary action / telemetry focus |
+| `--accent-violet` | `#a855f7` | `--surface-0` (Canvas) | **5.03:1** | Pass | Pass | Fail | Secondary accent / clusters |
+| `--accent-violet` | `#a855f7` | `--surface-1` (Panels) | **4.77:1** | Pass | Pass | Fail | Secondary accent / clusters |
+| `--accent-violet` | `#a855f7` | `--surface-2` (Cards) | **4.44:1** | Fail | Pass | Fail | Secondary accent / clusters |
+| `--accent-violet` | `#a855f7` | `--surface-3` (Active/Pills) | **4.02:1** | Fail | Pass | Fail | Secondary accent / clusters |
+| `--accent-violet` | `#a855f7` | `--surface-4` (Popovers) | **3.47:1** | Fail | Pass | Fail | Secondary accent / clusters |
+| `--severity-critical-fg` | `#ff3366` | `--surface-0` (Canvas) | **5.61:1** | Pass | Pass | Fail | Critical severity (strictly rare) |
+| `--severity-critical-fg` | `#ff3366` | `--surface-1` (Panels) | **5.32:1** | Pass | Pass | Fail | Critical severity (strictly rare) |
+| `--severity-critical-fg` | `#ff3366` | `--surface-2` (Cards) | **4.96:1** | Pass | Pass | Fail | Critical severity (strictly rare) |
+| `--severity-critical-fg` | `#ff3366` | `--surface-3` (Active/Pills) | **4.48:1** | Fail | Pass | Fail | Critical severity (strictly rare) |
+| `--severity-critical-fg` | `#ff3366` | `--surface-4` (Popovers) | **3.87:1** | Fail | Pass | Fail | Critical severity (strictly rare) |
+| `--severity-high-fg` | `#fb923c` | `--surface-0` (Canvas) | **8.8:1** | Pass | Pass | Pass | High severity |
+| `--severity-high-fg` | `#fb923c` | `--surface-1` (Panels) | **8.34:1** | Pass | Pass | Pass | High severity |
+| `--severity-high-fg` | `#fb923c` | `--surface-2` (Cards) | **7.77:1** | Pass | Pass | Pass | High severity |
+| `--severity-high-fg` | `#fb923c` | `--surface-3` (Active/Pills) | **7.02:1** | Pass | Pass | Pass | High severity |
+| `--severity-high-fg` | `#fb923c` | `--surface-4` (Popovers) | **6.07:1** | Pass | Pass | Fail | High severity |
+| `--severity-medium-fg` | `#facc15` | `--surface-0` (Canvas) | **13.0:1** | Pass | Pass | Pass | Medium severity |
+| `--severity-medium-fg` | `#facc15` | `--surface-1` (Panels) | **12.33:1** | Pass | Pass | Pass | Medium severity |
+| `--severity-medium-fg` | `#facc15` | `--surface-2` (Cards) | **11.48:1** | Pass | Pass | Pass | Medium severity |
+| `--severity-medium-fg` | `#facc15` | `--surface-3` (Active/Pills) | **10.38:1** | Pass | Pass | Pass | Medium severity |
+| `--severity-medium-fg` | `#facc15` | `--surface-4` (Popovers) | **8.98:1** | Pass | Pass | Pass | Medium severity |
+| `--severity-low-fg` | `#38bdf8` | `--surface-0` (Canvas) | **9.3:1** | Pass | Pass | Pass | Low severity |
+| `--severity-low-fg` | `#38bdf8` | `--surface-1` (Panels) | **8.81:1** | Pass | Pass | Pass | Low severity |
+| `--severity-low-fg` | `#38bdf8` | `--surface-2` (Cards) | **8.21:1** | Pass | Pass | Pass | Low severity |
+| `--severity-low-fg` | `#38bdf8` | `--surface-3` (Active/Pills) | **7.42:1** | Pass | Pass | Pass | Low severity |
+| `--severity-low-fg` | `#38bdf8` | `--surface-4` (Popovers) | **6.42:1** | Pass | Pass | Fail | Low severity |
+| `--severity-info-fg` | `#818cf8` | `--surface-0` (Canvas) | **6.68:1** | Pass | Pass | Fail | Informational |
+| `--severity-info-fg` | `#818cf8` | `--surface-1` (Panels) | **6.33:1** | Pass | Pass | Fail | Informational |
+| `--severity-info-fg` | `#818cf8` | `--surface-2` (Cards) | **5.9:1** | Pass | Pass | Fail | Informational |
+| `--severity-info-fg` | `#818cf8` | `--surface-3` (Active/Pills) | **5.33:1** | Pass | Pass | Fail | Informational |
+| `--severity-info-fg` | `#818cf8` | `--surface-4` (Popovers) | **4.61:1** | Pass | Pass | Fail | Informational |
+| `--severity-success-fg` | `#34d399` | `--surface-0` (Canvas) | **10.36:1** | Pass | Pass | Pass | System health / verified |
+| `--severity-success-fg` | `#34d399` | `--surface-1` (Panels) | **9.82:1** | Pass | Pass | Pass | System health / verified |
+| `--severity-success-fg` | `#34d399` | `--surface-2` (Cards) | **9.15:1** | Pass | Pass | Pass | System health / verified |
+| `--severity-success-fg` | `#34d399` | `--surface-3` (Active/Pills) | **8.27:1** | Pass | Pass | Pass | System health / verified |
+| `--severity-success-fg` | `#34d399` | `--surface-4` (Popovers) | **7.15:1** | Pass | Pass | Pass | System health / verified |
+
+#### Soft Badge Surface Contrast Table (Foreground on Soft Translucent Background over Surface-1)
+
+| Badge Type | Foreground | Effective Blended Background | Ratio | AA Normal | AA Large | Component Guideline |
+|---|---|---|---|---|---|---|
+| **Critical badge** | `#ff3366` | `#291525` | **4.82:1** (Solid backing: **5.61:1**) | Pass | Pass | Paired with `AlertOctagon` icon + text label |
+| **High badge** | `#fb923c` | `#292020` | **7.02:1** (Solid backing: **8.80:1**) | Pass | Pass | Paired with `AlertTriangle` icon + text label |
+| **Medium badge** | `#facc15` | `#29271b` | **9.79:1** (Solid backing: **13.00:1**) | Pass | Pass | Paired with `AlertCircle` icon + text label |
+| **Low badge** | `#38bdf8` | `#112636` | **7.24:1** (Solid backing: **9.30:1**) | Pass | Pass | Paired with `Info` icon + text label |
+| **Info badge** | `#818cf8` | `#1a2036` | **5.40:1** (Solid backing: **6.68:1**) | Pass | Pass | Paired with `HelpCircle` icon + text label |
+| **Success badge** | `#34d399` | `#11282b` | **8.02:1** (Solid backing: **10.36:1**) | Pass | Pass | Paired with `CheckCircle` icon + text label |
+
 ---
 
 ## 3. Empirical Honesty & Synthetic Demo Disclosure

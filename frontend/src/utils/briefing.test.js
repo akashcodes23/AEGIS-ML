@@ -100,4 +100,26 @@ describe('briefing report engine', () => {
     const gapLinks = briefing.evidenceChain.filter(l => l.status === 'absent')
     assert.ok(gapLinks.length > 0, 'Contains truthful evidence gap links')
   })
+
+  test('verifies that downloadable canonical briefing bytes hash to the exact displayed checksum', async () => {
+    const crypto = await import('node:crypto')
+    const briefing = buildBriefingData(sampleIncident, { isSynthetic: true })
+
+    assert.ok(briefing.canonicalString, 'Must produce canonicalString')
+    assert.ok(briefing.canonicalPayload, 'Must produce canonicalPayload')
+
+    // Verify all canonical fields are present
+    const { CANONICAL_BRIEFING_FIELDS } = await import('./briefing.js')
+    for (const field of CANONICAL_BRIEFING_FIELDS) {
+      assert.ok(field in briefing.canonicalPayload, `Field ${field} must exist in canonicalPayload`)
+    }
+
+    // Compute checksum via computeBriefingChecksum (SubtleCrypto)
+    const displayedChecksum = await computeBriefingChecksum(briefing.canonicalString)
+
+    // Compute standard SHA-256 over the downloaded byte sequence using node:crypto (equivalent to CLI shasum -a 256)
+    const nodeCliSha256 = crypto.createHash('sha256').update(briefing.canonicalString, 'utf8').digest('hex')
+
+    assert.equal(displayedChecksum, nodeCliSha256, 'Displayed checksum must match CLI shasum -a 256 of downloaded bytes')
+  })
 })

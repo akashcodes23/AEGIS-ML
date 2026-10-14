@@ -9,9 +9,6 @@ import AttackGraph from './AttackGraph'
 import IncidentCard from './IncidentCard'
 import { getApiUrl } from '../../config/api'
 import { resolveTabFromLocation, TAB_ROUTES } from '../../config/navigation'
-import ThreatHunting from '../ThreatHunting/ThreatHunting'
-import EntityGraphView from '../Graph/EntityGraphView'
-import Reports from '../Reports/Reports'
 import AegisBrandMark from '../Common/AegisBrandMark'
 import SyntheticDemoRibbon from '../Common/SyntheticDemoRibbon'
 import AmbientField from '../Atmosphere/AmbientField'
@@ -19,8 +16,46 @@ import NavigationDock from '../Navigation/NavigationDock'
 import StatusArea from '../Navigation/StatusArea'
 import TemporalScrubber from '../Common/TemporalScrubber'
 import { isSyntheticData } from '../../utils/dataMode'
+import { shouldShowIntro, hasSeenIntro } from '../../utils/introDecision'
+import { isLowResourceDevice } from '../../utils/capabilities'
 
+const ThreatHunting = lazy(() => import('../ThreatHunting/ThreatHunting'))
+const EntityGraphView = lazy(() => import('../Graph/EntityGraphView'))
+const Reports = lazy(() => import('../Reports/Reports'))
 const CommandPalette = lazy(() => import('../Common/CommandPalette'))
+const FirstRunIntro = lazy(() => import('../Atmosphere/FirstRunIntro'))
+
+function RouteSuspenseFallback({ title = 'section' }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 480,
+        gap: 12,
+        color: 'var(--text-secondary)',
+        fontSize: 13,
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          border: '2px solid var(--border-medium)',
+          borderTopColor: 'var(--accent-cyan)',
+          animation: 'spin 0.8s linear infinite',
+        }}
+        aria-hidden="true"
+      />
+      <span>Loading {title}...</span>
+    </div>
+  )
+}
 
 /* ── Stat card ────────────────────────────────────────────────────────────── */
 function StatCard({ label, value, unit = '', accentVar, icon, delay = 0 }) {
@@ -206,6 +241,19 @@ export default function Dashboard() {
   const jumpToLatest = useAlertStore(s => s.jumpToLatest)
   const reducedVisualEffects = useReducedMotion()
 
+  const [showIntro, setShowIntro] = useState(() => {
+    return shouldShowIntro({
+      pathname: typeof window !== 'undefined' ? window.location.pathname : '/',
+      isFirstVisit: !hasSeenIntro(),
+      prefersReducedMotion: Boolean(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches),
+      reduceVisualEffects: false,
+      isLowResource: isLowResourceDevice(),
+      isE2E: Boolean(import.meta.env?.VITE_E2E === 'true'),
+      isReplay: false,
+    })
+  })
+  const [isReplayingIntro, setIsReplayingIntro] = useState(false)
+
   // Global Ctrl/Cmd+K shortcut for launcher
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -230,6 +278,7 @@ export default function Dashboard() {
       actions: [
         { id: 'jump-latest', label: 'Jump to Latest Telemetry', category: 'Time', actionKey: 'jumpToLatest', description: 'Exit temporal replay and restore real-time live alert stream' },
         { id: 'toggle-fx', label: 'Toggle Visual Effects Mode', category: 'Display', actionKey: 'toggleFx', description: 'Switch between 3D Spatial atmosphere and Reduced Visual Effects' },
+        { id: 'replay-intro', label: 'Replay Brand Introduction', category: 'Display', actionKey: 'replayIntro', description: 'Replay the assembling brand identity animation sequence' },
       ],
       incidents,
       alerts,
@@ -242,6 +291,12 @@ export default function Dashboard() {
       jumpToLatest()
     } else if (actionKey === 'toggleFx') {
       setReducedVisualEffectsPreference(!reducedVisualEffects)
+    } else if (actionKey === 'replayIntro') {
+      const prefersReduced = Boolean(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+      if (!prefersReduced && !reducedVisualEffects) {
+        setIsReplayingIntro(true)
+        setShowIntro(true)
+      }
     }
   }, [jumpToLatest, reducedVisualEffects])
 
@@ -345,6 +400,19 @@ export default function Dashboard() {
 
   return (
     <div className={`aegis-app-root ${isSynthetic ? 'synthetic-scene-tint' : ''}`} style={{ minHeight: '100vh', position: 'relative' }}>
+      {/* ── First-Run Brand Intro (Lazy Chunk, Non-Blocking) ──────────── */}
+      {showIntro && (
+        <Suspense fallback={null}>
+          <FirstRunIntro
+            onDismiss={() => {
+              setShowIntro(false)
+              setIsReplayingIntro(false)
+            }}
+            isReplay={isReplayingIntro}
+          />
+        </Suspense>
+      )}
+
       {/* ── Accessible Skip To Main Content Link ──────────────────────── */}
       <a href="#main-content" className="skip-to-content">
         Skip to main content
@@ -407,7 +475,6 @@ export default function Dashboard() {
               ref={paletteTriggerRef}
               type="button"
               onClick={() => setPaletteOpen(true)}
-              aria-label="Open Command Palette (Cmd+K)"
               title="Open Command Palette (Cmd+K)"
               className="aegis-palette-trigger"
               style={{
@@ -553,11 +620,23 @@ export default function Dashboard() {
             </div>
           )}
 
-          {activeTab === 'Threat Hunting' && <ThreatHunting />}
+          {activeTab === 'Threat Hunting' && (
+            <Suspense fallback={<RouteSuspenseFallback title="Threat Hunting" />}>
+              <ThreatHunting />
+            </Suspense>
+          )}
 
-          {activeTab === 'Entity Graph' && <EntityGraphView />}
+          {activeTab === 'Entity Graph' && (
+            <Suspense fallback={<RouteSuspenseFallback title="Entity Graph" />}>
+              <EntityGraphView />
+            </Suspense>
+          )}
 
-          {activeTab === 'Reports' && <Reports />}
+          {activeTab === 'Reports' && (
+            <Suspense fallback={<RouteSuspenseFallback title="Reports" />}>
+              <Reports />
+            </Suspense>
+          )}
         </main>
       </div>
 

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Printer,
+  Download,
   X,
   ShieldAlert,
   AlertTriangle,
@@ -91,6 +92,19 @@ export default function BriefingModal({
     window.print()
   }
 
+  const handleDownloadCanonicalJson = () => {
+    if (!briefing || !briefing.canonicalString) return
+    const blob = new Blob([briefing.canonicalString], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `aegis-briefing-${briefing.incidentId}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const modalContent = (
     <div
       role="presentation"
@@ -164,7 +178,28 @@ export default function BriefingModal({
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={handleDownloadCanonicalJson}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 14px',
+                borderRadius: 8,
+                background: 'var(--surface-1)',
+                color: 'var(--text-primary)',
+                fontWeight: 600,
+                fontSize: 12,
+                border: '1px solid var(--border-medium)',
+                cursor: 'pointer',
+              }}
+            >
+              <Download size={15} />
+              <span>Download briefing data (JSON)</span>
+            </button>
+
             <button
               type="button"
               onClick={handlePrint}
@@ -274,11 +309,11 @@ export default function BriefingModal({
                     textTransform: 'uppercase',
                     background:
                       briefing.severity === 'critical'
-                        ? 'var(--severity-critical-bg)'
+                        ? '#07090e'
                         : 'var(--severity-high-bg)',
                     color:
                       briefing.severity === 'critical'
-                        ? '#ff5277'
+                        ? 'var(--severity-critical-fg)'
                         : 'var(--severity-high-fg)',
                     border: `1px solid ${
                       briefing.severity === 'critical'
@@ -804,6 +839,27 @@ export default function BriefingModal({
 
             <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 6 }}>
               Computed over canonical incident attributes, evidence nodes, confidence evaluation, and session metadata.
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                padding: '8px 12px',
+                borderRadius: 6,
+                background: 'rgba(0, 240, 255, 0.04)',
+                border: '1px solid rgba(0, 240, 255, 0.15)',
+                fontSize: 11,
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--accent-cyan)', fontWeight: 700, marginBottom: 4 }}>
+                Verification Instructions
+              </div>
+              <div>Download briefing data (JSON) and verify with:</div>
+              <code style={{ color: 'var(--text-primary)', display: 'block', marginTop: 4 }}>
+                shasum -a 256 aegis-briefing-{briefing.incidentId}.json
+              </code>
             </div>
           </div>
 

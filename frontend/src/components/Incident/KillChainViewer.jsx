@@ -36,7 +36,7 @@ function resolveStatuses(stages, currentStage, predictedNext) {
 const STATUS = {
   detected:  { bg: '#10b981', border: '#059669', text: '#fff', shadow: 'rgba(16,185,129,0.4)' },
   predicted: { bg: '#f97316', border: '#ea580c', text: '#fff', shadow: 'rgba(249,115,22,0.4)' },
-  passed:    { bg: '#94a3b8', border: '#64748b', text: '#fff', shadow: 'none' },
+  passed:    { bg: '#94a3b8', border: 'var(--text-tertiary)', text: '#fff', shadow: 'none' },
   future:    { bg: '#f0f6ff', border: 'rgba(96,165,250,0.3)', text: '#a0bdd4', shadow: 'none' },
 }
 

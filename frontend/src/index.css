@@ -246,3 +246,52 @@ html, body {
     background: #ffffff;
   }
 }
+
+/* ── First-Run Intro Keyframes ────────────────────────────────────────────── */
+@keyframes introDrawShield {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes introDrawLine {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes introNodePop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes introTextFade {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes introFadeOut {
+  to {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aegis-first-run-intro {
+    display: none !important;
+  }
+}

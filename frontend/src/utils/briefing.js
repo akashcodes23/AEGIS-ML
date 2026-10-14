@@ -143,8 +143,8 @@ export function buildBriefingData(incident, context = {}) {
   const presentCount = evidenceChain.filter(l => l.status === 'present').length
   const gapCount = evidenceChain.filter(l => l.status === 'absent').length
 
-  // Canonical string for deterministic integrity checksum
-  const canonicalString = JSON.stringify({
+  // Canonical payload for deterministic integrity checksum and reproducible verification
+  const canonicalPayload = {
     incident_id: incident.incident_id || incident.event_id || 'INC-UNKNOWN',
     threat_type: incident.threat_type || 'Unclassified Threat',
     severity: incident.severity || 'high',
@@ -155,8 +155,10 @@ export function buildBriefingData(incident, context = {}) {
     evidence_links_present: presentCount,
     evidence_gaps_count: gapCount,
     timeline_count: timeline.length,
-    is_synthetic: isSynthetic,
-  })
+    is_synthetic: Boolean(isSynthetic),
+  }
+
+  const canonicalString = serializeCanonicalBriefing(canonicalPayload)
 
   return {
     incidentId: incident.incident_id || incident.event_id || 'INC-UNKNOWN',
@@ -177,7 +179,39 @@ export function buildBriefingData(incident, context = {}) {
       sessionAlertsCount,
       gitCommit,
     },
+    canonicalPayload,
     canonicalString,
     disclosure: isSynthetic ? SYNTHETIC_DISCLOSURE : null,
   }
+}
+
+/**
+ * Explicit documented field list hashed for integrity checksum.
+ */
+export const CANONICAL_BRIEFING_FIELDS = Object.freeze([
+  'incident_id',
+  'threat_type',
+  'severity',
+  'stage',
+  'confidence_tier',
+  'is_calibrated',
+  'evidence_links_total',
+  'evidence_links_present',
+  'evidence_gaps_count',
+  'timeline_count',
+  'is_synthetic',
+])
+
+/**
+ * Serializes canonical briefing payload with sorted keys and trailing newline
+ * so it is 100% reproducible via standard CLI utilities (shasum -a 256).
+ */
+export function serializeCanonicalBriefing(payload) {
+  if (!payload || typeof payload !== 'object') return ''
+  const sortedKeys = Object.keys(payload).sort()
+  const sortedObj = {}
+  for (const k of sortedKeys) {
+    sortedObj[k] = payload[k]
+  }
+  return JSON.stringify(sortedObj, null, 2) + '\n'
 }
