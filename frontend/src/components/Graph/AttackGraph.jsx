@@ -1280,6 +1280,10 @@ export default memo(function AttackGraph() {
           aria-label="Interactive Cytoscape Entity Graph (press + to zoom in, - to zoom out, F to fit view, Esc to clear selection)"
           tabIndex={0}
           onKeyDown={(e) => {
+            const targetTag = e.target?.tagName?.toUpperCase()
+            if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT' || e.target?.isContentEditable) {
+              return
+            }
             if (e.key === '+' || e.key === '=') {
               e.preventDefault()
               zoomIn()

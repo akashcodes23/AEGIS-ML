@@ -327,3 +327,74 @@ def test_duplicate_relationship_evidence_deduplication(correlator):
     assert "evt-dup-1" in rel["supporting_event_ids"]
     assert "evt-dup-2" in rel["supporting_event_ids"]
 
+
+def test_relationship_evidence_integrity_matrix(correlator):
+    """Verify that relationship direction is preserved, distinct types do not merge, and timestamps advance."""
+    t0 = datetime(2026, 10, 9, 11, 0, 0)
+    # Alert 1: 10.0.0.1 -> 10.0.0.2 (Forward)
+    a_fwd1 = create_mock_alert(
+        event_id="evt-fwd-1",
+        src_entity="10.0.0.1",
+        dst_entity="10.0.0.2",
+        threat_type="brute_force",
+        layer="network",
+        timestamp=t0
+    )
+    inc, is_new = correlator.correlate_alert(a_fwd1)
+    assert is_new is True
+    assert len(inc.relationship_evidence) == 1
+    assert inc.relationship_evidence[0]["source_entity"] == "10.0.0.1"
+    assert inc.relationship_evidence[0]["target_entity"] == "10.0.0.2"
+    assert inc.relationship_evidence[0]["timestamp"] == t0.isoformat()
+
+    # Alert 2: 10.0.0.1 -> 10.0.0.2 with SAME event_id (Duplicate re-transmission)
+    a_fwd_dup = create_mock_alert(
+        event_id="evt-fwd-1",
+        src_entity="10.0.0.1",
+        dst_entity="10.0.0.2",
+        threat_type="brute_force",
+        layer="network",
+        timestamp=t0 + timedelta(seconds=10)
+    )
+    inc, _ = correlator.correlate_alert(a_fwd_dup)
+    assert len(inc.relationship_evidence) == 1
+    # Duplicate event_id must not be duplicated in supporting_event_ids list
+    assert inc.relationship_evidence[0]["supporting_event_ids"] == ["evt-fwd-1"]
+    # Timestamp updated monotonically
+    assert inc.relationship_evidence[0]["timestamp"] == (t0 + timedelta(seconds=10)).isoformat()
+
+    # Alert 3: 10.0.0.2 -> 10.0.0.1 (Reverse direction: should NOT merge with Forward)
+    a_rev = create_mock_alert(
+        event_id="evt-rev-1",
+        src_entity="10.0.0.2",
+        dst_entity="10.0.0.1",
+        threat_type="brute_force",
+        layer="network",
+        timestamp=t0 + timedelta(seconds=20)
+    )
+    inc, _ = correlator.correlate_alert(a_rev)
+    # Direction is strictly preserved: now 2 relationships (Forward and Reverse)
+    assert len(inc.relationship_evidence) == 2
+    fwd_rel = next(r for r in inc.relationship_evidence if r["source_entity"] == "10.0.0.1" and r["target_entity"] == "10.0.0.2")
+    rev_rel = next(r for r in inc.relationship_evidence if r["source_entity"] == "10.0.0.2" and r["target_entity"] == "10.0.0.1")
+    assert fwd_rel["supporting_event_ids"] == ["evt-fwd-1"]
+    assert rev_rel["supporting_event_ids"] == ["evt-rev-1"]
+
+    # Alert 4: Cross-layer endpoint alert from 10.0.0.1 targeting 10.0.0.2 (hypothesis type)
+    # Distinct relationship types between the same entities must remain distinct
+    a_cross = create_mock_alert(
+        event_id="evt-cross-1",
+        src_entity="10.0.0.1",
+        dst_entity="10.0.0.2",
+        threat_type="data_exfiltration",
+        layer="endpoint",
+        timestamp=t0 + timedelta(seconds=30)
+    )
+    inc, _ = correlator.correlate_alert(a_cross)
+    # Must now have 3 relationships: fwd (observed), rev (observed), and fwd (cross_layer_co_occurrence hypothesis)
+    assert len(inc.relationship_evidence) == 3
+    cross_rel = next(r for r in inc.relationship_evidence if r["relationship_type"] == "cross_layer_co_occurrence")
+    assert cross_rel["claim_type"] == "hypothesis"
+    assert "socket_to_pid_binding_absent" in cross_rel["missing_evidence"]
+
+
