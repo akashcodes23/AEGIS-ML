@@ -1,0 +1,1139 @@
+{
+  "metadata": {
+    "protocol_path": "docs/evaluation.md",
+    "dataset_name": "behavioral_diversity_labeled.jsonl",
+    "dataset_sha256": "1a8967f3253bb6dfdd19d278a3f1f486759305fa447c5a84a4daafbb892ce352",
+    "dataset_total_records": 5717,
+    "primary_seed": 42,
+    "bootstrap_seed": 1337,
+    "timestamp": "2026-10-14T08:07:42Z",
+    "python_version": "3.10.12",
+    "sklearn_version": "1.7.2",
+    "imblearn_version": "0.12.4",
+    "numpy_version": "2.2.6",
+    "pandas_version": "2.3.3",
+    "splits": {
+      "train_records": 4155,
+      "train_scenarios": 80,
+      "val_records": 676,
+      "val_scenarios": 17,
+      "test_records": 886,
+      "test_scenarios": 19
+    }
+  },
+  "models": {
+    "baseline_majority_dummy": {
+      "macro_f1": 0.1284,
+      "weighted_f1": 0.3037,
+      "balanced_accuracy": 0.2,
+      "overall_accuracy": 0.4729,
+      "benign_fpr": 0.0,
+      "benign_fp": 0,
+      "benign_n": 419,
+      "alerts_per_1m_benign": 0.0,
+      "ece": 0.5271,
+      "brier_score": 1.0542,
+      "per_class": {
+        "benign": {
+          "support": 419,
+          "precision": 0.4729,
+          "recall": 1.0,
+          "f1": 0.6421,
+          "pr_auc": 0.4729
+        },
+        "brute_force": {
+          "support": 238,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "pr_auc": 0.2686
+        },
+        "lateral_movement": {
+          "support": 35,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "pr_auc": 0.0395
+        },
+        "data_exfiltration": {
+          "support": 147,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "pr_auc": 0.1659
+        },
+        "c2_beaconing": {
+          "support": 47,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "pr_auc": 0.053
+        }
+      },
+      "confusion_matrix": [
+        [
+          419,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          238,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          35,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          147,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          47,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "classes": [
+        "benign",
+        "brute_force",
+        "lateral_movement",
+        "data_exfiltration",
+        "c2_beaconing"
+      ],
+      "reliability_table": [
+        {
+          "bin_index": 1,
+          "bin_range": "[0.0, 0.1]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 2,
+          "bin_range": "[0.1, 0.2]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 3,
+          "bin_range": "[0.2, 0.3]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 4,
+          "bin_range": "[0.3, 0.4]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 5,
+          "bin_range": "[0.4, 0.5]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 6,
+          "bin_range": "[0.5, 0.6]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 7,
+          "bin_range": "[0.6, 0.7]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 8,
+          "bin_range": "[0.7, 0.8]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 9,
+          "bin_range": "[0.8, 0.9]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 10,
+          "bin_range": "[0.9, 1.0]",
+          "samples": 886,
+          "mean_confidence": 1.0,
+          "observed_accuracy": 0.4729,
+          "calibration_gap": 0.5271
+        }
+      ]
+    },
+    "baseline_logistic_regression": {
+      "macro_f1": 0.8644,
+      "weighted_f1": 0.9044,
+      "balanced_accuracy": 0.9556,
+      "overall_accuracy": 0.895,
+      "benign_fpr": 0.222,
+      "benign_fp": 93,
+      "benign_n": 419,
+      "alerts_per_1m_benign": 221957.04,
+      "ece": 0.0709,
+      "brier_score": 0.1715,
+      "per_class": {
+        "benign": {
+          "support": 419,
+          "precision": 1.0,
+          "recall": 0.778,
+          "f1": 0.8752,
+          "pr_auc": 0.9561
+        },
+        "brute_force": {
+          "support": 238,
+          "precision": 0.9917,
+          "recall": 1.0,
+          "f1": 0.9958,
+          "pr_auc": 1.0
+        },
+        "lateral_movement": {
+          "support": 35,
+          "precision": 0.3889,
+          "recall": 1.0,
+          "f1": 0.56,
+          "pr_auc": 0.9768
+        },
+        "data_exfiltration": {
+          "support": 147,
+          "precision": 0.8033,
+          "recall": 1.0,
+          "f1": 0.8909,
+          "pr_auc": 0.999
+        },
+        "c2_beaconing": {
+          "support": 47,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "pr_auc": 1.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          326,
+          2,
+          55,
+          36,
+          0
+        ],
+        [
+          0,
+          238,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          35,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          147,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          47
+        ]
+      ],
+      "classes": [
+        "benign",
+        "brute_force",
+        "lateral_movement",
+        "data_exfiltration",
+        "c2_beaconing"
+      ],
+      "reliability_table": [
+        {
+          "bin_index": 1,
+          "bin_range": "[0.0, 0.1]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 2,
+          "bin_range": "[0.1, 0.2]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 3,
+          "bin_range": "[0.2, 0.3]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 4,
+          "bin_range": "[0.3, 0.4]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 5,
+          "bin_range": "[0.4, 0.5]",
+          "samples": 3,
+          "mean_confidence": 0.4329,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.4329
+        },
+        {
+          "bin_index": 6,
+          "bin_range": "[0.5, 0.6]",
+          "samples": 18,
+          "mean_confidence": 0.5405,
+          "observed_accuracy": 0.1111,
+          "calibration_gap": 0.4294
+        },
+        {
+          "bin_index": 7,
+          "bin_range": "[0.6, 0.7]",
+          "samples": 22,
+          "mean_confidence": 0.6473,
+          "observed_accuracy": 0.1364,
+          "calibration_gap": 0.511
+        },
+        {
+          "bin_index": 8,
+          "bin_range": "[0.7, 0.8]",
+          "samples": 14,
+          "mean_confidence": 0.752,
+          "observed_accuracy": 0.2143,
+          "calibration_gap": 0.5377
+        },
+        {
+          "bin_index": 9,
+          "bin_range": "[0.8, 0.9]",
+          "samples": 20,
+          "mean_confidence": 0.8491,
+          "observed_accuracy": 0.3,
+          "calibration_gap": 0.5491
+        },
+        {
+          "bin_index": 10,
+          "bin_range": "[0.9, 1.0]",
+          "samples": 809,
+          "mean_confidence": 0.9926,
+          "observed_accuracy": 0.9629,
+          "calibration_gap": 0.0297
+        }
+      ]
+    },
+    "baseline_untuned_rf": {
+      "macro_f1": 0.8703,
+      "weighted_f1": 0.927,
+      "balanced_accuracy": 0.9609,
+      "overall_accuracy": 0.9074,
+      "benign_fpr": 0.1957,
+      "benign_fp": 82,
+      "benign_n": 419,
+      "alerts_per_1m_benign": 195704.06,
+      "ece": 0.106,
+      "brier_score": 0.1218,
+      "per_class": {
+        "benign": {
+          "support": 419,
+          "precision": 1.0,
+          "recall": 0.8043,
+          "f1": 0.8915,
+          "pr_auc": 0.9995
+        },
+        "brute_force": {
+          "support": 238,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "pr_auc": 1.0
+        },
+        "lateral_movement": {
+          "support": 35,
+          "precision": 0.3017,
+          "recall": 1.0,
+          "f1": 0.4636,
+          "pr_auc": 0.9564
+        },
+        "data_exfiltration": {
+          "support": 147,
+          "precision": 0.9932,
+          "recall": 1.0,
+          "f1": 0.9966,
+          "pr_auc": 1.0
+        },
+        "c2_beaconing": {
+          "support": 47,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "pr_auc": 1.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          337,
+          0,
+          81,
+          1,
+          0
+        ],
+        [
+          0,
+          238,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          35,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          147,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          47
+        ]
+      ],
+      "classes": [
+        "benign",
+        "brute_force",
+        "lateral_movement",
+        "data_exfiltration",
+        "c2_beaconing"
+      ],
+      "reliability_table": [
+        {
+          "bin_index": 1,
+          "bin_range": "[0.0, 0.1]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 2,
+          "bin_range": "[0.1, 0.2]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 3,
+          "bin_range": "[0.2, 0.3]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 4,
+          "bin_range": "[0.3, 0.4]",
+          "samples": 10,
+          "mean_confidence": 0.39,
+          "observed_accuracy": 0.8,
+          "calibration_gap": 0.41
+        },
+        {
+          "bin_index": 5,
+          "bin_range": "[0.4, 0.5]",
+          "samples": 42,
+          "mean_confidence": 0.4638,
+          "observed_accuracy": 0.0952,
+          "calibration_gap": 0.3686
+        },
+        {
+          "bin_index": 6,
+          "bin_range": "[0.5, 0.6]",
+          "samples": 21,
+          "mean_confidence": 0.5343,
+          "observed_accuracy": 0.0476,
+          "calibration_gap": 0.4867
+        },
+        {
+          "bin_index": 7,
+          "bin_range": "[0.6, 0.7]",
+          "samples": 98,
+          "mean_confidence": 0.6739,
+          "observed_accuracy": 0.7857,
+          "calibration_gap": 0.1118
+        },
+        {
+          "bin_index": 8,
+          "bin_range": "[0.7, 0.8]",
+          "samples": 117,
+          "mean_confidence": 0.7356,
+          "observed_accuracy": 0.9915,
+          "calibration_gap": 0.2559
+        },
+        {
+          "bin_index": 9,
+          "bin_range": "[0.8, 0.9]",
+          "samples": 113,
+          "mean_confidence": 0.8694,
+          "observed_accuracy": 1.0,
+          "calibration_gap": 0.1306
+        },
+        {
+          "bin_index": 10,
+          "bin_range": "[0.9, 1.0]",
+          "samples": 485,
+          "mean_confidence": 0.9826,
+          "observed_accuracy": 1.0,
+          "calibration_gap": 0.0174
+        }
+      ]
+    },
+    "full_pipeline_uncalibrated": {
+      "macro_f1": 0.875,
+      "weighted_f1": 0.931,
+      "balanced_accuracy": 0.9632,
+      "overall_accuracy": 0.9131,
+      "benign_fpr": 0.1838,
+      "benign_fp": 77,
+      "benign_n": 419,
+      "alerts_per_1m_benign": 183770.88,
+      "ece": 0.1141,
+      "brier_score": 0.1144,
+      "per_class": {
+        "benign": {
+          "support": 419,
+          "precision": 1.0,
+          "recall": 0.8162,
+          "f1": 0.8988,
+          "pr_auc": 0.9996
+        },
+        "brute_force": {
+          "support": 238,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "pr_auc": 1.0
+        },
+        "lateral_movement": {
+          "support": 35,
+          "precision": 0.3153,
+          "recall": 1.0,
+          "f1": 0.4795,
+          "pr_auc": 0.9704
+        },
+        "data_exfiltration": {
+          "support": 147,
+          "precision": 0.9932,
+          "recall": 1.0,
+          "f1": 0.9966,
+          "pr_auc": 1.0
+        },
+        "c2_beaconing": {
+          "support": 47,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "pr_auc": 1.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          342,
+          0,
+          76,
+          1,
+          0
+        ],
+        [
+          0,
+          238,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          35,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          147,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          47
+        ]
+      ],
+      "classes": [
+        "benign",
+        "brute_force",
+        "lateral_movement",
+        "data_exfiltration",
+        "c2_beaconing"
+      ],
+      "reliability_table": [
+        {
+          "bin_index": 1,
+          "bin_range": "[0.0, 0.1]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 2,
+          "bin_range": "[0.1, 0.2]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 3,
+          "bin_range": "[0.2, 0.3]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 4,
+          "bin_range": "[0.3, 0.4]",
+          "samples": 5,
+          "mean_confidence": 0.392,
+          "observed_accuracy": 1.0,
+          "calibration_gap": 0.608
+        },
+        {
+          "bin_index": 5,
+          "bin_range": "[0.4, 0.5]",
+          "samples": 53,
+          "mean_confidence": 0.4741,
+          "observed_accuracy": 0.1132,
+          "calibration_gap": 0.3609
+        },
+        {
+          "bin_index": 6,
+          "bin_range": "[0.5, 0.6]",
+          "samples": 29,
+          "mean_confidence": 0.5592,
+          "observed_accuracy": 0.2069,
+          "calibration_gap": 0.3523
+        },
+        {
+          "bin_index": 7,
+          "bin_range": "[0.6, 0.7]",
+          "samples": 43,
+          "mean_confidence": 0.6789,
+          "observed_accuracy": 0.8605,
+          "calibration_gap": 0.1815
+        },
+        {
+          "bin_index": 8,
+          "bin_range": "[0.7, 0.8]",
+          "samples": 167,
+          "mean_confidence": 0.7495,
+          "observed_accuracy": 0.994,
+          "calibration_gap": 0.2445
+        },
+        {
+          "bin_index": 9,
+          "bin_range": "[0.8, 0.9]",
+          "samples": 81,
+          "mean_confidence": 0.8791,
+          "observed_accuracy": 1.0,
+          "calibration_gap": 0.1209
+        },
+        {
+          "bin_index": 10,
+          "bin_range": "[0.9, 1.0]",
+          "samples": 508,
+          "mean_confidence": 0.9797,
+          "observed_accuracy": 1.0,
+          "calibration_gap": 0.0203
+        }
+      ]
+    },
+    "full_pipeline_calibrated": {
+      "macro_f1": 0.9866,
+      "weighted_f1": 0.9943,
+      "balanced_accuracy": 0.981,
+      "overall_accuracy": 0.9944,
+      "benign_fpr": 0.0024,
+      "benign_fp": 1,
+      "benign_n": 419,
+      "alerts_per_1m_benign": 2386.63,
+      "ece": 0.0011,
+      "brier_score": 0.0109,
+      "per_class": {
+        "benign": {
+          "support": 419,
+          "precision": 0.9929,
+          "recall": 0.9976,
+          "f1": 0.9952,
+          "pr_auc": 0.9929
+        },
+        "brute_force": {
+          "support": 238,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "pr_auc": 1.0
+        },
+        "lateral_movement": {
+          "support": 35,
+          "precision": 1.0,
+          "recall": 0.9143,
+          "f1": 0.9552,
+          "pr_auc": 0.9177
+        },
+        "data_exfiltration": {
+          "support": 147,
+          "precision": 0.9932,
+          "recall": 0.9932,
+          "f1": 0.9932,
+          "pr_auc": 0.9943
+        },
+        "c2_beaconing": {
+          "support": 47,
+          "precision": 0.9792,
+          "recall": 1.0,
+          "f1": 0.9895,
+          "pr_auc": 0.9792
+        }
+      },
+      "confusion_matrix": [
+        [
+          418,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          238,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          32,
+          0,
+          1
+        ],
+        [
+          1,
+          0,
+          0,
+          146,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          47
+        ]
+      ],
+      "classes": [
+        "benign",
+        "brute_force",
+        "lateral_movement",
+        "data_exfiltration",
+        "c2_beaconing"
+      ],
+      "reliability_table": [
+        {
+          "bin_index": 1,
+          "bin_range": "[0.0, 0.1]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 2,
+          "bin_range": "[0.1, 0.2]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 3,
+          "bin_range": "[0.2, 0.3]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 4,
+          "bin_range": "[0.3, 0.4]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 5,
+          "bin_range": "[0.4, 0.5]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 6,
+          "bin_range": "[0.5, 0.6]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 7,
+          "bin_range": "[0.6, 0.7]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 8,
+          "bin_range": "[0.7, 0.8]",
+          "samples": 0,
+          "mean_confidence": 0.0,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.0
+        },
+        {
+          "bin_index": 9,
+          "bin_range": "[0.8, 0.9]",
+          "samples": 1,
+          "mean_confidence": 0.8035,
+          "observed_accuracy": 0.0,
+          "calibration_gap": 0.8035
+        },
+        {
+          "bin_index": 10,
+          "bin_range": "[0.9, 1.0]",
+          "samples": 885,
+          "mean_confidence": 0.9957,
+          "observed_accuracy": 0.9955,
+          "calibration_gap": 0.0002
+        }
+      ],
+      "operational_threshold_0_40": {
+        "threshold": 0.4,
+        "benign_fp": 1,
+        "benign_n": 419,
+        "benign_fpr": 0.0024,
+        "alerts_per_1m_benign": 2386.63
+      }
+    }
+  },
+  "confidence_intervals_95": {
+    "macro_f1": {
+      "mean": 0.9674,
+      "std": 0.0606,
+      "ci_95_lower": 0.7803,
+      "ci_95_upper": 0.9987
+    },
+    "benign_fpr": {
+      "mean": 0.0026,
+      "std": 0.003,
+      "ci_95_lower": 0.0,
+      "ci_95_upper": 0.0097
+    },
+    "ece": {
+      "mean": 0.0046,
+      "std": 0.0031,
+      "ci_95_lower": 0.0003,
+      "ci_95_upper": 0.012
+    }
+  },
+  "leave_one_attack_type_out": {
+    "brute_force": {
+      "held_out_test_samples": 238,
+      "trained_classes": [
+        "benign",
+        "c2_beaconing",
+        "data_exfiltration",
+        "lateral_movement"
+      ],
+      "supervised_misclassifications": {
+        "benign": 220,
+        "c2_beaconing": 18
+      },
+      "supervised_benign_escape_rate": 0.9244,
+      "isolation_forest_recall": 0.0,
+      "profiler_deviation_recall": 0.0,
+      "anomaly_combined_recall": 0.0
+    },
+    "lateral_movement": {
+      "held_out_test_samples": 35,
+      "trained_classes": [
+        "benign",
+        "brute_force",
+        "c2_beaconing",
+        "data_exfiltration"
+      ],
+      "supervised_misclassifications": {
+        "c2_beaconing": 2,
+        "benign": 33
+      },
+      "supervised_benign_escape_rate": 0.9429,
+      "isolation_forest_recall": 0.0,
+      "profiler_deviation_recall": 0.0,
+      "anomaly_combined_recall": 0.0
+    },
+    "data_exfiltration": {
+      "held_out_test_samples": 147,
+      "trained_classes": [
+        "benign",
+        "brute_force",
+        "c2_beaconing",
+        "lateral_movement"
+      ],
+      "supervised_misclassifications": {
+        "benign": 147
+      },
+      "supervised_benign_escape_rate": 1.0,
+      "isolation_forest_recall": 0.0,
+      "profiler_deviation_recall": 0.0,
+      "anomaly_combined_recall": 0.0
+    },
+    "c2_beaconing": {
+      "held_out_test_samples": 47,
+      "trained_classes": [
+        "benign",
+        "brute_force",
+        "data_exfiltration",
+        "lateral_movement"
+      ],
+      "supervised_misclassifications": {
+        "benign": 21,
+        "data_exfiltration": 26
+      },
+      "supervised_benign_escape_rate": 0.4468,
+      "isolation_forest_recall": 0.0,
+      "profiler_deviation_recall": 0.383,
+      "anomaly_combined_recall": 0.383
+    }
+  },
+  "incident_correlation": {
+    "metadata": {
+      "evaluation_type": "fixture_based_correlation_validation",
+      "timestamp": "2026-10-14T08:07:42.561243",
+      "scenarios_evaluated": 12,
+      "total_fixture_events": 34,
+      "disclaimer": "These results evaluate explicit correlation engine logic against controlled synthetic test fixtures. They validate algorithm correctness (merge prevention, pivot linking, deduplication) and must NOT be represented as real-world enterprise clustering accuracy."
+    },
+    "metrics": {
+      "pairwise_cluster_precision": 1.0,
+      "pairwise_cluster_recall": 1.0,
+      "pairwise_cluster_f1": 1.0,
+      "merge_errors_unrelated_merged": 0,
+      "split_errors_related_fragmented": 0,
+      "evidence_traceability_pct": 100.0,
+      "duplicate_risk_invariance_verified": true
+    },
+    "operational_metrics": {
+      "total_events_evaluated": 34,
+      "raw_alerts_generated": 34,
+      "duplicate_alerts_suppressed": 4,
+      "alerts_assigned_to_incidents": 30,
+      "unassigned_alerts": 0,
+      "incident_dossiers_created": 19,
+      "displayed_triage_reduction_pct": 44.12
+    },
+    "scenarios": [
+      {
+        "scenario_id": "SCENARIO_1_MULTI_STAGE_APT",
+        "description": "Multi-stage APT campaign: External brute force -> victim pivots laterally -> exfiltration",
+        "expected_incidents": 1,
+        "actual_incidents": 1,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 3
+      },
+      {
+        "scenario_id": "SCENARIO_2_SHARED_VICTIM_INDEPENDENT_ATTACKERS",
+        "description": "Two independent external attackers targeting the same victim server simultaneously",
+        "expected_incidents": 2,
+        "actual_incidents": 2,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 2
+      },
+      {
+        "scenario_id": "SCENARIO_3_SAME_ATTACKER_OUTSIDE_WINDOW",
+        "description": "Same attacker targeting same victim separated by 3 hours (exceeds 10m sliding window)",
+        "expected_incidents": 2,
+        "actual_incidents": 2,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 2
+      },
+      {
+        "scenario_id": "SCENARIO_4_INTERLEAVED_BENIGN_ADMIN",
+        "description": "Legitimate admin activity interleaved between attack campaign events",
+        "expected_incidents": 1,
+        "actual_incidents": 1,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 3
+      },
+      {
+        "scenario_id": "SCENARIO_5_DUPLICATE_REPLAY_FLOOD",
+        "description": "Duplicate telemetry events replayed within 20 seconds",
+        "expected_incidents": 1,
+        "actual_incidents": 1,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 5
+      },
+      {
+        "scenario_id": "SCENARIO_6_OUT_OF_ORDER_AND_MISSING_TIMESTAMPS",
+        "description": "Alerts arriving out of chronological order and with None timestamps",
+        "expected_incidents": 1,
+        "actual_incidents": 1,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 3
+      },
+      {
+        "scenario_id": "SCENARIO_7_CONCURRENT_SUBNET_INCIDENTS",
+        "description": "Two simultaneous attack campaigns interleaved across Subnet A and Subnet B",
+        "expected_incidents": 2,
+        "actual_incidents": 2,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 4
+      },
+      {
+        "scenario_id": "SCENARIO_8_ONE_ATTACKER_MULTIPLE_VICTIMS",
+        "description": "Single external attacker probing/attacking multiple internal victims in quick succession",
+        "expected_incidents": 1,
+        "actual_incidents": 1,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 3
+      },
+      {
+        "scenario_id": "SCENARIO_9_UNRELATED_EVENTS_SHARING_DESTINATION",
+        "description": "External brute force and internal workstation exfiltration sharing the same DMZ destination",
+        "expected_incidents": 2,
+        "actual_incidents": 2,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 2
+      },
+      {
+        "scenario_id": "SCENARIO_10_FALSE_PIVOT_REJECTION",
+        "description": "Host 10.0.0.99 (never compromised by attacker) initiates lateral activity; must not be grouped into 10.0.0.15's incident",
+        "expected_incidents": 2,
+        "actual_incidents": 2,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 2
+      },
+      {
+        "scenario_id": "SCENARIO_11_AMBIGUOUS_SEQUENCES",
+        "description": "Three distinct simultaneous attacks with disjoint entities and threat types; must not be merged",
+        "expected_incidents": 3,
+        "actual_incidents": 3,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 3
+      },
+      {
+        "scenario_id": "SCENARIO_12_INCOMPLETE_ENTITY_IDENTIFIERS",
+        "description": "Alerts with partial telemetry or missing ports gracefully handled and grouped by source attacker",
+        "expected_incidents": 1,
+        "actual_incidents": 1,
+        "merge_errors": 0,
+        "split_errors": 0,
+        "events": 2
+      }
+    ]
+  },
+  "cicids2017_status": {
+    "status": "BLOCKED_AWAITING_LOCAL_COPY",
+    "reason": "Interactive registration required by UNB; local dataset absent; 35.4% feature gap for endpoint context.",
+    "fabricated_numbers": false
+  }
+}

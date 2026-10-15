@@ -5,7 +5,9 @@ import {
 } from 'lucide-react'
 import useAlertStore from '../../store/alertStore'
 import KillChainViewer from '../Incident/KillChainViewer'
+import EvidenceTrail from '../Common/EvidenceTrail'
 import { getApiUrl } from '../../config/api'
+import { deriveHuntingFocus } from '../../utils/huntingFocus'
 
 const SEV_STYLE = {
   critical: { bg: 'rgba(220, 38, 38, 0.08)', color: 'var(--accent-critical)', border: 'rgba(220, 38, 38, 0.25)' },
@@ -17,6 +19,10 @@ const SEV_STYLE = {
 export default function ThreatHunting() {
   const alerts = useAlertStore(s => s.alerts)
   const incidents = useAlertStore(s => s.incidents)
+  const graphData = useAlertStore(s => s.graphData)
+  const huntingFocus = useAlertStore(s => s.huntingFocus)
+  const setHuntingFocus = useAlertStore(s => s.setHuntingFocus)
+  const clearHuntingFocus = useAlertStore(s => s.clearHuntingFocus)
   const updateAlertStatus = useAlertStore(s => s.updateAlertStatus)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -74,6 +80,17 @@ export default function ThreatHunting() {
     })
   }, [alerts, searchQuery, selectedSev, selectedLayer, selectedStatus, selectedThreatType])
 
+  // Derive hunting-to-focus mapping
+  const derivedFocus = useMemo(() => {
+    return deriveHuntingFocus(filteredAlerts, graphData?.nodes || [], {
+      searchQuery,
+      selectedSev,
+      selectedLayer,
+      selectedStatus,
+      selectedThreatType,
+    })
+  }, [filteredAlerts, graphData, searchQuery, selectedSev, selectedLayer, selectedStatus, selectedThreatType])
+
   // Active selected alert (default to first matching)
   const activeAlert = useMemo(() => {
     if (!filteredAlerts.length) return null
@@ -98,7 +115,6 @@ export default function ThreatHunting() {
     if (!activeAlert) return
     const eventId = activeAlert.event_id || activeAlert.alert_id
     updateAlertStatus(eventId, newStatus)
-    activeAlert.status = newStatus
 
     // If isolating, call remediation endpoint if incident exists
     if (newStatus === 'isolated' && activeAlert.incident_id) {
@@ -214,7 +230,7 @@ export default function ThreatHunting() {
                   padding: '5px 12px', borderRadius: 16, fontSize: 11, fontWeight: 700,
                   border: `1px solid ${selectedSev === sev ? 'var(--text-primary)' : 'var(--border-light)'}`,
                   background: selectedSev === sev ? 'var(--text-primary)' : 'transparent',
-                  color: selectedSev === sev ? '#fff' : 'var(--text-secondary)',
+                  color: selectedSev === sev ? 'var(--surface-0)' : 'var(--text-secondary)',
                   cursor: 'pointer', textTransform: 'capitalize', transition: 'all 0.15s'
                 }}
               >
@@ -285,6 +301,55 @@ export default function ThreatHunting() {
               </select>
             </div>
           )}
+
+          {/* Focus in Graph Action Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: availableThreatTypes.length > 2 ? 12 : 'auto' }}>
+            {huntingFocus?.active ? (
+              <button
+                type="button"
+                onClick={clearHuntingFocus}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 14px',
+                  borderRadius: 10,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: 'rgba(0, 240, 255, 0.12)',
+                  border: '1px solid var(--accent-cyan)',
+                  color: 'var(--accent-cyan)',
+                  cursor: 'pointer',
+                }}
+              >
+                <Crosshair size={14} />
+                <span>Graph Focused ({huntingFocus.matchedInGraphCount} nodes) · Clear</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setHuntingFocus(derivedFocus)}
+                disabled={!derivedFocus.active}
+                title={derivedFocus.active ? `Focus ${derivedFocus.matchedInGraphCount} entities in topology graph` : 'Set filters to focus graph'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 14px',
+                  borderRadius: 10,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: derivedFocus.active ? 'var(--surface-2)' : 'transparent',
+                  border: `1px solid ${derivedFocus.active ? 'var(--border-subtle)' : 'var(--border-hairline)'}`,
+                  color: derivedFocus.active ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                  cursor: derivedFocus.active ? 'pointer' : 'not-allowed',
+                }}
+              >
+                <Crosshair size={14} />
+                <span>Focus in Graph ({derivedFocus.matchedInGraphCount} matched)</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -547,6 +612,11 @@ export default function ThreatHunting() {
                   </div>
                 </div>
               )}
+
+              {/* Evidence Trail Provenance Chain */}
+              <div>
+                <EvidenceTrail alert={activeAlert} incident={associatedIncident} />
+              </div>
 
               {/* Kill Chain Stage Tracking */}
               <div>

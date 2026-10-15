@@ -23,6 +23,8 @@ test('resolveTabFromLocation handles direct pathnames', () => {
   assert.strictEqual(resolveTabFromLocation({ pathname: '/graph' }), 'Entity Graph')
   assert.strictEqual(resolveTabFromLocation({ pathname: '/reports' }), 'Reports')
   assert.strictEqual(resolveTabFromLocation({ pathname: '/report' }), 'Reports')
+  assert.strictEqual(resolveTabFromLocation({ pathname: '/model-assurance' }), 'Reports')
+  assert.strictEqual(resolveTabFromLocation({ pathname: '/assurance' }), 'Reports')
   assert.strictEqual(resolveTabFromLocation({ pathname: '/unknown-route' }), 'Dashboard')
 })
 
@@ -30,4 +32,6 @@ test('resolveTabFromLocation handles hash routes', () => {
   assert.strictEqual(resolveTabFromLocation({ pathname: '/', hash: '#/threat-hunting' }), 'Threat Hunting')
   assert.strictEqual(resolveTabFromLocation({ pathname: '/', hash: '#entity-graph' }), 'Entity Graph')
   assert.strictEqual(resolveTabFromLocation({ pathname: '/', hash: '#reports' }), 'Reports')
+  assert.strictEqual(resolveTabFromLocation({ pathname: '/', hash: '#model-assurance' }), 'Reports')
+  assert.strictEqual(resolveTabFromLocation({ pathname: '/', hash: '#assurance' }), 'Reports')
 })

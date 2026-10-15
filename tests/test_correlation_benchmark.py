@@ -29,8 +29,8 @@ def test_build_benchmark_fixtures():
     assert "SCENARIO_10_FALSE_PIVOT_REJECTION" in scenario_ids
 
 
-def test_evaluate_correlation_quality_end_to_end():
-    report = evaluate_correlation_quality()
+def test_evaluate_correlation_quality_end_to_end(tmp_path):
+    report = evaluate_correlation_quality(output_dir=str(tmp_path))
     metrics = report["metrics"]
     op_metrics = report.get("operational_metrics", {})
 
