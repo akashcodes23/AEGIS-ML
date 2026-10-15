@@ -1,6 +1,6 @@
 # AEGIS-ML v1.0.0: Operator & Technical Reviewer Demonstration Guide
 
-This guide provides a structured, 5–8 minute technical demonstration walkthrough for evaluating the AEGIS-ML Cyber Threat Intelligence and Model Assurance platform.
+This guide provides a reproducible, 5–7 minute technical demonstration walkthrough for evaluating the AEGIS-ML Cyber Threat Intelligence, Evidence Integrity, and Model Assurance platform.
 
 ---
 
@@ -45,187 +45,180 @@ npm run preview -- --port 4173 --host 127.0.0.1
 
 ---
 
-## 2. Structured 5–8 Minute Demonstration Walkthrough
+## 2. Structured 5–7 Minute Demonstration Walkthrough
 
 ```mermaid
-graph LR
-    Step1["1. Status & Disclosure"] --> Step2["2. Dashboard Orientation"]
-    Step2 --> Step3["3. Threat Hunting"]
-    Step3 --> Step4["4. Entity Graph"]
-    Step4 --> Step5["5. Incident Dossiers & Export"]
-    Step5 --> Step6["6. Model Assurance"]
-    Step6 --> Step7["7. Zero-Day Limits"]
-    Step7 --> Step8["8. Benchmark Status"]
+graph TD
+    Step1["1. Architecture & System Health"] --> Step2["2. Synthetic Data Disclosure"]
+    Step2 --> Step3["3. Run Detection Analysis"]
+    Step3 --> Step4["4. Inspect Threat Alert"]
+    Step4 --> Step5["5. Follow Entity Graph Relationship"]
+    Step5 --> Step6["6. Review Observed & Inferred Evidence"]
+    Step6 --> Step7["7. Open Model Assurance"]
+    Step7 --> Step8["8. Explain Calibration & Uncertainty"]
+    Step8 --> Step9["9. Explain Zero-Day Generalization Limits"]
+    Step9 --> Step10["10. Explain CIC-IDS2017 Blocked Status"]
 ```
 
 ---
 
-### Step 1: System Status & Data-Mode Disclosure
+### Step 1: Application Architecture & System Health
 - **Starting Route**: `/`
-- **Required Application State**: Backend running or in standby; frontend loaded in browser.
-- **User Action**:
-  1. Inspect the top application header and connection status pills in the top-left bar.
-  2. Inspect the amber disclosure ribbon affixed above the main view container.
-- **Expected Visible Behavior**:
-  - Connection pill bar indicates genuine state:
-    - `WS: Stream Live` (green pulse) when connected, or `WS: Disconnected` / `Reconnecting` when offline.
-    - `API: Healthy` (green dot) or `API: Offline` (red dot).
-  - Amber synthetic disclosure ribbon states:
+- **Application State**: Backend running or in standby; frontend loaded in browser.
+- **Demonstration Action**:
+  1. Inspect the connection status indicators in the application header: `API: Healthy` (green indicator) and `WS: Stream Live` (green pulse).
+  2. Verify backend health endpoint via terminal:
+     ```bash
+     curl -s http://localhost:8000/api/health | jq '{loaded: .model_readiness.loaded, features: .model_readiness.feature_count, calibrated: .model_readiness.calibrated}'
+     ```
+- **Observable Truth**:
+  - The backend reports `feature_count: 48` matching the immutable schema contract.
+  - Model status reports `calibrated: true` and loaded artifact SHA-256 fingerprint.
+  - If the backend is stopped, the indicator immediately turns red (`API: Offline`) without hanging or throwing unhandled JavaScript exceptions.
+
+---
+
+### Step 2: Explicit Synthetic-Data Disclosure
+- **Starting Route**: `/`
+- **Demonstration Action**:
+  1. Inspect the amber warning ribbon permanently anchored across the dashboard header.
+  2. Review the active dataset scorecard in `DatasetPanel`.
+- **Observable Truth**:
+  - The ribbon explicitly states:
     `"Controlled Synthetic Demonstration Mode: Detections and replay telemetry derive from behavioral_diversity_labeled.jsonl. Real-world adversary environments may differ."`
-- **Evidence to Inspect**:
-  - `frontend/src/components/Navigation/StatusArea.jsx`
-  - `frontend/src/components/Common/SyntheticDemoRibbon.jsx`
-- **Failure / Unavailable-State Behavior**:
-  If the backend is terminated, the API pill immediately turns red (`API: Offline`) and the WebSocket pill displays retry countdowns with exponential backoff. The synthetic disclosure ribbon is permanent and non-dismissible.
+  - The interface forbids claiming that synthetic replay telemetry represents real-world enterprise infrastructure.
 
 ---
 
-### Step 2: Dashboard Orientation & Live Stream Control
+### Step 3: Running a Detection Analysis
 - **Starting Route**: `/`
-- **Required Application State**: Simulation runner idle or active.
-- **User Action**:
-  1. Review the four primary posture scorecards: *Network Pulse (eps)*, *Events Processed*, *Correlated Incidents*, *False Positives (Unlabelled)*.
-  2. Inspect the active dataset panel (`DatasetPanel`).
-  3. Click `"Start Analysis"` to initiate streaming replay of `behavioral_diversity_labeled.jsonl`.
-  4. Inspect the interactive *Temporal Scrubber* to view historical detection timelines.
-- **Expected Visible Behavior**:
-  - Live alerts stream into the *Alert Feed* with calculated severity badges.
-  - Active network topology renders in the *Attack Graph* canvas with directed edges.
-  - Scrubber scrub head allows scrubbing backwards in time to reconstruct earlier network states.
-- **Evidence to Inspect**:
-  - `frontend/src/components/Dashboard/Dashboard.jsx`
-  - `frontend/src/components/Dashboard/AlertFeed.jsx`
-  - `frontend/src/components/Common/TemporalScrubber.jsx`
-- **Failure / Unavailable-State Behavior**:
-  If analysis start fails (e.g. backend offline), a critical error banner appears with the exact HTTP error code and a dismiss control. If telemetry lacks timestamps, the scrubber excludes them from temporal slicing and reports the excluded count.
+- **Demonstration Action**:
+  1. In `DatasetPanel`, select the synthetic test dataset `behavioral_diversity_labeled.jsonl`.
+  2. Click `"Start Analysis"`.
+  3. Observe the asynchronous ingestion progress and the Temporal Scrubber.
+- **Observable Truth**:
+  - Ingestion progress bar advances smoothly as events flow into the detection pipeline.
+  - Posture status displays: `"Analyzing Telemetry Stream..."` during ingestion.
+  - When ingestion finishes with active threats, the banner explicitly decouples analysis completion from security posture:
+    `"Analysis Ingestion Finished — Active Findings ({count} Anomalies Flagged)"` in amber/crimson, rejecting misleading *"Your network looks secure"* banners.
 
 ---
 
-### Step 3: Threat Hunting Investigation & Calibrated Confidence
-- **Starting Route**: `/threat-hunting` (or click "Threat Hunting" dock item / press `⌘K` → type "hunting")
-- **Required Application State**: Alerts populated from active stream or loaded fixtures.
-- **User Action**:
-  1. Filter alerts by threat type (`data_exfiltration`, `lateral_movement`, `brute_force`, `c2_beaconing`).
-  2. Filter alerts by severity (`critical`, `high`, `medium`, `low`).
-  3. Select any alert row to expand the *Evidence Provenance Trail*.
-  4. Inspect the calibrated confidence score, raw vs. calibrated probability delta, and top causal feature contributions.
-- **Expected Visible Behavior**:
-  - Alert table updates instantly and deterministically.
-  - Evidence trail displays the MITRE technique name, kill-chain stage, and explicitly denotes whether confidence is calibrated via `CalibratedClassifierCV` (isotonic regression) or uncalibrated.
-- **Evidence to Inspect**:
-  - `frontend/src/components/ThreatHunting/ThreatHunting.jsx`
-  - `frontend/src/components/ThreatHunting/EvidenceTrail.jsx`
-  - `frontend/src/utils/evidence.js`
-- **Failure / Unavailable-State Behavior**:
-  If no alerts match the active filter criteria, a descriptive empty state renders: *"No threat detections match the selected hunting criteria."* If feature importance is model-level rather than local SHAP values, it is explicitly annotated as *Partial / Model-Level*.
+### Step 4: Inspecting a Threat Alert
+- **Starting Route**: `/` or `/threat-hunting`
+- **Demonstration Action**:
+  1. In the **Alert Feed**, select a critical detection (e.g., `data_exfiltration` or `lateral_movement`).
+  2. Inspect the **Priority Score** scorecard:
+     $$\text{Priority} = \min(99, \text{base\_severity} + \text{layer\_bonus} + \text{count\_bonus} + \text{confidence\_factor})$$
+  3. Review the confidence badge:
+     `Calibrated Confidence: 94.2% (Isotonic calibrated probability)` vs. `Model Consensus: 75% (Uncalibrated Random Forest tree agreement)`.
+- **Observable Truth**:
+  - Model probability and heuristic composite priority are never conflated into a single uninformative number.
+  - Monospace timestamps indicate `(Local)` timezone context.
 
 ---
 
-### Step 4: Entity Graph Exploration & Kill-Chain Depth
-- **Starting Route**: `/entity-graph` (or click "Entity Graph" dock item / press `⌘K` → type "graph")
-- **Required Application State**: Network nodes and attack edges loaded.
-- **User Action**:
-  1. Pan and zoom across the Cytoscape graph canvas.
-  2. Click a compromised host entity (e.g. `10.0.0.45`) to focus its blast radius.
-  3. Observe the node z-plane and visual halo reflecting its MITRE kill-chain progression stage.
-  4. Inspect the entity detail slide-out drawer on the right.
-- **Expected Visible Behavior**:
-  - Compromised nodes display distinct high-severity styling; benign internal servers maintain neutral low-contrast styling.
-  - Solid edges represent directly observed communication flows; dashed edges indicate inferred pivot links.
-- **Evidence to Inspect**:
-  - `frontend/src/components/Graph/EntityGraphView.jsx`
-  - `frontend/src/utils/depth.js`
-- **Failure / Unavailable-State Behavior**:
-  If graph data is empty, the canvas displays an informative empty state prompting the operator to start analysis. Nodes without verified kill-chain evidence default to `"Unknown"` depth without guessing.
+### Step 5: Following an Entity Graph Relationship
+- **Starting Route**: `/entity-graph` (or dock icon / `⌘K` → "graph")
+- **Demonstration Action**:
+  1. Use the keyboard shortcuts on the graph canvas:
+     - Press `+` to zoom in, `-` to zoom out, `F` to fit-to-view, and `R` to reset zoom.
+     - Press `Esc` to clear selection.
+  2. Click on a compromised node (e.g. `10.0.0.50` or `198.51.100.11`):
+     - Unrelated nodes and edges dim to 12% opacity (`.faded`).
+     - Connected neighbors illuminate with cyan halos (`.highlighted-neighbor`).
+  3. Inspect the floating **Node Inspector** panel on the right:
+     - Entity label, type (`IP`, `PROCESS`, `USER`), compromised state, in/out degrees.
+     - Connected neighbor list with direct `"Focus"` buttons.
+  4. Toggle attribute filters:
+     - Filter by Node Type: `ALL`, `IP`, `PROCESS`, `USER`.
+     - Filter by Provenance: `ALL`, `ANOMALOUS`, `OBSERVED`, `INFERRED`.
+- **Observable Truth**:
+  - Solid edges represent direct observed telemetry; dashed purple edges denote inferred correlation pivot hypotheses; dashed crimson edges denote anomalous attack flows.
+  - Parallel edges between identical endpoints are deduplicated, preventing visual edge density explosion without altering the underlying data model.
 
 ---
 
-### Step 5: Incident Dossiers & Cryptographic Briefing Export
-- **Starting Route**: `/reports` (default sub-tab: "Operational Incident Dossiers")
-- **Required Application State**: Correlated incidents formed by backend sliding window.
-- **User Action**:
-  1. Review posture scorecards and the *Empirical Attack Vector Distribution* table.
-  2. Inspect the *Correlated Campaign Incidents* dossier cards with recommended playbooks.
-  3. Click `"Export Audit Report (JSON)"` and `"Export Alert Log (CSV)"`.
-  4. Click `"Executive Briefing (Print/PDF)"` to generate a briefing modal.
-  5. Inspect the SHA-256 cryptographic integrity hash displayed in the modal header.
-- **Expected Visible Behavior**:
-  - JSON audit report downloads containing system state, model readiness, and incident links.
-  - CSV log downloads formatted RFC 4180 alert rows.
-  - Executive briefing modal opens with printable executive summary, timeline reconstruction, and SHA-256 evidence fingerprint.
-- **Evidence to Inspect**:
-  - `frontend/src/components/Reports/Reports.jsx`
-  - `frontend/src/components/Reports/BriefingModal.jsx`
-  - `frontend/src/utils/briefing.js`
-- **Failure / Unavailable-State Behavior**:
-  If `window.crypto.subtle` is unavailable (e.g. non-secure HTTP context), the briefing engine falls back to a deterministic SHA-256 implementation with an explicit disclosure footnote.
+### Step 6: Reviewing Observed and Inferred Evidence
+- **Starting Route**: `/` (Incident Dossier panel) or `/threat-hunting`
+- **Demonstration Action**:
+  1. In the Incident Dossier, open the **Evidence Provenance Trail** (`EvidenceTrail`).
+  2. Review the 5-link provenance filament:
+     1. Telemetry Event (`alert.raw_event` or `incident.supporting_events[0]`)
+     2. Feature Deviations (`alert.feature_importance`)
+     3. Model Score & Calibration (`alert.calibrated_confidence`)
+     4. Detection Alert (`alert.alert_id`)
+     5. Correlated Incident (`incident.incident_id`)
+  3. Review the **Relationship Evidence** list in the incident card.
+- **Observable Truth**:
+  - Each item is badged with an explicit claim type:
+    - `OBSERVED TELEMETRY` (verified packet/host log)
+    - `INFERRED HYPOTHESIS` (cross-layer co-occurrence or lateral pivot correlation)
+    - `MISSING EVIDENCE` (e.g., `socket_to_pid_binding_absent`, `packet_payload_uninspected`)
+  - Duplicate recurring alerts merge into existing relationship links, ensuring evidence totals are never inflated.
 
 ---
 
-### Step 6: Model Assurance Metrics & Uncertainty Intervals
-- **Starting Route**: `/model-assurance` or `/reports#model-assurance`
-- **Required Application State**: Static versioned Stage 6 evaluation artifacts.
-- **User Action**:
-  1. Navigate to Model Assurance view (via sub-tab, URL hash, or ⌘K shortcut).
-  2. Inspect the 4 headline metric cards and their 95% bootstrap confidence intervals:
-     - **Macro F1**: `0.9866` (95% CI: `[0.7803, 0.9987]`, Mean: `0.9674`, Std: `±0.0606`)
-     - **Benign False-Positive Rate**: `0.0024` (95% CI: `[0.0000, 0.0097]`, 1 FP / 419 flows, `2,386.63` alerts / 1M flows)
-     - **Expected Calibration Error (ECE)**: `0.0011` (95% CI: `[0.0003, 0.0120]`, `↓ 0.1130` reduction from uncalibrated 0.1141)
-     - **Multi-Class Brier Score**: `0.0109` (95% CI: `[0.0028, 0.0270]`, `↓ 0.1035` reduction from uncalibrated 0.1144)
-  3. Inspect the *Comparative Baselines* table (Majority Dummy, L2 Logistic Regression, Untuned RF, Calibrated RF).
-  4. Inspect the *Scenario-Grouped Partitioning* cards: 4,155 Train (80 scenarios), 676 Val (17 scenarios), 886 Test (19 scenarios), with `0.0%` scenario overlap.
-  5. Click `"Export Evaluation Protocol (JSON)"` to download the machine-readable evaluation summary.
-- **Expected Visible Behavior**:
-  - Dark-mode scorecards render with monospace numbers and clear uncertainty intervals.
-  - ECE is strictly labeled as calibration error (confidence vs. accuracy gap), never as accuracy.
-  - Confidence is explicitly defined as empirical posterior probability.
-- **Evidence to Inspect**:
-  - `frontend/src/components/Reports/ModelAssuranceView.jsx`
-  - `frontend/src/data/modelAssuranceData.js`
-  - `docs/evaluation/results.json`
-- **Failure / Unavailable-State Behavior**:
-  If any evaluation field is undefined or malformed, the component safely renders `Unavailable` without crashing and without injecting fictitious fallback numbers.
+### Step 7: Opening Model Assurance
+- **Starting Route**: `/model-assurance` or `/reports#model-assurance` (or `⌘K` → "assurance")
+- **Demonstration Action**:
+  1. Open the Model Assurance view.
+  2. Review the metadata card:
+     - Protocol: `1.0.0-preregistered` (`docs/evaluation.md`)
+     - Model Card: `docs/model-card.md`
+     - Dataset: `behavioral_diversity_labeled.jsonl` (SHA-256: `1a8967f...`)
+     - Scenario Splits: 4,155 Train (80 scenarios), 676 Val (17 scenarios), 886 Test (19 scenarios), with `0.0%` scenario overlap.
+- **Observable Truth**:
+  - All values match `docs/evaluation/results.json` character-for-character.
+  - The interface explicitly reminds the reviewer that results come from controlled synthetic partitions.
 
 ---
 
-### Step 7: Zero-Day Attack Generalization Limitations
+### Step 8: Explaining Calibration and Uncertainty
+- **Starting Route**: `/model-assurance`
+- **Demonstration Action**:
+  1. Review the headline metric scorecards with 95% bootstrap confidence intervals:
+     - **Macro F1**: `0.9866` (95% CI: `[0.7803, 0.9987]`, Mean: `0.9674`)
+     - **Benign FPR**: `0.0024` (95% CI: `[0.0000, 0.0097]`, 1 FP / 419 test flows)
+     - **Expected Calibration Error (ECE)**: `0.0011` (95% CI: `[0.0003, 0.0120]`, reduced from uncalibrated 0.1141)
+     - **Brier Score**: `0.0109` (95% CI: `[0.0028, 0.0270]`, reduced from uncalibrated 0.1144)
+  2. Inspect the Reliability Diagram / Calibration Curve table:
+     - 10 confidence bins with near-zero calibration error across all ranges.
+- **Observable Truth**:
+  - ECE is strictly labeled as calibration error (gap between confidence and true empirical accuracy), never as detection accuracy.
+  - The 95% bootstrap intervals are displayed prominently to communicate uncertainty honestly.
+
+---
+
+### Step 9: Explaining Zero-Day Generalization Limitations
 - **Starting Route**: `/model-assurance` (Section 3: "Zero-Day Attack Generalization & Escape Rates")
-- **Required Application State**: Stage 6 leave-one-attack-type-out stress test results.
-- **User Action**:
-  Inspect the empirical escape rate table when testing against novel, unobserved attack categories:
-  - **Data Exfiltration**: 147 test flows → **100.0%** escape to benign
-  - **Lateral Movement**: 35 test flows → **94.3%** escape to benign (33 to benign, 2 to C2)
-  - **Brute Force**: 238 test flows → **92.4%** escape to benign (220 to benign, 18 to C2)
-  - **C2 Beaconing**: 47 test flows → **44.7%** escape to benign (profiler anomaly layer achieves 38.3% recall)
-- **Expected Visible Behavior**:
-  - Escapes are badged in critical severity tokens and labeled as a *"Known Architectural Limitation"*.
-  - Accompanying architectural mitigation notes explain that supervised classification alone is fundamentally blind to unobserved zero-day attack patterns, providing the empirical justification for AEGIS's multi-layered defense (Supervised + Anomaly Profiling + Temporal Correlation).
-- **Evidence to Inspect**:
-  - `docs/evaluation/RESULTS.md`
-  - `docs/model-card.md`
-- **Failure / Unavailable-State Behavior**:
-  The platform reports exact measured escape rates honestly; zero-day capabilities are never overstated.
+- **Demonstration Action**:
+  1. Review the leave-one-attack-type-out stress test results against novel, unseen attack categories:
+     - **Data Exfiltration**: 147 test flows → **100.0% escape rate to benign**
+     - **Lateral Movement**: 35 test flows → **94.3% escape rate to benign**
+     - **Brute Force**: 238 test flows → **92.4% escape rate to benign**
+     - **C2 Beaconing**: 47 test flows → **44.7% escape rate to benign**
+- **Observable Truth**:
+  - These severe escapes are badged in critical severity tokens and labeled as a *"Known Architectural Limitation"*.
+  - The accompanying text explains that supervised machine learning is blind to novel zero-day features, providing the empirical justification for AEGIS-ML's multi-layered defense (Supervised Classifier + Anomaly Profiler + Temporal Incident Correlator).
 
 ---
 
-### Step 8: External Benchmark Status (CIC-IDS2017)
+### Step 10: Explaining Why CIC-IDS2017 Benchmark Remains Blocked
 - **Starting Route**: `/model-assurance` (Section 5: "Artifact Provenance & External Benchmark Status")
-- **Required Application State**: External benchmark audit metadata.
-- **User Action**:
-  Inspect the CIC-IDS2017 Benchmark Status card.
-- **Expected Visible Behavior**:
-  - Status is clearly displayed as `BLOCKED_AWAITING_LOCAL_COPY`.
-  - Explanation: Interactive click-through registration required by University of New Brunswick; local raw dataset absent from offline evaluation environment; 35.4% feature schema discrepancy for endpoint process context.
-  - Explicit confirmation: `Fabricated Numbers: false`.
-- **Evidence to Inspect**:
-  - `docs/evaluation.md`
-  - `docs/evaluation/results.json`
-- **Failure / Unavailable-State Behavior**:
-  The platform refuses to display estimated or unvalidated external benchmark figures.
+- **Demonstration Action**:
+  1. Inspect the CIC-IDS2017 Benchmark Status card.
+- **Observable Truth**:
+  - The status is clearly displayed as `BLOCKED_AWAITING_LOCAL_COPY`.
+  - Stated rationale:
+    1. Interactive click-through registration is required by the University of New Brunswick.
+    2. The raw dataset was not present in the offline evaluation environment during Stage 6 execution.
+    3. The feature schema has a 35.4% discrepancy (endpoint process lineage context is absent from pure PCAP).
+  - Explicit confirmation: `Fabricated Numbers: false`. The platform refuses to invent estimated external numbers.
 
 ---
 
-## 3. Quick Reference: Keyboard Shortcuts
+## 3. Keyboard Shortcuts Quick Reference
 
 | Shortcut | Action | Destination |
 | :--- | :--- | :--- |
@@ -233,8 +226,12 @@ graph LR
 | Type `"assurance"` + `Enter` | Jump to Model Assurance | `/reports#model-assurance` |
 | Type `"hunting"` + `Enter` | Jump to Threat Hunting | `/threat-hunting` |
 | Type `"graph"` + `Enter` | Jump to Entity Graph | `/entity-graph` |
-| Type `"fx"` + `Enter` | Toggle Reduced Visual Effects | Atmosphere toggle |
-| `Escape` | Dismiss Modals / Command Palette | Closes active modal |
+| Type `"fx"` + `Enter` | Toggle Reduced Visual Effects | Spatial atmosphere |
+| `+` or `=` (in graph) | Zoom In | Active Cytoscape canvas |
+| `-` or `_` (in graph) | Zoom Out | Active Cytoscape canvas |
+| `F` or `0` (in graph) | Fit to View | Active Cytoscape canvas |
+| `R` (in graph) | Reset Zoom to 1.0x | Active Cytoscape canvas |
+| `Escape` | Dismiss Modals / Clear Graph Selection | Active view / overlay |
 
 ---
 
@@ -243,15 +240,18 @@ graph LR
 To reproduce the verification results reported in this release:
 
 ```bash
-# 1. Run all frontend unit and integration tests (76 tests)
+# 1. Run all frontend unit and release validation tests (90 tests)
 node --test frontend/src/**/*.test.js
 
-# 2. Run frontend linter
+# 2. Run frontend linter (0 errors, 0 warnings)
 npm --prefix frontend run lint
 
-# 3. Run frontend production build
+# 3. Run frontend production build (clean bundle generation)
 npm --prefix frontend run build
 
-# 4. Run backend evaluation and core logic tests (25 tests)
-PYTHONPATH=. pytest tests/test_evaluation_integrity_stage6.py tests/test_threat_classifier.py tests/test_incident_correlator.py
+# 4. Run targeted backend release and evaluation integrity tests (45 tests)
+PYTHONPATH=. pytest tests/test_evaluation_integrity_stage6.py tests/test_threat_classifier.py tests/test_incident_correlator.py tests/test_api_endpoints.py tests/test_production_deployment.py
+
+# 5. Run full backend test suite (346 tests)
+PYTHONPATH=. pytest tests/
 ```

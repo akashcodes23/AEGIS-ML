@@ -574,7 +574,10 @@ export default function ModelAssuranceView() {
               {CORRELATION_ENGINE_VALIDATION.scenarios_evaluated} Scenarios Validated (0 Merge / 0 Split Errors)
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Triage Reduction: <span className="mono-font">{CORRELATION_ENGINE_VALIDATION.triage_reduction_pct}%</span> · Evidence Traceability: 100.0%
+              Triage Reduction: <span className="mono-font">{CORRELATION_ENGINE_VALIDATION.triage_reduction_pct}%</span> · Evidence Traceability: <span className="mono-font">100.0%</span>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
+              Traceability scope: 100% of supporting event IDs preserved across {CORRELATION_ENGINE_VALIDATION.scenarios_evaluated} correlation benchmark attack scenarios (controlled benchmark, not a measure of enterprise graph completeness).
             </div>
           </div>
         </div>

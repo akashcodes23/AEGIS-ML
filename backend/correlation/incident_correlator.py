@@ -552,19 +552,43 @@ class IncidentCorrelator:
 
         provenance_str = alert.source_file or ("synthetic_telemetry" if alert.is_synthetic else "network_telemetry")
 
-        inc.relationship_evidence.append({
-            "source_entity": alert.src_entity,
-            "target_entity": alert.dst_entity or "unknown",
-            "relationship_type": rel_type,
-            "claim_type": claim_type,
-            "correlation_rule": matched_rule_str,
-            "evidence_provenance": provenance_str,
-            "reason": f"Correlated via {matched_rule_str}: {alert.threat_type}",
-            "supporting_event_ids": [new_ev_id],
-            "timestamp": alert_time.isoformat(),
-            "uncertainty_notes": unc_note,
-            "missing_evidence": missing_evidence,
-        })
+        # Check if an identical relationship already exists between these entities to prevent duplicate inflation
+        existing_rel = None
+        for r in inc.relationship_evidence:
+            if (
+                isinstance(r, dict)
+                and r.get("source_entity") == alert.src_entity
+                and r.get("target_entity") == (alert.dst_entity or "unknown")
+                and r.get("relationship_type") == rel_type
+            ):
+                existing_rel = r
+                break
+
+        if existing_rel is not None:
+            ev_list = existing_rel.setdefault("supporting_event_ids", [])
+            if new_ev_id and new_ev_id not in ev_list:
+                ev_list.append(new_ev_id)
+            existing_rel["timestamp"] = max(existing_rel.get("timestamp", alert_time.isoformat()), alert_time.isoformat())
+            if matched_rule_str and existing_rel.get("correlation_rule") == "RULE_0_INITIAL_TRIGGER":
+                existing_rel["correlation_rule"] = matched_rule_str
+                existing_rel["reason"] = f"Correlated via {matched_rule_str}: {alert.threat_type}"
+            cur_missing = set(existing_rel.get("missing_evidence") or [])
+            cur_missing.update(missing_evidence)
+            existing_rel["missing_evidence"] = sorted(list(cur_missing))
+        else:
+            inc.relationship_evidence.append({
+                "source_entity": alert.src_entity,
+                "target_entity": alert.dst_entity or "unknown",
+                "relationship_type": rel_type,
+                "claim_type": claim_type,
+                "correlation_rule": matched_rule_str,
+                "evidence_provenance": provenance_str,
+                "reason": f"Correlated via {matched_rule_str}: {alert.threat_type}",
+                "supporting_event_ids": [new_ev_id] if new_ev_id else [],
+                "timestamp": alert_time.isoformat(),
+                "uncertainty_notes": unc_note,
+                "missing_evidence": missing_evidence,
+            })
 
         # Append timeline entries (Observation + Hypothesis)
         new_timeline = self._build_subsequent_timeline(inc, alert, alert_time, raw_event)

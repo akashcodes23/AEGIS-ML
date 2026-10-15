@@ -291,3 +291,39 @@ def test_explainer_feature_names_aligned():
     canonical = set(ThreatClassifier.FEATURE_NAMES)
     for key in result:
         assert key in canonical, f"Explainer returned unknown feature key: {key}"
+
+
+def test_duplicate_relationship_evidence_deduplication(correlator):
+    """Verify that recurring alerts between the same entities and rule do not inflate relationship evidence."""
+    base_time = datetime(2026, 10, 9, 10, 0, 0)
+    a1 = create_mock_alert(
+        event_id="evt-dup-1",
+        src_entity="10.0.0.10",
+        dst_entity="10.0.0.20",
+        threat_type="brute_force",
+        timestamp=base_time
+    )
+    inc, is_new = correlator.correlate_alert(a1)
+    assert is_new is True
+    initial_rel_count = len(inc.relationship_evidence)
+    assert initial_rel_count >= 1
+
+    # Correlate a second alert between the same entities on the same rule
+    a2 = create_mock_alert(
+        event_id="evt-dup-2",
+        src_entity="10.0.0.10",
+        dst_entity="10.0.0.20",
+        threat_type="brute_force",
+        timestamp=base_time + timedelta(seconds=30)
+    )
+    inc_updated, is_new2 = correlator.correlate_alert(a2)
+    assert is_new2 is False
+    assert inc_updated.incident_id == inc.incident_id
+    # Relationship evidence should not have duplicated
+    assert len(inc_updated.relationship_evidence) == initial_rel_count
+
+    # The supporting_event_ids in the relationship should include both event IDs
+    rel = inc_updated.relationship_evidence[0]
+    assert "evt-dup-1" in rel["supporting_event_ids"]
+    assert "evt-dup-2" in rel["supporting_event_ids"]
+

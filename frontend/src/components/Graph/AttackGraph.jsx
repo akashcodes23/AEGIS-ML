@@ -558,6 +558,7 @@ export default memo(function AttackGraph() {
 
     cy.batch(() => {
       nodes.forEach(n => {
+        if (!n || !n.id) return // skip malformed node
         if (!cy.getElementById(n.id).length) {
           const rawStage = resolveNodeStage(n)
           const norm = normalizeKillChainStage(rawStage)
@@ -589,6 +590,9 @@ export default memo(function AttackGraph() {
       })
 
       edges.forEach(e => {
+        if (!e || !e.id || !e.source || !e.target) return // skip malformed edge
+        // Cytoscape will crash if source or target node is missing from cy
+        if (!cy.getElementById(e.source).length || !cy.getElementById(e.target).length) return
         if (!cy.getElementById(e.id).length) {
           cy.add({
             group: 'edges',
@@ -1181,6 +1185,15 @@ export default memo(function AttackGraph() {
             <span style={{ width: 16, height: 2, borderTop: '2px dashed var(--severity-critical-fg)', display: 'inline-block' }} />
             Anomalous Attack Flow
           </span>
+          <span style={{ color: 'var(--border-subtle)', margin: '0 4px' }}>|</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)' }}>
+            <span style={{ fontWeight: 700, textTransform: 'uppercase' }}>Keys:</span>
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>+</kbd> In
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>-</kbd> Out
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>F</kbd> Fit
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>R</kbd> Reset
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>Esc</kbd> Clear
+          </span>
         </div>
       </div>
 
@@ -1264,8 +1277,26 @@ export default memo(function AttackGraph() {
         <div
           ref={containerRef}
           role="region"
-          aria-label="Interactive Cytoscape Entity Graph"
-          tabIndex="0"
+          aria-label="Interactive Cytoscape Entity Graph (press + to zoom in, - to zoom out, F to fit view, Esc to clear selection)"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === '+' || e.key === '=') {
+              e.preventDefault()
+              zoomIn()
+            } else if (e.key === '-' || e.key === '_') {
+              e.preventDefault()
+              zoomOut()
+            } else if (e.key === 'f' || e.key === 'F' || e.key === '0') {
+              e.preventDefault()
+              fitGraph()
+            } else if (e.key === 'r' || e.key === 'R') {
+              e.preventDefault()
+              resetZoom()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              clearSelection()
+            }
+          }}
           style={{
             flex: 1,
             width: '100%',
@@ -1273,6 +1304,7 @@ export default memo(function AttackGraph() {
             background: 'var(--surface-0)',
             borderRadius: 12,
             border: '1px solid var(--border-hairline)',
+            outline: 'none',
             position: 'relative',
             overflow: 'hidden',
           }}

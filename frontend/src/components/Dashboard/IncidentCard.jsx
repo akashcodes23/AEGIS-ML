@@ -1,4 +1,4 @@
-import { memo, useState, lazy, Suspense } from 'react'
+import { memo, useState, lazy, Suspense, useMemo } from 'react'
 import {
   ShieldAlert, Crosshair, Target, Activity, FileText, FastForward,
   ShieldCheck, PlayCircle, Fingerprint, Layers, Clock, AlertCircle,
@@ -95,6 +95,32 @@ export default memo(function IncidentCard() {
                    alerts.find(a => (a.incident_id || a.alert_id || a.event_id) === selectedId) ||
                    incidents[0] ||
                    alerts[0]
+
+  // Deduplicate relationship evidence between same entities and relationship type to prevent UI inflation
+  const rawRelationshipEvidence = incident?.relationship_evidence
+  const relationshipEvidence = useMemo(() => {
+    if (!Array.isArray(rawRelationshipEvidence)) return []
+    const seen = new Set()
+    const deduplicated = []
+    for (const rel of rawRelationshipEvidence) {
+      if (!rel || typeof rel !== 'object') continue
+      const src = rel.source_entity || ''
+      const dst = rel.target_entity || ''
+      const type = rel.relationship_type || ''
+      const key = `${src}|${dst}|${type}`
+      if (seen.has(key)) {
+        const existing = deduplicated.find(d => `${d.source_entity || ''}|${d.target_entity || ''}|${d.relationship_type || ''}` === key)
+        if (existing && Array.isArray(rel.supporting_event_ids)) {
+          const merged = new Set([...(existing.supporting_event_ids || []), ...rel.supporting_event_ids])
+          existing.supporting_event_ids = Array.from(merged)
+        }
+      } else {
+        seen.add(key)
+        deduplicated.push({ ...rel })
+      }
+    }
+    return deduplicated
+  }, [rawRelationshipEvidence])
 
   if (!incident) return (
     <div className="glass-panel animate-slide-up" style={{ 
@@ -376,21 +402,21 @@ export default memo(function IncidentCard() {
             )}
 
             {/* Traceable Relationship Evidence with Direct Jump to Supporting Events */}
-            {incident.relationship_evidence && incident.relationship_evidence.length > 0 && (
+            {relationshipEvidence && relationshipEvidence.length > 0 && (
               <div style={{
                 padding: '16px 20px', borderRadius: 12,
                 background: 'var(--bg-page)', border: '1px solid var(--border-light)'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Network size={15} /> Relationship Evidence ({incident.relationship_evidence.length})
+                    <Network size={15} /> Relationship Evidence ({relationshipEvidence.length})
                   </div>
                   <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 12, background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border-hairline)' }}>
-                    {incident.relationship_evidence.filter(r => r.claim_type !== 'hypothesis').length} Observed • {incident.relationship_evidence.filter(r => r.claim_type === 'hypothesis').length} Inferred
+                    {relationshipEvidence.filter(r => r.claim_type !== 'hypothesis').length} Observed • {relationshipEvidence.filter(r => r.claim_type === 'hypothesis').length} Inferred
                   </span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {incident.relationship_evidence.map((rel, idx) => {
+                  {relationshipEvidence.map((rel, idx) => {
                     const isHyp = rel.claim_type === 'hypothesis'
                     return (
                       <div key={idx} style={{
