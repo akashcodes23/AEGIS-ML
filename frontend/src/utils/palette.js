@@ -92,13 +92,14 @@ export function searchPalette(query = '', sources = {}, limit = 20) {
   // 1. Routes
   safeSources.routes.forEach(r => {
     allItems.push({
-      id: `route-${r.id || r.name}`,
+      id: `route-${r.id || r.name.toLowerCase().replace(/\s+/g, '-')}`,
       category: 'Navigate',
       label: r.name,
-      subtitle: 'View',
+      subtitle: r.subtitle || 'View',
       description: r.description || `Switch to ${r.name} view`,
       type: 'route',
-      target: r.name,
+      target: r.target || r.name,
+      hash: r.hash || '',
     })
   })
 

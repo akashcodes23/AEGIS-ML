@@ -210,11 +210,14 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState(() => resolveTabFromLocation())
   const [actionError, setActionError] = useState(null)
 
-  const navigateTo = useCallback((tab) => {
+  const navigateTo = useCallback((tab, hash = '') => {
     setActiveTab(tab)
-    const targetPath = TAB_ROUTES[tab] || '/'
-    if (typeof window !== 'undefined' && window.location.pathname !== targetPath) {
+    const targetPath = (TAB_ROUTES[tab] || '/') + (hash ? `#${hash.replace(/^#/, '')}` : '')
+    if (typeof window !== 'undefined') {
       window.history.pushState({ tab }, '', targetPath)
+      if (hash) {
+        window.location.hash = hash
+      }
     }
   }, [])
 
@@ -274,6 +277,7 @@ export default function Dashboard() {
         { name: 'Threat Hunting', description: 'Triage detections, investigate hypotheses, and filter entities' },
         { name: 'Entity Graph', description: 'Full spatial topology, lateral pivot links, and blast radius' },
         { name: 'Reports', description: 'Executive incident briefings, audit exports, and CSV logs' },
+        { name: 'Model Assurance', target: 'Reports', hash: 'model-assurance', description: 'Empirical model metrics (Macro F1 0.9866, ECE 0.0011), zero-day generalization escape rates, and protocol provenance' },
       ],
       actions: [
         { id: 'jump-latest', label: 'Jump to Latest Telemetry', category: 'Time', actionKey: 'jumpToLatest', description: 'Exit temporal replay and restore real-time live alert stream' },
@@ -647,8 +651,8 @@ export default function Dashboard() {
             isOpen={paletteOpen}
             onClose={() => setPaletteOpen(false)}
             triggerRef={paletteTriggerRef}
-            onNavigate={(tab) => {
-              navigateTo(tab)
+            onNavigate={(tab, hash) => {
+              navigateTo(tab, hash)
               setPaletteOpen(false)
             }}
             onSelectIncident={(id) => {

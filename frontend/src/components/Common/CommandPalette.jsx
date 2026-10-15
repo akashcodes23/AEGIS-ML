@@ -97,7 +97,7 @@ export default function CommandPalette({
 
     switch (item.type) {
       case 'route':
-        if (onNavigate) onNavigate(item.target)
+        if (onNavigate) onNavigate(item.target, item.hash)
         break
       case 'incident':
         if (onSelectIncident) {
