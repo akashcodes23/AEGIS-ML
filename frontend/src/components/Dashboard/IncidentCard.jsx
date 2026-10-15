@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useState, lazy, Suspense } from 'react'
 import {
   ShieldAlert, Crosshair, Target, Activity, FileText, FastForward,
   ShieldCheck, PlayCircle, Fingerprint, Layers, Clock, AlertCircle,
@@ -6,6 +6,9 @@ import {
 } from 'lucide-react'
 import useAlertStore from '../../store/alertStore'
 import { getApiUrl } from '../../config/api'
+import EvidenceTrail from '../Common/EvidenceTrail'
+
+const BriefingModal = lazy(() => import('../Reports/BriefingModal'))
 
 const TABS = [
   'Executive Summary',
@@ -45,7 +48,8 @@ function FeatureBar({ label, value }) {
   )
 }
 
-function InsightChip({ icon: Icon, label, value, subtext = null }) {
+function InsightChip({ icon, label, value, subtext = null }) {
+  const ChipIcon = icon
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
@@ -53,7 +57,7 @@ function InsightChip({ icon: Icon, label, value, subtext = null }) {
       borderRadius: 12, border: '1px solid var(--border-light)'
     }}>
       <div style={{ color: 'var(--accent-brand)' }}>
-        <Icon size={16} strokeWidth={2} />
+        <ChipIcon size={16} strokeWidth={2} />
       </div>
       <div style={{ overflow: 'hidden' }}>
         <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-tertiary)', fontWeight: 700 }}>{label}</div>
@@ -68,10 +72,23 @@ function InsightChip({ icon: Icon, label, value, subtext = null }) {
 
 export default memo(function IncidentCard() {
   const [activeTab, setActiveTab] = useState(0)
+  const [briefingOpen, setBriefingOpen] = useState(false)
+  const [graphSnapshot, setGraphSnapshot] = useState(null)
   const alerts = useAlertStore(s => s.alerts)
   const incidents = useAlertStore(s => s.incidents)
   const selectedId = useAlertStore(s => s.selectedIncident)
-  const selectIncident = useAlertStore(s => s.selectIncident)
+
+  const handleOpenBriefing = () => {
+    if (typeof window !== 'undefined' && window.__cytoscape_instance__) {
+      try {
+        const snap = window.__cytoscape_instance__.png({ full: false, scale: 2, bg: '#07090e' })
+        setGraphSnapshot(snap)
+      } catch (err) {
+        console.warn('[AEGIS] Snapshot capture fallback:', err)
+      }
+    }
+    setBriefingOpen(true)
+  }
 
   // Find targeted incident or fallback
   const incident = incidents.find(i => i.incident_id === selectedId) ||
@@ -129,7 +146,7 @@ export default memo(function IncidentCard() {
     <div className="glass-panel animate-slide-up" style={{ gridColumn: '1 / -1', display: 'flex', overflow: 'hidden' }}>
       
       {/* ── Left Sidebar: Critical Narrative & Entities ────────────────────── */}
-      <div style={{ width: 380, borderRight: '1px solid var(--border-light)', padding: 28, background: 'rgba(250, 249, 246, 0.4)', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ width: 380, borderRight: '1px solid var(--border-light)', padding: 28, background: 'var(--surface-1)', display: 'flex', flexDirection: 'column', gap: 20 }}>
         
         {/* Status Badges */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -160,9 +177,9 @@ export default memo(function IncidentCard() {
 
         {/* Title */}
         <div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2, marginBottom: 8, letterSpacing: '-0.4px' }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--text-primary)', lineHeight: 1.2, marginBottom: 8, letterSpacing: '-0.4px' }}>
             {threatName} Activity
-          </div>
+          </h2>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
             Correlated campaign involving <span className="mono-font" style={{fontWeight:600}}>{incident.primary_attacker || incident.src_entity}</span> targeting <span className="mono-font" style={{fontWeight:600}}>{incident.primary_target || incident.dst_entity}</span>.
           </div>
@@ -225,19 +242,44 @@ export default memo(function IncidentCard() {
       {/* ── Right Content: Multi-tab Investigation Panel ──────────────────── */}
       <div style={{ flex: 1, padding: 32, display: 'flex', flexDirection: 'column' }}>
         
-        {/* Tab Navigation */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: '1px solid var(--border-light)', paddingBottom: 16, overflowX: 'auto' }}>
-          {TABS.map((t, i) => (
-            <button key={t} onClick={() => setActiveTab(i)} style={{
-              background: activeTab === i ? 'var(--text-primary)' : 'transparent',
-              color: activeTab === i ? '#fff' : 'var(--text-secondary)',
-              border: 'none', padding: '8px 18px', borderRadius: 20,
-              fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              whiteSpace: 'nowrap', transition: 'all 0.2s ease'
-            }}>
-              {t}
-            </button>
-          ))}
+        {/* Tab Navigation & Export Briefing */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, borderBottom: '1px solid var(--border-light)', paddingBottom: 16, overflowX: 'auto', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {TABS.map((t, i) => (
+              <button key={t} onClick={() => setActiveTab(i)} style={{
+                background: activeTab === i ? 'var(--text-primary)' : 'transparent',
+                color: activeTab === i ? 'var(--surface-0)' : 'var(--text-secondary)',
+                border: 'none', padding: '8px 18px', borderRadius: 20,
+                fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                whiteSpace: 'nowrap', transition: 'all 0.2s ease'
+              }}>
+                {t}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenBriefing}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '7px 16px',
+              borderRadius: 20,
+              fontSize: 12,
+              fontWeight: 700,
+              background: 'rgba(0, 240, 255, 0.08)',
+              border: '1px solid var(--accent-cyan)',
+              color: 'var(--accent-cyan)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(0, 240, 255, 0.15)',
+            }}
+          >
+            <FileText size={14} />
+            <span>Executive Briefing</span>
+          </button>
         </div>
 
         {/* ── TAB 0: Executive Summary & ML Insights ──────────────────────── */}
@@ -260,6 +302,9 @@ export default memo(function IncidentCard() {
                 </div>
               </div>
             </div>
+
+            {/* ── Evidence Provenance Trail ── */}
+            <EvidenceTrail incident={incident} />
 
             {/* Local ML Feature Contributions */}
             <div>
@@ -728,6 +773,21 @@ export default memo(function IncidentCard() {
         )}
 
       </div>
+
+      {/* ── Executive Briefing Modal & Print View ─────────────────────── */}
+      {briefingOpen && (
+        <Suspense fallback={null}>
+          <BriefingModal
+            isOpen={briefingOpen}
+            onClose={() => setBriefingOpen(false)}
+            incident={incident}
+            alerts={alerts}
+            isSynthetic={isSynthetic}
+            sessionAlertsCount={alerts.length}
+            graphSnapshot={graphSnapshot}
+          />
+        </Suspense>
+      )}
     </div>
   )
 })

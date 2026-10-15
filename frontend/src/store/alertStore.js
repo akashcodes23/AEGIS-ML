@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-const useAlertStore = create((set, get) => ({
+const useAlertStore = create((set) => ({
   alerts: [],
   incidents: [],
   graphData: { nodes: [], edges: [] },
@@ -15,6 +15,10 @@ const useAlertStore = create((set, get) => ({
   },
   simulationRunning: false,
   selectedIncident: null,
+  scrubberTime: null,
+  liveAlertBuffer: [],
+  focusIncidentId: null,
+  huntingFocus: null,
 
   setAlerts: (alerts) =>
     set({ alerts: Array.isArray(alerts) ? alerts.slice(0, 200) : [] }),
@@ -22,11 +26,34 @@ const useAlertStore = create((set, get) => ({
   setIncidents: (incidents) =>
     set({ incidents: Array.isArray(incidents) ? incidents : [] }),
 
+  setScrubberTime: (t) => set({ scrubberTime: t }),
+
+  setFocusIncidentId: (id) => set({ focusIncidentId: id }),
+
+  setHuntingFocus: (focus) => set({ huntingFocus: focus }),
+
+  clearHuntingFocus: () => set({ huntingFocus: null }),
+
+  jumpToLatest: () =>
+    set((state) => {
+      const mergedAlerts = [...state.liveAlertBuffer, ...state.alerts].slice(0, 200)
+      return {
+        scrubberTime: null,
+        liveAlertBuffer: [],
+        alerts: mergedAlerts,
+      }
+    }),
+
   addAlert: (alert) =>
     set((state) => {
       const alertId = alert.alert_id || alert.event_id
       if (alertId && state.alerts.some((a) => (a.alert_id || a.event_id) === alertId)) {
         return state
+      }
+      if (state.scrubberTime !== null) {
+        return {
+          liveAlertBuffer: [alert, ...state.liveAlertBuffer],
+        }
       }
       return {
         alerts: [alert, ...state.alerts].slice(0, 200),
@@ -76,6 +103,10 @@ const useAlertStore = create((set, get) => ({
     set({
       alerts: [],
       incidents: [],
+      scrubberTime: null,
+      liveAlertBuffer: [],
+      focusIncidentId: null,
+      huntingFocus: null,
       stats: {
         total_events: 0,
         events_per_second: 0,
@@ -87,5 +118,9 @@ const useAlertStore = create((set, get) => ({
       },
     }),
 }))
+
+if (typeof window !== 'undefined' && (Boolean(import.meta.env?.DEV) || import.meta.env?.VITE_E2E === 'true')) {
+  window.useAlertStore = useAlertStore
+}
 
 export default useAlertStore

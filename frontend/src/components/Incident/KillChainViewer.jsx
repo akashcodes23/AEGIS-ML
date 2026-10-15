@@ -36,7 +36,7 @@ function resolveStatuses(stages, currentStage, predictedNext) {
 const STATUS = {
   detected:  { bg: '#10b981', border: '#059669', text: '#fff', shadow: 'rgba(16,185,129,0.4)' },
   predicted: { bg: '#f97316', border: '#ea580c', text: '#fff', shadow: 'rgba(249,115,22,0.4)' },
-  passed:    { bg: '#94a3b8', border: '#64748b', text: '#fff', shadow: 'none' },
+  passed:    { bg: '#94a3b8', border: 'var(--text-tertiary)', text: '#fff', shadow: 'none' },
   future:    { bg: '#f0f6ff', border: 'rgba(96,165,250,0.3)', text: '#a0bdd4', shadow: 'none' },
 }
 
@@ -116,15 +116,15 @@ function StageNode({ stage, status, showTooltip, onHover }) {
       {/* Label */}
       <div style={{ textAlign: 'center' }}>
         <div style={{
-          fontSize: 10, fontWeight: 700, fontFamily: "'Sora', sans-serif",
-          color: status === 'future' ? '#a0bdd4' : '#1e3a5f',
+          fontSize: 10, fontWeight: 700, fontFamily: 'var(--font-ui)',
+          color: status === 'future' ? 'var(--text-tertiary)' : 'var(--text-primary)',
           whiteSpace: 'nowrap',
         }}>
           {stage.label}
         </div>
         <div style={{
           fontSize: 9, letterSpacing: 1, textTransform: 'uppercase',
-          color: s.border, fontWeight: 600, marginTop: 2,
+          color: status === 'future' ? 'var(--text-secondary)' : s.border, fontWeight: 600, marginTop: 2,
         }}>
           {status}
         </div>
@@ -146,7 +146,7 @@ function StageNode({ stage, status, showTooltip, onHover }) {
         }}>
           {/* Arrow */}
           <div style={{
-            position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
+            position: 'absolute', top: -6, left: '50%',
             width: 12, height: 12,
             background: 'rgba(255,255,255,0.97)',
             border: '1px solid rgba(249,115,22,0.3)',
@@ -196,21 +196,21 @@ export default function KillChainViewer({ stages, currentStage, predictedNext })
 
   return (
     <div style={{
-      background: 'rgba(255,255,255,0.72)',
-      backdropFilter: 'blur(18px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(18px) saturate(160%)',
-      border: '1px solid rgba(96,165,250,0.18)',
+      background: 'var(--surface-1)',
+      backdropFilter: 'var(--glass-blur)',
+      WebkitBackdropFilter: 'var(--glass-blur)',
+      border: '1px solid var(--border-hairline)',
       borderRadius: 18,
-      boxShadow: '0 4px 24px rgba(59,130,246,0.07)',
+      boxShadow: 'var(--shadow-elevation-1)',
       padding: '20px 24px',
-      fontFamily: "'Sora', sans-serif",
+      fontFamily: 'var(--font-ui)',
     }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 14, color: '#1e3a5f' }}>Kill Chain Progress</div>
-          <div style={{ fontSize: 10, color: '#a0bdd4', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>Kill Chain Progress</div>
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>
             MITRE ATT&amp;CK · Live Tracking
           </div>
         </div>
@@ -220,7 +220,7 @@ export default function KillChainViewer({ stages, currentStage, predictedNext })
             ['#f97316', 'Predicted'],
             ['#94a3b8', 'Passed'],
           ].map(([color, label]) => (
-            <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#6b8cae' }}>
+            <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'var(--text-secondary)' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }}/>
               {label}
             </span>
@@ -248,20 +248,20 @@ export default function KillChainViewer({ stages, currentStage, predictedNext })
       {/* Summary bar */}
       <div style={{
         marginTop: 20, padding: '12px 16px', borderRadius: 12,
-        background: 'rgba(249,115,22,0.05)', border: '1px solid rgba(249,115,22,0.15)',
+        background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.25)',
         display: 'flex', gap: 24, alignItems: 'center',
       }}>
         <div>
-          <div style={{ fontSize: 9, color: '#a0bdd4', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Current Stage</div>
-          <div style={{ fontWeight: 800, color: '#10b981', fontSize: 13 }}>{detected?.icon} {detected?.label}</div>
+          <div style={{ fontSize: 9, color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Current Stage</div>
+          <div style={{ fontWeight: 800, color: 'var(--severity-success-fg)', fontSize: 13 }}>{detected?.icon} {detected?.label}</div>
         </div>
-        <div style={{ width: 1, height: 30, background: 'rgba(96,165,250,0.15)' }}/>
+        <div style={{ width: 1, height: 30, background: 'var(--border-hairline)' }}/>
         <div>
-          <div style={{ fontSize: 9, color: '#a0bdd4', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Predicted Next</div>
-          <div style={{ fontWeight: 800, color: '#f97316', fontSize: 13 }}>{predicted?.icon} {predicted?.label}</div>
+          <div style={{ fontSize: 9, color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Predicted Next</div>
+          <div style={{ fontWeight: 800, color: 'var(--severity-high-fg)', fontSize: 13 }}>{predicted?.icon} {predicted?.label}</div>
         </div>
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#6b8cae' }}>
-          Hover on <span style={{ color: '#f97316', fontWeight: 700 }}>⚠ Predicted</span> node for pre-emptive actions
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)' }}>
+          Hover on <span style={{ color: 'var(--severity-high-fg)', fontWeight: 700 }}>⚠ Predicted</span> node for pre-emptive actions
         </div>
       </div>
 
