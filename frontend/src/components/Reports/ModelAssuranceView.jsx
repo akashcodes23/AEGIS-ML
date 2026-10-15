@@ -24,6 +24,7 @@ import {
   ZERO_DAY_GENERALIZATION,
   CICIDS_STATUS,
   CORRELATION_ENGINE_VALIDATION,
+  formatMetric,
 } from '../../data/modelAssuranceData'
 
 export default function ModelAssuranceView() {
@@ -169,16 +170,16 @@ export default function ModelAssuranceView() {
             {HEADLINE_METRICS.macro_f1.label}
           </div>
           <div className="tabular-nums mono-font" style={{ fontSize: 32, fontWeight: 800, color: 'var(--accent-cyan)', lineHeight: 1.1 }}>
-            {HEADLINE_METRICS.macro_f1.value.toFixed(4)}
+            {formatMetric(HEADLINE_METRICS.macro_f1.value)}
           </div>
           <div style={{ fontSize: 12, marginTop: 8, color: 'var(--text-secondary)' }}>
             95% Bootstrap CI:{' '}
             <span className="mono-font" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-              [{HEADLINE_METRICS.macro_f1.ci_95_lower.toFixed(4)}, {HEADLINE_METRICS.macro_f1.ci_95_upper.toFixed(4)}]
+              [{formatMetric(HEADLINE_METRICS.macro_f1.ci_95_lower)}, {formatMetric(HEADLINE_METRICS.macro_f1.ci_95_upper)}]
             </span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, lineHeight: 1.4 }}>
-            Mean: {HEADLINE_METRICS.macro_f1.mean.toFixed(4)} · Std: ±{HEADLINE_METRICS.macro_f1.std.toFixed(4)} (N=1,000)
+            Mean: {formatMetric(HEADLINE_METRICS.macro_f1.mean)} · Std: ±{formatMetric(HEADLINE_METRICS.macro_f1.std)} (N=1,000)
           </div>
         </div>
 
@@ -188,12 +189,12 @@ export default function ModelAssuranceView() {
             {HEADLINE_METRICS.benign_fpr.label}
           </div>
           <div className="tabular-nums mono-font" style={{ fontSize: 32, fontWeight: 800, color: 'var(--accent-success)', lineHeight: 1.1 }}>
-            {HEADLINE_METRICS.benign_fpr.value.toFixed(4)}
+            {formatMetric(HEADLINE_METRICS.benign_fpr.value)}
           </div>
           <div style={{ fontSize: 12, marginTop: 8, color: 'var(--text-secondary)' }}>
             95% Bootstrap CI:{' '}
             <span className="mono-font" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-              [{HEADLINE_METRICS.benign_fpr.ci_95_lower.toFixed(4)}, {HEADLINE_METRICS.benign_fpr.ci_95_upper.toFixed(4)}]
+              [{formatMetric(HEADLINE_METRICS.benign_fpr.ci_95_lower)}, {formatMetric(HEADLINE_METRICS.benign_fpr.ci_95_upper)}]
             </span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, lineHeight: 1.4 }}>
@@ -207,16 +208,16 @@ export default function ModelAssuranceView() {
             {HEADLINE_METRICS.ece.label}
           </div>
           <div className="tabular-nums mono-font" style={{ fontSize: 32, fontWeight: 800, color: 'var(--accent-brand)', lineHeight: 1.1 }}>
-            {HEADLINE_METRICS.ece.value.toFixed(4)}
+            {formatMetric(HEADLINE_METRICS.ece.value)}
           </div>
           <div style={{ fontSize: 12, marginTop: 8, color: 'var(--text-secondary)' }}>
             95% Bootstrap CI:{' '}
             <span className="mono-font" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-              [{HEADLINE_METRICS.ece.ci_95_lower.toFixed(4)}, {HEADLINE_METRICS.ece.ci_95_upper.toFixed(4)}]
+              [{formatMetric(HEADLINE_METRICS.ece.ci_95_lower)}, {formatMetric(HEADLINE_METRICS.ece.ci_95_upper)}]
             </span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--accent-success)', marginTop: 4, lineHeight: 1.4, fontWeight: 600 }}>
-            ↓ {Math.abs(HEADLINE_METRICS.ece.delta).toFixed(4)} reduction from raw RF (0.1141)
+            ↓ {formatMetric(Math.abs(HEADLINE_METRICS.ece.delta))} reduction from raw RF (0.1141)
           </div>
         </div>
 
@@ -226,16 +227,16 @@ export default function ModelAssuranceView() {
             {HEADLINE_METRICS.brier_score.label}
           </div>
           <div className="tabular-nums mono-font" style={{ fontSize: 32, fontWeight: 800, color: 'var(--accent-cyan)', lineHeight: 1.1 }}>
-            {HEADLINE_METRICS.brier_score.value.toFixed(4)}
+            {formatMetric(HEADLINE_METRICS.brier_score.value)}
           </div>
           <div style={{ fontSize: 12, marginTop: 8, color: 'var(--text-secondary)' }}>
             95% Bootstrap CI:{' '}
             <span className="mono-font" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-              [{HEADLINE_METRICS.brier_score.ci_95_lower.toFixed(4)}, {HEADLINE_METRICS.brier_score.ci_95_upper.toFixed(4)}]
+              [{formatMetric(HEADLINE_METRICS.brier_score.ci_95_lower)}, {formatMetric(HEADLINE_METRICS.brier_score.ci_95_upper)}]
             </span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--accent-success)', marginTop: 4, lineHeight: 1.4, fontWeight: 600 }}>
-            ↓ {Math.abs(HEADLINE_METRICS.brier_score.delta).toFixed(4)} reduction from raw RF (0.1144)
+            ↓ {formatMetric(Math.abs(HEADLINE_METRICS.brier_score.delta))} reduction from raw RF (0.1144)
           </div>
         </div>
       </div>
@@ -302,19 +303,19 @@ export default function ModelAssuranceView() {
                       </div>
                     </td>
                     <td className="mono-font" style={{ padding: '12px', fontWeight: 700 }}>
-                      {b.macro_f1.toFixed(4)}
+                      {formatMetric(b.macro_f1)}
                     </td>
                     <td className="mono-font" style={{ padding: '12px', color: b.benign_fpr > 0.1 ? 'var(--accent-critical)' : 'inherit' }}>
-                      {(b.benign_fpr * 100).toFixed(2)}%
+                      {b.benign_fpr !== undefined ? `${(Number(b.benign_fpr) * 100).toFixed(2)}%` : 'Unavailable'}
                     </td>
                     <td className="mono-font" style={{ padding: '12px', color: b.alerts_per_1m > 10000 ? 'var(--accent-critical)' : 'inherit' }}>
-                      {b.alerts_per_1m.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                      {b.alerts_per_1m !== undefined ? b.alerts_per_1m.toLocaleString(undefined, { maximumFractionDigits: 1 }) : 'Unavailable'}
                     </td>
                     <td className="mono-font" style={{ padding: '12px', color: b.ece < 0.05 ? 'var(--accent-success)' : 'inherit' }}>
-                      {b.ece.toFixed(4)}
+                      {formatMetric(b.ece)}
                     </td>
                     <td className="mono-font" style={{ padding: '12px' }}>
-                      {b.brier.toFixed(4)}
+                      {formatMetric(b.brier)}
                     </td>
                     <td style={{ padding: '12px', fontSize: 12, color: 'var(--text-secondary)' }}>
                       {b.notes}
@@ -510,13 +511,13 @@ export default function ModelAssuranceView() {
                     {b.samples}
                   </td>
                   <td className="mono-font" style={{ padding: '12px' }}>
-                    {b.mean_confidence.toFixed(4)}
+                    {formatMetric(b.mean_confidence)}
                   </td>
                   <td className="mono-font" style={{ padding: '12px' }}>
-                    {b.observed_accuracy.toFixed(4)}
+                    {formatMetric(b.observed_accuracy)}
                   </td>
                   <td className="mono-font" style={{ padding: '12px', fontWeight: 700, color: b.calibration_gap < 0.01 ? 'var(--accent-success)' : 'var(--accent-high)' }}>
-                    {b.calibration_gap.toFixed(4)}
+                    {formatMetric(b.calibration_gap)}
                   </td>
                 </tr>
               ))}

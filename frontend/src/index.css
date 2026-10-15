@@ -134,6 +134,8 @@ html, body {
   .aegis-shell-header {
     padding: 12px 16px !important;
     gap: 14px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
   .aegis-header-grid {
     grid-template-columns: 1fr !important;
@@ -142,22 +144,41 @@ html, body {
   .aegis-nav-dock {
     position: fixed !important;
     bottom: 12px !important;
-    left: 12px !important;
-    right: 12px !important;
+    left: 8px !important;
+    right: 8px !important;
+    max-width: calc(100vw - 16px) !important;
+    box-sizing: border-box !important;
     z-index: 9999 !important;
     justify-content: space-around !important;
     padding: 6px 4px !important;
     border-radius: 16px !important;
     background: rgba(12, 17, 28, 0.94) !important;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8) !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
   }
   .aegis-nav-dock .nav-item-btn {
-    padding: 8px 10px !important;
+    padding: 8px 6px !important;
     font-size: 11px !important;
     gap: 4px !important;
+    flex-shrink: 0 !important;
   }
   .aegis-main-container {
     padding: 12px 12px 80px 12px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+  .aegis-dashboard-main-grid {
+    grid-template-columns: 1fr !important;
+    min-height: auto !important;
+    gap: 16px !important;
+  }
+  .synthetic-ribbon {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
 }
 

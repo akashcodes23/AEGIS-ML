@@ -12,6 +12,7 @@ import {
   ZERO_DAY_GENERALIZATION,
   CICIDS_STATUS,
   CORRELATION_ENGINE_VALIDATION,
+  formatMetric,
 } from './modelAssuranceData.js'
 
 test('MODEL_ASSURANCE_METADATA matches Stage 6 results.json exactly', () => {
@@ -136,4 +137,18 @@ test('CICIDS_STATUS records honest blocked state with zero fabricated figures', 
   assert.strictEqual(CICIDS_STATUS.status, 'BLOCKED_AWAITING_LOCAL_COPY')
   assert.strictEqual(CICIDS_STATUS.fabricated_numbers, false)
   assert.ok(CICIDS_STATUS.reason.includes('35.4% feature schema discrepancy') || CICIDS_STATUS.reason.includes('feature gap'))
+})
+
+test('formatMetric honestly renders missing or malformed evaluation data as Unavailable', () => {
+  // Valid numeric values
+  assert.strictEqual(formatMetric(0.9866, 4), '0.9866')
+  assert.strictEqual(formatMetric(0.0024, 4), '0.0024')
+  assert.strictEqual(formatMetric(0, 4), '0.0000')
+
+  // Missing or malformed data must NOT be replaced with reassuring fabricated numbers
+  assert.strictEqual(formatMetric(undefined, 4), 'Unavailable')
+  assert.strictEqual(formatMetric(null, 4), 'Unavailable')
+  assert.strictEqual(formatMetric(NaN, 4), 'Unavailable')
+  assert.strictEqual(formatMetric('not-a-number', 4), 'Unavailable')
+  assert.strictEqual(formatMetric(undefined, 4, 'N/A'), 'N/A')
 })

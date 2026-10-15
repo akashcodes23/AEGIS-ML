@@ -169,8 +169,6 @@ export default function Reports() {
     <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* ── Sub-navigation: Operational Dossiers vs Model Assurance ─────── */}
       <div
-        role="tablist"
-        aria-label="Reports & Assurance Navigation"
         className="glass-panel"
         style={{
           display: 'flex',
@@ -181,7 +179,11 @@ export default function Reports() {
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div
+          role="tablist"
+          aria-label="Reports and Assurance Navigation"
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
           <button
             role="tab"
             id="tab-operational-dossiers"

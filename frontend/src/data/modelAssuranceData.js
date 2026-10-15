@@ -11,6 +11,13 @@
  * They represent empirical measurements, NOT guarantees of real-world perfection.
  */
 
+export function formatMetric(val, digits = 4, fallback = 'Unavailable') {
+  if (val === undefined || val === null || Number.isNaN(Number(val))) {
+    return fallback
+  }
+  return Number(val).toFixed(digits)
+}
+
 export const MODEL_ASSURANCE_METADATA = {
   protocol_version: '1.0.0-preregistered',
   protocol_path: 'docs/evaluation.md',

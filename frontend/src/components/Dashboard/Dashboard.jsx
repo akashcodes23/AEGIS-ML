@@ -429,16 +429,20 @@ export default function Dashboard() {
       <SyntheticDemoRibbon isSynthetic={isSynthetic} datasetName={currentFile || 'behavioral_diversity_labeled.jsonl'} />
 
       {/* ── Content Container ────────────────────────────────────────── */}
-      <div style={{
-        position: 'relative',
-        zIndex: 1,
-        maxWidth: 1600,
-        margin: '0 auto',
-        padding: '24px 32px 64px 32px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 24,
-      }}>
+      <div
+        className="aegis-main-container"
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          maxWidth: 1600,
+          margin: '0 auto',
+          padding: '24px 32px 64px 32px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 24,
+          boxSizing: 'border-box',
+        }}
+      >
 
         {/* ── Row 0: Application Shell Header ─────────────────────────── */}
         <header
@@ -614,7 +618,7 @@ export default function Dashboard() {
               <TemporalScrubber />
 
               {/* ── Row 2: Main Topology & Alert Feed ─────────────────────────── */}
-              <div style={{ display: 'grid', gridTemplateColumns: '60fr 40fr', gap: 24, minHeight: 600 }}>
+              <div className="aegis-dashboard-main-grid" style={{ display: 'grid', gridTemplateColumns: '60fr 40fr', gap: 24, minHeight: 600 }}>
                 <AttackGraph />
                 <AlertFeed />
               </div>
