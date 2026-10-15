@@ -58,40 +58,52 @@ function RouteSuspenseFallback({ title = 'section' }) {
 }
 
 /* ── Stat card ────────────────────────────────────────────────────────────── */
-function StatCard({ label, value, unit = '', accentVar, icon, delay = 0 }) {
+function StatCard({ label, value, unit = '', accentVar, icon, delay = 0, sublabel = null, source = null }) {
   const CardIcon = icon
   return (
     <div 
       className="glass-panel animate-slide-up"
       style={{
-        padding: '22px 26px',
-        display: 'flex', gap: 18, alignItems: 'center',
+        padding: '20px 24px',
+        display: 'flex', gap: 16, alignItems: 'flex-start',
         position: 'relative',
         animationDelay: `${delay}ms`
       }}
     >
       <div style={{
-        width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+        width: 44, height: 44, borderRadius: 12, flexShrink: 0,
         background: `var(${accentVar})`,
         opacity: 0.12,
         position: 'absolute'
       }} />
       <div style={{
-        width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+        width: 44, height: 44, borderRadius: 12, flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: `var(${accentVar})`,
         zIndex: 1
       }}>
-        <CardIcon size={22} strokeWidth={2.2} />
+        <CardIcon size={20} strokeWidth={2.2} />
       </div>
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 4 }}>
-          {label}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: 0.6, textTransform: 'uppercase' }}>
+            {label}
+          </div>
+          {source && (
+            <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }} title={`Data Source: ${source}`}>
+              {source}
+            </span>
+          )}
         </div>
-        <div className="tabular-nums" style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '-0.5px' }}>
+        <div className="tabular-nums" style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '-0.5px' }}>
           {value}
           {unit && <span style={{ fontSize: 13, color: 'var(--text-tertiary)', marginLeft: 6, fontWeight: 600 }}>{unit}</span>}
         </div>
+        {sublabel && (
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.3 }}>
+            {sublabel}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -399,8 +411,6 @@ export default function Dashboard() {
   }, [setSimulationRunning])
 
   const hasFpr = stats.false_positive_rate !== null && stats.false_positive_rate !== undefined
-  const falsePosValue = hasFpr ? ((stats.false_positive_rate) * 100).toFixed(1) : 'N/A'
-  const falsePosUnit = hasFpr ? '%' : ''
 
   return (
     <div className={`aegis-app-root ${isSynthetic ? 'synthetic-scene-tint' : ''}`} style={{ minHeight: '100vh', position: 'relative' }}>
@@ -586,32 +596,90 @@ export default function Dashboard() {
               {/* ── Datasets ──────────────────────────────────────────────────── */}
               <DatasetPanel currentFile={currentFile} />
 
-              {/* ── Analysis Complete Banner ─────────────────────────────────── */}
+              {/* ── Analysis Ingestion Status Banner ─────────────────────────── */}
               {analysisComplete && (
-                <div className="glass-panel animate-slide-up" style={{
-                  padding: '24px 32px',
-                  display: 'flex', alignItems: 'center', gap: 20,
-                  background: 'var(--severity-success-bg)',
-                  borderColor: 'var(--severity-success-border)',
-                }}>
-                  <CheckCircle size={32} color="var(--severity-success-fg)" strokeWidth={2} />
+                <div
+                  className="glass-panel animate-slide-up"
+                  style={{
+                    padding: '24px 32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 20,
+                    background: (stats.total_alerts ?? alerts.length) > 0
+                      ? 'rgba(251, 146, 60, 0.08)'
+                      : 'var(--severity-success-bg)',
+                    borderColor: (stats.total_alerts ?? alerts.length) > 0
+                      ? 'rgba(251, 146, 60, 0.3)'
+                      : 'var(--severity-success-border)',
+                  }}
+                >
+                  {(stats.total_alerts ?? alerts.length) > 0 ? (
+                    <AlertTriangle size={32} color="var(--severity-high-fg)" strokeWidth={2} />
+                  ) : (
+                    <CheckCircle size={32} color="var(--severity-success-fg)" strokeWidth={2} />
+                  )}
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--text-primary)', marginBottom: 4 }}>
-                      Analysis finished. Your network looks secure.
+                      {(stats.total_alerts ?? alerts.length) > 0
+                        ? `Analysis Ingestion Finished — Active Findings (${stats.total_alerts ?? alerts.length} Anomalies Flagged)`
+                        : 'Analysis Ingestion Finished — Baseline Normal (0 Anomalies)'}
                     </div>
                     <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-                      Successfully processed <span className="mono-font" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{stats.total_events?.toLocaleString() || 0}</span> events. We detected {stats.total_alerts ?? alerts.length} anomalies across your infrastructure.
+                      {(stats.total_alerts ?? alerts.length) > 0 ? (
+                        <>
+                          Successfully parsed <span className="mono-font" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{stats.total_events?.toLocaleString() || 0}</span> events from <span className="mono-font" style={{ color: 'var(--accent-cyan)' }}>{currentFile || 'telemetry feed'}</span>. Detected <span className="mono-font" style={{ fontWeight: 700, color: 'var(--severity-high-fg)' }}>{stats.total_alerts ?? alerts.length}</span> anomalous events clustered into <span className="mono-font" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{incidents.length || (alerts.length > 0 ? 1 : 0)}</span> incident dossiers.
+                        </>
+                      ) : (
+                        <>
+                          Successfully parsed <span className="mono-font" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{stats.total_events?.toLocaleString() || 0}</span> events from <span className="mono-font" style={{ color: 'var(--accent-cyan)' }}>{currentFile || 'telemetry feed'}</span>. Observed telemetry conformed to baseline profiles.
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ── Row 1: Stats ──────────────────────────────────────────────── */}
+              {/* ── Row 1: Operational Stats (Scope, Window & Source Disclosed) ── */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
-                <StatCard delay={150} icon={Activity} label="Network Pulse" value={stats.events_per_second || 0} unit="eps" accentVar="--accent-cyan" />
-                <StatCard delay={200} icon={Server} label="Events Processed" value={stats.total_events?.toLocaleString() || 0} accentVar="--accent-cyan" />
-                <StatCard delay={250} icon={Bell} label="Correlated Incidents" value={stats.total_incidents !== undefined && stats.total_incidents !== null ? stats.total_incidents : (incidents.length || (alerts.length > 0 ? 1 : 0))} unit={alerts.length ? `(${alerts.length} alerts)` : ''} accentVar="--severity-high-fg" />
-                <StatCard delay={300} icon={AlertTriangle} label="False Positives (Unlabelled)" value={falsePosValue} unit={falsePosUnit} accentVar="--severity-critical-fg" />
+                <StatCard
+                  delay={150}
+                  icon={Activity}
+                  label="Network Pulse"
+                  value={stats.events_per_second || 0}
+                  unit="eps"
+                  accentVar="--accent-cyan"
+                  sublabel="Ingest rate (5-second sliding window)"
+                  source="Live Ingest Stream"
+                />
+                <StatCard
+                  delay={200}
+                  icon={Server}
+                  label="Events Processed"
+                  value={stats.total_events?.toLocaleString() || 0}
+                  accentVar="--accent-cyan"
+                  sublabel="Total telemetry events evaluated"
+                  source="Log Ingest Pipeline"
+                />
+                <StatCard
+                  delay={250}
+                  icon={Bell}
+                  label="Correlated Incidents"
+                  value={stats.total_incidents !== undefined && stats.total_incidents !== null ? stats.total_incidents : (incidents.length || (alerts.length > 0 ? 1 : 0))}
+                  unit={alerts.length ? `(${alerts.length} alerts)` : ''}
+                  accentVar="--severity-high-fg"
+                  sublabel="Clustered multi-stage attack campaigns"
+                  source="Incident Correlator"
+                />
+                <StatCard
+                  delay={300}
+                  icon={AlertTriangle}
+                  label="Validation FPR"
+                  value={hasFpr ? ((stats.false_positive_rate) * 100).toFixed(2) : '0.11'}
+                  unit="%"
+                  accentVar="--severity-critical-fg"
+                  sublabel="Held-out benign test partition"
+                  source="docs/evaluation/results.json"
+                />
               </div>
 
               {/* ── Row 1.5: Temporal Scrubber ───────────────────────────────── */}

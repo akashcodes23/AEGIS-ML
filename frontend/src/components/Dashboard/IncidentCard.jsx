@@ -139,7 +139,10 @@ export default memo(function IncidentCard() {
     ? incident.supporting_events
     : (incident.raw_event ? [incident.raw_event] : [])
 
-  const priorityScore = incident.priority_score || (incident.severity === 'critical' ? 92 : incident.severity === 'high' ? 76 : incident.severity === 'medium' ? 52 : 30)
+  const hasComputedPriority = incident.priority_score != null
+  const priorityScore = hasComputedPriority
+    ? Math.round(incident.priority_score)
+    : (incident.severity === 'critical' ? 95 : incident.severity === 'high' ? 75 : incident.severity === 'medium' ? 45 : 20)
   const isSynthetic = incident.is_synthetic || false
 
   return (
@@ -195,6 +198,9 @@ export default memo(function IncidentCard() {
             <div className="mono-font" style={{ fontSize: 20, fontWeight: 800, color: priorityScore >= 75 ? 'var(--accent-critical)' : 'var(--accent-high)' }}>
               {priorityScore}<span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>/100</span>
             </div>
+            <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>
+              {hasComputedPriority ? 'Calculated composite priority' : 'Severity heuristic baseline'}
+            </div>
           </div>
           <div>
             <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700 }}>Severity</div>
@@ -214,9 +220,9 @@ export default memo(function IncidentCard() {
           <InsightChip icon={Layers} label="Layers Involved" value={(incident.layers_involved || [incident.layer || 'network']).join(', ')} />
           <InsightChip
             icon={Fingerprint}
-            label="Model Consensus"
-            value={`${Math.round((incident.classifier_probability != null ? incident.classifier_probability : (incident.confidence || 0.5)) * 100)}%`}
-            subtext="Random Forest tree agreement"
+            label={incident.is_calibrated ? "Calibrated Confidence" : "Model Consensus"}
+            value={`${Math.round((incident.calibrated_confidence != null ? incident.calibrated_confidence : (incident.classifier_probability != null ? incident.classifier_probability : (incident.confidence || 0.5))) * 100)}%`}
+            subtext={incident.is_calibrated ? "Isotonic calibrated probability" : "Uncalibrated Random Forest tree agreement"}
           />
         </div>
 
@@ -377,10 +383,10 @@ export default memo(function IncidentCard() {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Network size={15} /> Traceable Relationship Evidence ({incident.relationship_evidence.length})
+                    <Network size={15} /> Relationship Evidence ({incident.relationship_evidence.length})
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 12, background: 'rgba(5, 150, 105, 0.1)', color: 'var(--accent-success)', border: '1px solid rgba(5, 150, 105, 0.2)' }}>
-                    100% Traceability
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 12, background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border-hairline)' }}>
+                    {incident.relationship_evidence.filter(r => r.claim_type !== 'hypothesis').length} Observed • {incident.relationship_evidence.filter(r => r.claim_type === 'hypothesis').length} Inferred
                   </span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -634,7 +640,7 @@ export default memo(function IncidentCard() {
                           {(ev.event_id || `EV-${i}`).slice(0, 12)}
                         </td>
                         <td className="mono-font" style={{ padding: '10px 12px', color: 'var(--text-secondary)' }}>
-                          {ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : 'N/A'}
+                          {ev.timestamp ? `${new Date(ev.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} (Local)` : 'N/A'}
                         </td>
                         <td style={{ padding: '10px 12px', textTransform: 'capitalize', color: 'var(--accent-brand)', fontWeight: 600 }}>
                           {ev.layer || 'network'}

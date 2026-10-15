@@ -52,8 +52,22 @@ export default memo(function EvidenceTrail({ alert, incident }) {
             Evidence Provenance Trail
           </div>
         </div>
-        <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-          {chain.filter(c => c.status === 'present').length}/{chain.length} verifiable links
+        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <span>{chain.filter(c => c.status === 'present').length}/{chain.length} links recorded</span>
+          <span style={{ color: 'var(--border-subtle)' }}>•</span>
+          <span style={{ color: 'var(--accent-cyan)' }}>{chain.filter(c => c.status === 'present').length} observed</span>
+          {chain.filter(c => c.status === 'partial').length > 0 && (
+            <>
+              <span style={{ color: 'var(--border-subtle)' }}>•</span>
+              <span style={{ color: 'var(--severity-high-fg)' }}>{chain.filter(c => c.status === 'partial').length} inferred</span>
+            </>
+          )}
+          {chain.filter(c => c.status === 'absent').length > 0 && (
+            <>
+              <span style={{ color: 'var(--border-subtle)' }}>•</span>
+              <span style={{ color: 'var(--text-muted)' }}>{chain.filter(c => c.status === 'absent').length} missing</span>
+            </>
+          )}
         </span>
       </div>
 
@@ -251,9 +265,9 @@ export default memo(function EvidenceTrail({ alert, incident }) {
                   <span
                     style={{
                       fontSize: 10,
-                      fontWeight: 600,
+                      fontWeight: 700,
                       textTransform: 'uppercase',
-                      padding: '2px 6px',
+                      padding: '2px 8px',
                       borderRadius: 4,
                       background: isPresent
                         ? 'rgba(0, 240, 255, 0.1)'
@@ -265,9 +279,10 @@ export default memo(function EvidenceTrail({ alert, incident }) {
                         : isPartial
                           ? 'var(--severity-high-fg)'
                           : 'var(--text-secondary)',
+                      border: `1px solid ${isPresent ? 'rgba(0, 240, 255, 0.25)' : isPartial ? 'rgba(251, 146, 60, 0.25)' : 'var(--border-subtle)'}`,
                     }}
                   >
-                    {link.status}
+                    {isPresent ? 'Observed Telemetry' : isPartial ? 'Inferred Hypothesis' : 'Missing Evidence'}
                   </span>
                   {isExpanded ? <ChevronUp size={14} color="var(--text-tertiary)" /> : <ChevronDown size={14} color="var(--text-tertiary)" />}
                 </div>

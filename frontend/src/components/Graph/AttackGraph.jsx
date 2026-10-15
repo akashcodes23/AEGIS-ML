@@ -137,6 +137,34 @@ const CY_STYLE = [
       'z-index': 9999,
     },
   },
+  // ── Neighbor Focus & Dimming ──
+  {
+    selector: '.faded',
+    style: {
+      'opacity': 0.12,
+      'text-opacity': 0.12,
+    },
+  },
+  {
+    selector: 'node.highlighted-neighbor',
+    style: {
+      'border-color': 'var(--accent-cyan)',
+      'border-width': 3,
+      'opacity': 1.0,
+      'shadow-blur': 12,
+      'shadow-color': 'rgba(0, 240, 255, 0.5)',
+      'shadow-opacity': 0.8,
+    },
+  },
+  {
+    selector: 'edge.highlighted-edge',
+    style: {
+      'width': 2.5,
+      'opacity': 1.0,
+      'line-color': 'var(--accent-cyan)',
+      'target-arrow-color': 'var(--accent-cyan)',
+    },
+  },
 ]
 
 /* ── Node Dossier Tooltip Component ───────────────────────────────────────── */
@@ -346,6 +374,9 @@ export default memo(function AttackGraph() {
   const reducedMotion = useReducedMotion()
 
   const [tooltip, setTooltip] = useState(null)
+  const [selectedNode, setSelectedNode] = useState(null)
+  const [nodeTypeFilter, setNodeTypeFilter] = useState('all')
+  const [edgeTypeFilter, setEdgeTypeFilter] = useState('all')
   const [nodeCount, setNodeCount] = useState(0)
   const [edgeCount, setEdgeCount] = useState(0)
   const [anomalousCount, setAnomalousCount] = useState(0)
@@ -454,22 +485,53 @@ export default memo(function AttackGraph() {
       window.__cytoscape_instance__ = cy
     }
 
-    /* Node click → tooltip */
+    /* Node click → neighbor highlight & inspector */
     cy.on('tap', 'node', (evt) => {
       const node = evt.target
       const rendered = node.renderedPosition()
-      const container = containerRef.current.getBoundingClientRect()
+      const container = containerRef.current ? containerRef.current.getBoundingClientRect() : { left: 0, top: 0 }
+      const nodeData = node.data()
+      const neighborhood = node.neighborhood()
+
+      cy.elements().addClass('faded').removeClass('highlighted-neighbor highlighted-edge')
+      node.removeClass('faded')
+      neighborhood.nodes().removeClass('faded').addClass('highlighted-neighbor')
+      neighborhood.edges().removeClass('faded').addClass('highlighted-edge')
+
+      setSelectedNode({
+        id: node.id(),
+        label: nodeData.label || node.id(),
+        ip: nodeData.ip,
+        node_type: nodeData.node_type || 'ip',
+        risk_score: nodeData.risk_score || 0,
+        event_count: nodeData.event_count || 0,
+        is_compromised: Boolean(nodeData.is_compromised),
+        role: nodeData.role,
+        stage: nodeData.kill_chain_stage,
+        is_stage_known: nodeData.is_stage_known,
+        inDegree: node.incomers('edge').length,
+        outDegree: node.outgoers('edge').length,
+        neighbors: neighborhood.nodes().map(n => ({
+          id: n.id(),
+          label: n.data('label') || n.id(),
+          node_type: n.data('node_type') || 'ip',
+          is_compromised: Boolean(n.data('is_compromised')),
+        })),
+      })
+
       setTooltip({
-        node: node.data(),
+        node: nodeData,
         position: { x: container.left + rendered.x, y: container.top + rendered.y },
       })
       node.select()
     })
 
-    /* Click canvas → close tooltip */
+    /* Click canvas → close tooltip and clear neighbor dimming */
     cy.on('tap', (evt) => {
       if (evt.target === cy) {
         setTooltip(null)
+        setSelectedNode(null)
+        cy.elements().removeClass('faded highlighted-neighbor highlighted-edge')
         cy.nodes().unselect()
       }
     })
@@ -746,6 +808,101 @@ export default memo(function AttackGraph() {
     if (cyRef.current) cyRef.current.zoom(1)
   }, [])
 
+  const zoomIn = useCallback(() => {
+    if (cyRef.current) cyRef.current.zoom(cyRef.current.zoom() * 1.3)
+  }, [])
+
+  const zoomOut = useCallback(() => {
+    if (cyRef.current) cyRef.current.zoom(cyRef.current.zoom() * 0.75)
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    const cy = cyRef.current
+    if (!cy) return
+    cy.elements().removeClass('faded highlighted-neighbor highlighted-edge')
+    cy.nodes().unselect()
+    setSelectedNode(null)
+    setTooltip(null)
+  }, [])
+
+  const focusOnNode = useCallback((nodeId) => {
+    const cy = cyRef.current
+    if (!cy) return
+    const target = cy.getElementById(nodeId)
+    if (target.length) {
+      const neighborhood = target.neighborhood()
+      cy.elements().addClass('faded').removeClass('highlighted-neighbor highlighted-edge')
+      target.removeClass('faded').select()
+      neighborhood.nodes().removeClass('faded').addClass('highlighted-neighbor')
+      neighborhood.edges().removeClass('faded').addClass('highlighted-edge')
+      cy.animate({
+        center: { eles: target },
+        zoom: Math.min(2.5, Math.max(1.2, cy.zoom() * 1.4)),
+        duration: reducedMotion ? 0 : 350,
+      })
+      const nodeData = target.data()
+      setSelectedNode({
+        id: target.id(),
+        label: nodeData.label || target.id(),
+        ip: nodeData.ip,
+        node_type: nodeData.node_type || 'ip',
+        risk_score: nodeData.risk_score || 0,
+        event_count: nodeData.event_count || 0,
+        is_compromised: Boolean(nodeData.is_compromised),
+        role: nodeData.role,
+        stage: nodeData.kill_chain_stage,
+        is_stage_known: nodeData.is_stage_known,
+        inDegree: target.incomers('edge').length,
+        outDegree: target.outgoers('edge').length,
+        neighbors: neighborhood.nodes().map(n => ({
+          id: n.id(),
+          label: n.data('label') || n.id(),
+          node_type: n.data('node_type') || 'ip',
+          is_compromised: Boolean(n.data('is_compromised')),
+        })),
+      })
+    }
+  }, [reducedMotion])
+
+  /* Attribute filtering effect: entity types and link provenance */
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+
+    cy.batch(() => {
+      cy.nodes().forEach(n => {
+        const matchesType = nodeTypeFilter === 'all' || n.data('node_type') === nodeTypeFilter
+        if (matchesType) {
+          n.style('display', 'element')
+        } else {
+          n.style('display', 'none')
+        }
+      })
+
+      cy.edges().forEach(e => {
+        const isAnom = Boolean(e.data('is_anomalous'))
+        const isHyp = e.data('edge_type') === 'inferred_correlation'
+        let matchesEdge = true
+        if (edgeTypeFilter === 'anomalous') matchesEdge = isAnom
+        else if (edgeTypeFilter === 'observed') matchesEdge = !isHyp
+        else if (edgeTypeFilter === 'inferred') matchesEdge = isHyp
+
+        const sourceVisible = e.source().style('display') !== 'none'
+        const targetVisible = e.target().style('display') !== 'none'
+
+        if (matchesEdge && sourceVisible && targetVisible) {
+          e.style('display', 'element')
+        } else {
+          e.style('display', 'none')
+        }
+      })
+    })
+
+    setNodeCount(cy.nodes(':visible').length)
+    setEdgeCount(cy.edges(':visible').length)
+    setAnomalousCount(cy.edges(':visible').filter('[?is_anomalous]').length)
+  }, [nodeTypeFilter, edgeTypeFilter])
+
   /* Mock data generator demonstrating known stages and an explicit unknown node */
   const injectMockData = useCallback(() => {
     const cy = cyRef.current
@@ -809,7 +966,36 @@ export default memo(function AttackGraph() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Zoom controls */}
+          <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border-hairline)' }}>
+            <button
+              type="button"
+              onClick={zoomIn}
+              aria-label="Zoom in"
+              title="Zoom In"
+              style={{
+                background: 'none', border: 'none', color: 'var(--accent-cyan)',
+                padding: '5px 9px', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+              }}
+            >
+              +
+            </button>
+            <span style={{ color: 'var(--border-subtle)', alignSelf: 'center' }}>|</span>
+            <button
+              type="button"
+              onClick={zoomOut}
+              aria-label="Zoom out"
+              title="Zoom Out"
+              style={{
+                background: 'none', border: 'none', color: 'var(--accent-cyan)',
+                padding: '5px 9px', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+              }}
+            >
+              −
+            </button>
+          </div>
+
           {selectedIncidentId && (
             <button
               type="button"
@@ -906,8 +1092,97 @@ export default memo(function AttackGraph() {
         </div>
       </div>
 
-      {/* ── Spatial Depth Scale Legend ── */}
-      <DepthLegend />
+      {/* ── Sub-bar: Verified Attribute Filters ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 10,
+        padding: '6px 12px',
+        background: 'var(--surface-0)',
+        border: '1px solid var(--border-hairline)',
+        borderRadius: 8,
+        fontSize: 11,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, fontSize: 10 }}>Entity Filter:</span>
+          {['all', 'ip', 'process', 'user'].map(t => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setNodeTypeFilter(t)}
+              style={{
+                background: nodeTypeFilter === t ? 'rgba(0, 240, 255, 0.12)' : 'transparent',
+                color: nodeTypeFilter === t ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                border: nodeTypeFilter === t ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid transparent',
+                borderRadius: 6,
+                padding: '2px 8px',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, fontSize: 10 }}>Edge Provenance:</span>
+          {[
+            { id: 'all', label: 'All Links' },
+            { id: 'anomalous', label: 'Anomalous' },
+            { id: 'observed', label: 'Observed Telemetry' },
+            { id: 'inferred', label: 'Inferred Hypotheses' }
+          ].map(f => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setEdgeTypeFilter(f.id)}
+              style={{
+                background: edgeTypeFilter === f.id ? 'rgba(168, 85, 247, 0.12)' : 'transparent',
+                color: edgeTypeFilter === f.id ? 'var(--accent-violet, #c084fc)' : 'var(--text-secondary)',
+                border: edgeTypeFilter === f.id ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid transparent',
+                borderRadius: 6,
+                padding: '2px 8px',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Spatial Depth Scale & Provenance Legend ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <DepthLegend />
+        
+        {/* Edge Provenance Legend */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, padding: '4px 12px',
+          background: 'rgba(0, 0, 0, 0.2)', borderRadius: 6, fontSize: 10, color: 'var(--text-secondary)',
+          flexWrap: 'wrap'
+        }}>
+          <span style={{ fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Edge Types:</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 16, height: 2, background: 'rgba(148, 163, 184, 0.7)', display: 'inline-block' }} />
+            Observed Telemetry (Direct Packet Log)
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 16, height: 2, borderTop: '2px dashed #c084fc', display: 'inline-block' }} />
+            Inferred Correlation (Correlator Hypothesis)
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 16, height: 2, borderTop: '2px dashed var(--severity-critical-fg)', display: 'inline-block' }} />
+            Anomalous Attack Flow
+          </span>
+        </div>
+      </div>
 
       {/* ── Canvas Container with Floating Scope Summary ── */}
       <div
@@ -1002,6 +1277,172 @@ export default memo(function AttackGraph() {
             overflow: 'hidden',
           }}
         />
+
+        {/* ── Node Inspector Panel ── */}
+        {selectedNode && (
+          <div
+            role="region"
+            aria-label={`Entity details for ${selectedNode.label}`}
+            className="glass-panel animate-slide-up"
+            style={{
+              position: 'absolute',
+              top: 14,
+              right: 14,
+              width: 290,
+              maxWidth: 'calc(100% - 28px)',
+              zIndex: 100,
+              padding: '14px 16px',
+              background: 'rgba(12, 17, 28, 0.96)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-elevation-3)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700, letterSpacing: 0.8 }}>
+                  Entity Inspector
+                </div>
+                <div className="mono-font" style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, wordBreak: 'break-all' }}>
+                  {selectedNode.label}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={clearSelection}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--text-tertiary)',
+                  cursor: 'pointer', fontSize: 14, padding: 4, lineHeight: 1
+                }}
+                title="Close Inspector"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
+                background: 'rgba(0, 240, 255, 0.1)', color: 'var(--accent-cyan)',
+                border: '1px solid rgba(0, 240, 255, 0.25)', textTransform: 'uppercase'
+              }}>
+                {selectedNode.node_type}
+              </span>
+              {selectedNode.is_compromised && (
+                <span style={{
+                  fontSize: 9, fontWeight: 800, padding: '2px 8px', borderRadius: 6,
+                  background: 'var(--severity-critical-bg)', color: 'var(--severity-critical-fg)',
+                  border: '1px solid var(--severity-critical-border)', textTransform: 'uppercase'
+                }}>
+                  Compromised
+                </span>
+              )}
+              <span style={{
+                fontSize: 9, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
+                background: 'var(--surface-2)', color: 'var(--text-secondary)',
+                border: '1px solid var(--border-hairline)'
+              }}>
+                {selectedNode.stage || 'Stage Unknown'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '8px 10px', background: 'var(--surface-1)', borderRadius: 8 }}>
+              <div>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Inbound Edges</div>
+                <div className="mono-font" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedNode.inDegree}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Outbound Edges</div>
+                <div className="mono-font" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedNode.outDegree}</div>
+              </div>
+            </div>
+
+            {selectedNode.neighbors && selectedNode.neighbors.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 6 }}>
+                  Connected Neighbors ({selectedNode.neighbors.length}):
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 90, overflowY: 'auto' }}>
+                  {selectedNode.neighbors.map(nb => (
+                    <button
+                      key={nb.id}
+                      type="button"
+                      onClick={() => focusOnNode(nb.id)}
+                      className="mono-font"
+                      style={{
+                        fontSize: 10, padding: '3px 6px', borderRadius: 4,
+                        background: 'var(--surface-2)', border: '1px solid var(--border-subtle)',
+                        color: nb.is_compromised ? 'var(--severity-critical-fg)' : 'var(--text-primary)',
+                        cursor: 'pointer'
+                      }}
+                      title="Focus on neighbor"
+                    >
+                      {nb.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={() => focusOnNode(selectedNode.id)}
+                style={{
+                  flex: 1, padding: '6px 10px', borderRadius: 8,
+                  background: 'rgba(0, 240, 255, 0.12)', border: '1px solid var(--accent-cyan)',
+                  color: 'var(--accent-cyan)', fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                }}
+              >
+                Focus Camera
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                style={{
+                  padding: '6px 12px', borderRadius: 8,
+                  background: 'var(--surface-2)', border: '1px solid var(--border-hairline)',
+                  color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, cursor: 'pointer'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Empty State ── */}
+        {nodeCount === 0 && (
+          <div
+            style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', zIndex: 10,
+              background: 'rgba(7, 10, 18, 0.85)', backdropFilter: 'blur(4px)',
+              padding: 24, textAlign: 'center'
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              No Active Topology Entities
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 360, marginBottom: 14 }}>
+              Select an active dataset or start live telemetry playback to project interactive entity relationships.
+            </div>
+            <button
+              type="button"
+              onClick={injectMockData}
+              style={{
+                padding: '7px 14px', borderRadius: 8,
+                background: 'rgba(0, 240, 255, 0.1)', border: '1px solid var(--accent-cyan)',
+                color: 'var(--accent-cyan)', fontSize: 11, fontWeight: 700, cursor: 'pointer'
+              }}
+            >
+              Load Verification Scenario
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Tooltip Dossier ── */}
