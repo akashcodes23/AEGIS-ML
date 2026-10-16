@@ -54,3 +54,8 @@ Thumbs.db
 # Scratch and temporary scripts
 scratch/
 
+# Legacy export, logs, and duplicate data dumps
+aegis_full_project.md
+export.py
+train_output.txt
+backend/data/

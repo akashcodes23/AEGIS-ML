@@ -1,93 +1,318 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
-
+@import "./styles/tokens.css";
 @import "tailwindcss";
-
-:root {
-  /* Editorial SaaS Palette */
-  --bg-page: #F0F4F8; /* Soft blue-gray tint */
-  --bg-surface: #FFFFFF;
-  
-  /* Typography Colors */
-  --text-primary: #1F2937; /* Soft dark gray, easier on eyes than pure black */
-  --text-secondary: #6B7280;
-  --text-tertiary: #9CA3AF;
-
-  /* Sophisticated Accents */
-  --accent-brand: #4F46E5; /* Indigo */
-  --accent-critical: #DC2626; /* Deep Red/Terracotta */
-  --accent-high: #D97706; /* Amber */
-  --accent-success: #059669; /* Sage Green */
-  --accent-info: #0284C7; /* Ocean Blue */
-
-  /* Borders & Shadows */
-  --border-light: rgba(31, 41, 55, 0.08);
-  --shadow-soft: 0 4px 40px rgba(0, 0, 0, 0.04);
-  --shadow-float: 0 12px 60px rgba(0, 0, 0, 0.06), 0 2px 10px rgba(0, 0, 0, 0.02);
-  --shadow-inner: inset 0 2px 4px rgba(255, 255, 255, 0.6);
-}
 
 * {
   box-sizing: border-box;
 }
 
-body {
+html, body {
   margin: 0;
   padding: 0;
-  background-color: var(--bg-page);
+  min-height: 100%;
+  background-color: var(--surface-0);
   color: var(--text-primary);
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-.mono-font {
-  font-family: 'JetBrains Mono', monospace;
+/* ── Typography & Tabular Figures ─────────────────────────── */
+.mono-font, .tabular-nums {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Scrollbar styling */
+/* ── Accessibility Focus Indicator ───────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 3px;
+}
+
+/* ── Skip to Main Content Link ───────────────────────────── */
+.skip-to-content {
+  position: absolute;
+  top: -9999px;
+  left: 20px;
+  background: var(--surface-3);
+  color: var(--accent-cyan);
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--accent-cyan);
+  font-size: 13px;
+  font-weight: 700;
+  z-index: 999999;
+  text-decoration: none;
+  box-shadow: var(--shadow-elevation-3);
+}
+
+.skip-to-content:focus {
+  top: 16px;
+}
+
+/* ── Screen Reader Only Helper ───────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Custom Scrollbar ────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--surface-0);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(107, 114, 128, 0.2);
+  background: rgba(148, 163, 184, 0.2);
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(107, 114, 128, 0.4);
+  background: rgba(148, 163, 184, 0.4);
 }
 
-/* Master Animations */
-@keyframes slideUpFade {
-  from { opacity: 0; transform: translateY(12px) scale(0.99); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes softPulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.02); }
-}
-
-.animate-slide-up {
-  animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.animate-pulse-slow {
-  animation: softPulse 4s ease-in-out infinite;
-}
-
-/* Premium Card Base */
+/* ── Glass Surface Component ─────────────────────────────── */
 .glass-panel {
-  background: var(--bg-surface);
-  border-radius: 20px;
-  border: 1px solid var(--border-light);
-  box-shadow: var(--shadow-soft), var(--shadow-inner);
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+  background: var(--glass-bg);
+  border-radius: 18px;
+  border: 1px solid var(--border-hairline);
+  box-shadow: var(--shadow-elevation-1), var(--glass-highlight);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  transition: transform var(--duration-quick) var(--ease-standard),
+              box-shadow var(--duration-quick) var(--ease-standard),
+              border-color var(--duration-quick) var(--ease-standard);
 }
 
 .glass-panel:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-float), var(--shadow-inner);
+  transform: translateY(-1px);
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-elevation-2), var(--glass-highlight);
+}
+
+/* ── Synthetic Scene Desaturation Tint ───────────────────── */
+.synthetic-scene-tint {
+  filter: saturate(0.94);
+}
+
+/* ── Master Keyframes ────────────────────────────────────── */
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes softPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
+.animate-slide-up {
+  animation: slideUpFade var(--duration-smooth) var(--ease-standard) forwards;
+}
+
+.animate-pulse-slow {
+  animation: softPulse 3.5s ease-in-out infinite;
+}
+
+/* ── Responsive Shell Navigation (Desktop & Mobile) ──────── */
+@media (max-width: 768px) {
+  .aegis-shell-header {
+    padding: 12px 16px !important;
+    gap: 14px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .aegis-header-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .aegis-nav-dock {
+    position: fixed !important;
+    bottom: 12px !important;
+    left: 8px !important;
+    right: 8px !important;
+    max-width: calc(100vw - 16px) !important;
+    box-sizing: border-box !important;
+    z-index: 9999 !important;
+    justify-content: space-around !important;
+    padding: 6px 4px !important;
+    border-radius: 16px !important;
+    background: rgba(12, 17, 28, 0.94) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8) !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .aegis-nav-dock .nav-item-btn {
+    padding: 8px 6px !important;
+    font-size: 11px !important;
+    gap: 4px !important;
+    flex-shrink: 0 !important;
+  }
+  .aegis-main-container {
+    padding: 12px 12px 80px 12px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+  .aegis-dashboard-main-grid {
+    grid-template-columns: 1fr !important;
+    min-height: auto !important;
+    gap: 16px !important;
+  }
+  .synthetic-ribbon {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* ── Reduced Motion Universal Honor ──────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Executive Briefing Print Layout ──────────────────────── */
+@media print {
+  @page {
+    margin: 1.5cm;
+    size: A4 portrait;
+  }
+
+  body, html {
+    background: #ffffff !important;
+    color: #0b0f19 !important;
+  }
+
+  /* Hide background elements, navigation, headers, ribbons, app root */
+  .aegis-app-root,
+  header,
+  nav,
+  .aegis-shell-header,
+  .aegis-nav-dock,
+  .skip-to-content,
+  .no-print,
+  #ambient-canvas,
+  .ambient-field-fallback,
+  .synthetic-disclosure-ribbon,
+  .aegis-status-area,
+  main {
+    display: none !important;
+  }
+
+  /* Make briefing overlay and container take full print sheet */
+  .briefing-modal-overlay {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    display: block !important;
+  }
+
+  .briefing-document-container {
+    max-width: 100% !important;
+    max-height: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .briefing-print-body {
+    padding: 0 !important;
+    color: #0f172a !important;
+  }
+
+  .briefing-synthetic-cover-banner {
+    background: #f5f3ff !important;
+    border: 1px solid #c084fc !important;
+    color: #6b21a8 !important;
+  }
+
+  .briefing-print-page-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex !important;
+    justify-content: space-between;
+    font-size: 8pt;
+    color: #64748b !important;
+    border-top: 1px solid #cbd5e1 !important;
+    padding-top: 6px;
+    background: #ffffff;
+  }
+}
+
+/* ── First-Run Intro Keyframes ────────────────────────────────────────────── */
+@keyframes introDrawShield {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes introDrawLine {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes introNodePop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes introTextFade {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes introFadeOut {
+  to {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aegis-first-run-intro {
+    display: none !important;
+  }
 }

@@ -2,25 +2,33 @@ import { useEffect, useRef, useState, useCallback, memo } from 'react'
 import cytoscape from 'cytoscape'
 import dagre from 'cytoscape-dagre'
 import useAlertStore from '../../store/alertStore'
+import useReducedMotion from '../../hooks/useReducedMotion'
+import {
+  KILL_CHAIN_STAGES,
+  KILL_CHAIN_DEPTH,
+  UNKNOWN_DEPTH,
+  normalizeKillChainStage,
+} from '../../utils/depth'
+import { stateAsOf } from '../../utils/scrubber'
 
 cytoscape.use(dagre)
 
-/* ── Risk colour helper ────────────────────────────────────────────────────── */
-function riskColor(score) {
-  if (score > 0.8) return '#ef4444'   // critical — red
-  if (score > 0.5) return '#f97316'   // high — orange
-  if (score > 0.2) return '#eab308'   // medium — yellow
-  return '#3b82f6'                     // low — blue
+/* ── Risk & Severity color mapping (Crimson strictly for Critical) ────────── */
+function riskColor(score, isCompromised = false) {
+  if (isCompromised || score > 0.8) return 'var(--severity-critical-fg)' // Crimson strictly for Critical/Compromised
+  if (score > 0.5) return 'var(--severity-high-fg)'     // Amber
+  if (score > 0.2) return 'var(--severity-medium-fg)'   // Yellow
+  return 'var(--accent-cyan)'                           // Cyan
 }
 
-function riskBorder(score, compromised) {
-  if (compromised) return '#ef4444'
-  if (score > 0.8) return '#f87171'
-  if (score > 0.5) return '#fb923c'
-  return 'rgba(59,130,246,0.5)'
+function riskBorderColor(score, isCompromised = false) {
+  if (isCompromised || score > 0.8) return 'var(--severity-critical-fg)'
+  if (score > 0.5) return 'var(--severity-high-fg)'
+  if (score > 0.2) return 'var(--severity-medium-fg)'
+  return 'var(--border-subtle)'
 }
 
-/* ── Cytoscape stylesheet ─────────────────────────────────────────────────── */
+/* ── Cytoscape stylesheet (Spatial Intelligence Theme) ───────────────────── */
 const CY_STYLE = [
   // ── Base node ──
   {
@@ -28,63 +36,61 @@ const CY_STYLE = [
     style: {
       'label': 'data(label)',
       'text-valign': 'bottom',
-      'text-margin-y': 6,
-      'font-size': 9,
-      'font-family': "'Sora', monospace",
-      'color': '#1e3a5f',
-      'background-color': '#dbeafe',
-      'border-width': 2,
-      'border-color': 'rgba(59,130,246,0.4)',
-      'width': 30,
-      'height': 30,
-      'transition-property': 'background-color, border-color, width, height',
-      'transition-duration': '0.3s',
+      'text-margin-y': 7,
+      'font-size': 10,
+      'font-family': "var(--font-mono)",
+      'font-weight': 600,
+      'color': '#f8fafc',
+      'background-color': 'rgba(18, 25, 39, 0.85)',
+      'border-width': 'data(depth_border_width)',
+      'border-color': 'data(depth_border_color)',
+      'width': 'data(node_size)',
+      'height': 'data(node_size)',
+      'opacity': 'data(depth_opacity)',
+      'z-index': 'data(depth_z_index)',
     },
   },
-  // ── IP nodes → circle (default, no override needed) ──
+  // ── Node shapes by type ──
   {
     selector: 'node[node_type="ip"]',
     style: {
       'shape': 'ellipse',
-      // width/height driven by mapData in JS
     },
   },
-  // ── Process nodes → diamond ──
   {
     selector: 'node[node_type="process"]',
     style: {
       'shape': 'diamond',
-      'width': 32, 'height': 32,
     },
   },
-  // ── User nodes → square ──
   {
     selector: 'node[node_type="user"]',
     style: {
-      'shape': 'rectangle',
-      'width': 30, 'height': 30,
-      'corner-radius': 4,
+      'shape': 'round-rectangle',
+      'corner-radius': 6,
     },
   },
-  // ── Risk colors (applied via JS updateNodeStyles) ──
-  // ── Compromised nodes ──
+  // ── Compromised nodes (Crimson strictly reserved) ──
   {
     selector: 'node[?is_compromised]',
     style: {
       'border-width': 3.5,
-      'border-color': '#ef4444',
-      'border-opacity': 1,
+      'border-color': '#ff3366',
+      'background-color': 'rgba(255, 51, 102, 0.18)',
+      'shadow-blur': 16,
+      'shadow-color': 'rgba(255, 51, 102, 0.45)',
+      'shadow-opacity': 0.8,
     },
   },
   // ── Selected ──
   {
     selector: ':selected',
     style: {
-      'border-color': '#8b5cf6',
-      'border-width': 3,
-      'shadow-blur': 12,
-      'shadow-color': '#8b5cf6',
-      'shadow-opacity': 0.6,
+      'border-color': 'var(--accent-cyan)',
+      'border-width': 3.5,
+      'shadow-blur': 18,
+      'shadow-color': 'rgba(0, 240, 255, 0.6)',
+      'shadow-opacity': 0.9,
     },
   },
   // ── Base edge ──
@@ -92,21 +98,33 @@ const CY_STYLE = [
     selector: 'edge',
     style: {
       'width': 1.5,
-      'line-color': '#cbd5e1',
-      'target-arrow-color': '#94a3b8',
+      'line-color': 'rgba(148, 163, 184, 0.3)',
+      'target-arrow-color': 'rgba(148, 163, 184, 0.5)',
       'target-arrow-shape': 'triangle',
       'curve-style': 'bezier',
-      'opacity': 0.8,
+      'opacity': 0.75,
+    },
+  },
+  // ── Inferred lateral pivot edge ──
+  {
+    selector: 'edge[edge_type="inferred_correlation"]',
+    style: {
+      'line-color': 'rgba(168, 85, 247, 0.6)',
+      'target-arrow-color': 'rgba(168, 85, 247, 0.8)',
+      'line-style': 'dashed',
+      'line-dash-pattern': [6, 3],
+      'width': 2,
     },
   },
   // ── Anomalous edge ──
   {
     selector: 'edge[?is_anomalous]',
     style: {
-      'line-color': '#ef4444',
-      'target-arrow-color': '#ef4444',
+      'line-color': 'var(--severity-critical-fg)',
+      'target-arrow-color': 'var(--severity-critical-fg)',
       'line-style': 'dashed',
       'line-dash-pattern': [6, 3],
+      'width': 2.5,
       'opacity': 0.9,
     },
   },
@@ -114,133 +132,340 @@ const CY_STYLE = [
   {
     selector: 'node.hovered',
     style: {
+      'border-color': 'var(--accent-cyan)',
       'border-width': 3,
-      'border-color': '#8b5cf6',
       'z-index': 9999,
+    },
+  },
+  // ── Neighbor Focus & Dimming ──
+  {
+    selector: '.faded',
+    style: {
+      'opacity': 0.12,
+      'text-opacity': 0.12,
+    },
+  },
+  {
+    selector: 'node.highlighted-neighbor',
+    style: {
+      'border-color': 'var(--accent-cyan)',
+      'border-width': 3,
+      'opacity': 1.0,
+      'shadow-blur': 12,
+      'shadow-color': 'rgba(0, 240, 255, 0.5)',
+      'shadow-opacity': 0.8,
+    },
+  },
+  {
+    selector: 'edge.highlighted-edge',
+    style: {
+      'width': 2.5,
+      'opacity': 1.0,
+      'line-color': 'var(--accent-cyan)',
+      'target-arrow-color': 'var(--accent-cyan)',
     },
   },
 ]
 
-/* ── Tooltip component ────────────────────────────────────────────────────── */
+/* ── Node Dossier Tooltip Component ───────────────────────────────────────── */
 function Tooltip({ node, position }) {
   if (!node) return null
-  const { label, ip, risk_score, event_count, is_compromised, node_type } = node
+  const { label, ip, risk_score, event_count, is_compromised, node_type, kill_chain_stage, is_stage_known } = node
   const riskLabel = risk_score > 0.8 ? 'Critical' : risk_score > 0.5 ? 'High' : risk_score > 0.2 ? 'Medium' : 'Low'
-  const riskCol   = riskColor(risk_score || 0)
+  const riskCol = riskColor(risk_score || 0, is_compromised)
 
   return (
-    <div style={{
-      position: 'fixed',
-      left: position.x + 14,
-      top: position.y - 10,
-      zIndex: 9999,
-      pointerEvents: 'none',
-      background: 'rgba(255,255,255,0.96)',
-      backdropFilter: 'blur(12px)',
-      border: '1px solid rgba(59,130,246,0.2)',
-      borderRadius: 12,
-      padding: '12px 16px',
-      boxShadow: '0 8px 28px rgba(59,130,246,0.12)',
-      minWidth: 200,
-      fontFamily: "'Sora', sans-serif",
-    }}>
+    <div
+      role="tooltip"
+      aria-live="polite"
+      style={{
+        position: 'fixed',
+        left: position.x + 14,
+        top: position.y - 10,
+        zIndex: 99999,
+        pointerEvents: 'none',
+        background: 'var(--surface-3)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 14,
+        padding: '14px 18px',
+        boxShadow: 'var(--shadow-elevation-3)',
+        minWidth: 240,
+        fontFamily: 'var(--font-ui)',
+      }}
+    >
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-        <span style={{ fontSize:16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <span style={{ fontSize: 16 }}>
           {node_type === 'process' ? '⚙️' : node_type === 'user' ? '👤' : '🌐'}
         </span>
         <div>
-          <div style={{ fontWeight:800, fontSize:12, color:'#1e3a5f' }}>{label || ip || 'Unknown'}</div>
-          <div style={{ fontSize:9, color:'#6b8cae', textTransform:'uppercase', letterSpacing:1 }}>{node_type || 'ip'} node</div>
+          <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+            {label || ip || 'Unknown'}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+            {node_type || 'ip'} entity
+          </div>
         </div>
         {is_compromised && (
           <span style={{
-            marginLeft:'auto', background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.4)',
-            color:'#dc2626', fontSize:8, fontWeight:800, letterSpacing:1,
-            padding:'2px 8px', borderRadius:20, textTransform:'uppercase',
-          }}>⚠ Compromised</span>
+            marginLeft: 'auto',
+            background: 'var(--severity-critical-bg)',
+            border: '1px solid var(--severity-critical-border)',
+            color: 'var(--severity-critical-fg)',
+            fontSize: 9, fontWeight: 800, letterSpacing: 0.8,
+            padding: '2px 8px', borderRadius: 12, textTransform: 'uppercase',
+          }}>
+            Compromised
+          </span>
         )}
       </div>
 
+      {/* Kill Chain Stage Notice (Truthful: never guesses) */}
+      <div style={{
+        marginBottom: 10,
+        padding: '6px 10px',
+        borderRadius: 8,
+        background: is_stage_known ? 'rgba(0, 240, 255, 0.08)' : 'rgba(148, 163, 184, 0.08)',
+        border: `1px solid ${is_stage_known ? 'rgba(0, 240, 255, 0.25)' : 'var(--border-hairline)'}`,
+        fontSize: 11,
+      }}>
+        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.6 }}>
+          Kill-Chain Progression
+        </div>
+        <div style={{
+          fontWeight: 700,
+          color: is_stage_known ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+          display: 'flex', alignItems: 'center', gap: 6, marginTop: 2
+        }}>
+          <span>{is_stage_known ? `${kill_chain_stage}` : 'Unknown Stage'}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 500 }}>
+            {is_stage_known ? `(Depth ${KILL_CHAIN_DEPTH[kill_chain_stage]?.index + 1}/8)` : '(No alert stage)'}
+          </span>
+        </div>
+      </div>
+
       {/* Stats grid */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px 14px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 14px' }}>
         {[
-          ['IP', ip || label || '—'],
+          ['IP Address', ip || label || '—'],
           ['Risk Score', (risk_score || 0).toFixed(3)],
-          ['Risk Level', riskLabel],
-          ['Events', event_count ?? '—'],
+          ['Severity Tier', riskLabel],
+          ['Correlated Events', event_count ?? '—'],
         ].map(([k, v], i) => (
           <div key={i}>
-            <div style={{ fontSize:8, color:'#a0bdd4', letterSpacing:1, textTransform:'uppercase', marginBottom:1 }}>{k}</div>
-            <div style={{
-              fontSize:11, fontWeight:700, fontFamily:'monospace',
-              color: k === 'Risk Score' || k === 'Risk Level' ? riskCol : '#1e3a5f',
+            <div style={{ fontSize: 9, color: 'var(--text-tertiary)', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 1 }}>{k}</div>
+            <div className="tabular-nums" style={{
+              fontSize: 11, fontWeight: 700,
+              color: k === 'Risk Score' || k === 'Severity Tier' ? riskCol : 'var(--text-primary)',
             }}>{v}</div>
           </div>
         ))}
-      </div>
-
-      {/* Risk bar */}
-      <div style={{ marginTop:10, height:4, background:'rgba(59,130,246,0.08)', borderRadius:4, overflow:'hidden' }}>
-        <div style={{
-          height:'100%',
-          width: `${Math.min(100, (risk_score || 0) * 100)}%`,
-          background: `linear-gradient(90deg, #60a5fa, ${riskCol})`,
-          borderRadius:4, transition:'width 0.3s',
-        }}/>
-      </div>
-      <div style={{ display:'flex', justifyContent:'space-between', fontSize:8, color:'#a0bdd4', marginTop:2 }}>
-        <span>0%</span><span>Risk</span><span>100%</span>
       </div>
     </div>
   )
 }
 
-/* ── Main component ───────────────────────────────────────────────────────── */
+/* ── Compact Spatial Depth Legend Component ───────────────────────────────── */
+function DepthLegend() {
+  return (
+    <div
+      aria-label="Spatial Depth Scale Legend"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 8,
+        padding: '8px 14px',
+        background: 'var(--surface-1)',
+        border: '1px solid var(--border-hairline)',
+        borderRadius: 10,
+        fontSize: 11,
+        color: 'var(--text-secondary)',
+        fontFamily: 'var(--font-ui)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: 'var(--text-tertiary)' }}>
+          Depth Scale:
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Atmospheric Fog (Recon) → Crisp Foreground (Impact)</span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {KILL_CHAIN_STAGES.map((stg) => {
+          const depth = KILL_CHAIN_DEPTH[stg]
+          return (
+            <div
+              key={stg}
+              title={`${stg}: Depth Tier ${depth.index + 1}/8, Size ${depth.nodeSize}px, Opacity ${depth.opacity}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 6px',
+                borderRadius: 6,
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border-hairline)',
+                fontSize: 10,
+              }}
+            >
+              <span
+                style={{
+                  width: Math.round(depth.nodeSize * 0.22),
+                  height: Math.round(depth.nodeSize * 0.22),
+                  borderRadius: '50%',
+                  background: 'var(--accent-cyan)',
+                  opacity: depth.opacity,
+                  display: 'inline-block',
+                }}
+                aria-hidden="true"
+              />
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{stg}</span>
+            </div>
+          )
+        })}
+
+        {/* Unknown Stage Neutral Indicator */}
+        <div
+          title="Unknown Stage: Entities with unassigned or missing alert kill-chain stages"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '2px 6px',
+            borderRadius: 6,
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border-subtle)',
+            fontSize: 10,
+            color: 'var(--text-muted)',
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--text-muted)',
+              display: 'inline-block',
+            }}
+            aria-hidden="true"
+          />
+          <span>Unknown</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Main Component ───────────────────────────────────────────────────────── */
 export default memo(function AttackGraph() {
   const containerRef = useRef(null)
-  const cyRef        = useRef(null)
-  const graphData    = useAlertStore(s => s.graphData)
+  const cyRef = useRef(null)
+  const graphData = useAlertStore(s => s.graphData)
+  const alerts = useAlertStore(s => s.alerts)
+  const incidents = useAlertStore(s => s.incidents)
+  const selectedIncidentId = useAlertStore(s => s.selectedIncident || s.focusIncidentId)
+  const huntingFocus = useAlertStore(s => s.huntingFocus)
+  const clearHuntingFocus = useAlertStore(s => s.clearHuntingFocus)
+  const scrubberTime = useAlertStore(s => s.scrubberTime)
+  const selectIncident = useAlertStore(s => s.selectIncident)
+  const setFocusIncidentId = useAlertStore(s => s.setFocusIncidentId)
+  const reducedMotion = useReducedMotion()
 
-  const [tooltip, setTooltip] = useState(null)          // { node, position: {x,y} }
+  const [tooltip, setTooltip] = useState(null)
+  const [selectedNode, setSelectedNode] = useState(null)
+  const [nodeTypeFilter, setNodeTypeFilter] = useState('all')
+  const [edgeTypeFilter, setEdgeTypeFilter] = useState('all')
   const [nodeCount, setNodeCount] = useState(0)
-  const [edgeCount, setEdgeCount]  = useState(0)
+  const [edgeCount, setEdgeCount] = useState(0)
   const [anomalousCount, setAnomalousCount] = useState(0)
 
-  /* Apply per-node dynamic styles (risk colour, size by event_count) */
+  /* Node stage resolver: derives real kill-chain stage without guessing */
+  const resolveNodeStage = useCallback((n) => {
+    // 1. Direct stage on node
+    if (n.current_kill_chain_stage) return n.current_kill_chain_stage
+    if (n.stage) return n.stage
+
+    // 2. Matching alert stage (highest progression)
+    const matchingAlerts = alerts.filter(a => a.src_entity === n.id || a.dst_entity === n.id)
+    if (matchingAlerts.length > 0) {
+      for (const a of matchingAlerts) {
+        if (a.current_kill_chain_stage) return a.current_kill_chain_stage
+        if (a.threat_type) {
+          const norm = normalizeKillChainStage(a.threat_type)
+          if (norm.isKnown) return norm.stage
+        }
+      }
+    }
+
+    // 3. Matching incident stage
+    const matchingInc = incidents.find(inc => inc.affected_entities && inc.affected_entities.includes(n.id))
+    if (matchingInc && matchingInc.current_kill_chain_stage) {
+      return matchingInc.current_kill_chain_stage
+    }
+
+    return null
+  }, [alerts, incidents])
+
+  /* Applies per-node Depth is Data spatial styling */
   const applyDynamicStyles = useCallback((cy) => {
     cy.nodes().forEach(node => {
-      const data  = node.data()
-      const color = riskColor(data.risk_score || 0)
-      const bdr   = riskBorder(data.risk_score || 0, data.is_compromised)
-      // Size ip nodes by event_count (20–50px)
-      const base  = data.node_type === 'ip'
-        ? Math.min(50, Math.max(20, 20 + (data.event_count || 0) * 0.5))
-        : data.node_type === 'process' ? 32 : 28
+      const data = node.data()
+      const rawStage = resolveNodeStage(data)
+      const norm = normalizeKillChainStage(rawStage)
+      const depth = norm.isKnown ? norm.depth : UNKNOWN_DEPTH
+
+      const isCompromised = Boolean(data.is_compromised)
+      const borderCol = riskBorderColor(data.risk_score || 0, isCompromised)
+      const bgCol = isCompromised ? 'rgba(255, 51, 102, 0.2)' : 'rgba(18, 25, 39, 0.88)'
+
+      node.data({
+        ...data,
+        kill_chain_stage: norm.stage,
+        is_stage_known: norm.isKnown,
+        node_size: depth.nodeSize,
+        depth_opacity: depth.opacity,
+        depth_border_width: depth.borderWidth,
+        depth_z_index: depth.zIndex,
+        depth_border_color: borderCol,
+      })
 
       node.style({
-        'background-color': color + '22',
-        'border-color': bdr,
-        'border-width': data.is_compromised ? 3.5 : 2,
-        'width': base,
-        'height': base,
+        'background-color': bgCol,
+        'border-color': borderCol,
+        'border-width': depth.borderWidth,
+        'width': depth.nodeSize,
+        'height': depth.nodeSize,
+        'opacity': depth.opacity,
+        'z-index': depth.zIndex,
       })
     })
 
-    // Edge thickness by frequency
+    // Edge styling
     cy.edges().forEach(edge => {
       const freq = edge.data('frequency') || 1
-      const w = Math.min(5, Math.max(1, freq * 0.5))
-      const anomalous = edge.data('is_anomalous')
+      const w = Math.min(4, Math.max(1.2, freq * 0.4))
+      const isAnomalous = Boolean(edge.data('is_anomalous'))
+      const isHypothesis = edge.data('edge_type') === 'inferred_correlation'
+
       edge.style({
         'width': w,
-        'line-color': anomalous ? '#ef4444' : '#cbd5e1',
-        'target-arrow-color': anomalous ? '#ef4444' : '#94a3b8',
+        'line-color': isAnomalous
+          ? '#ff3366'
+          : isHypothesis
+            ? 'rgba(168, 85, 247, 0.65)'
+            : 'rgba(148, 163, 184, 0.3)',
+        'target-arrow-color': isAnomalous
+          ? '#ff3366'
+          : isHypothesis
+            ? 'rgba(168, 85, 247, 0.8)'
+            : 'rgba(148, 163, 184, 0.5)',
       })
     })
-  }, [])
+  }, [resolveNodeStage])
 
-  /* Initialise Cytoscape */
+  /* Initialize Cytoscape */
   useEffect(() => {
     if (!containerRef.current) return
 
@@ -252,29 +477,68 @@ export default memo(function AttackGraph() {
       userPanningEnabled: true,
       minZoom: 0.2,
       maxZoom: 4,
+      hideEdgesOnViewport: true,
+      textureOnViewport: true,
     })
     cyRef.current = cy
+    if (typeof window !== 'undefined') {
+      window.__cytoscape_instance__ = cy
+    }
 
-    /* Node click → tooltip */
+    /* Node click → neighbor highlight & inspector */
     cy.on('tap', 'node', (evt) => {
-      const node     = evt.target
+      const node = evt.target
       const rendered = node.renderedPosition()
-      const container = containerRef.current.getBoundingClientRect()
+      const container = containerRef.current ? containerRef.current.getBoundingClientRect() : { left: 0, top: 0 }
+      const nodeData = node.data()
+      const neighborhood = node.neighborhood()
+
+      cy.elements().addClass('faded').removeClass('highlighted-neighbor highlighted-edge')
+      node.removeClass('faded')
+      neighborhood.nodes().removeClass('faded').addClass('highlighted-neighbor')
+      neighborhood.edges().removeClass('faded').addClass('highlighted-edge')
+
+      setSelectedNode({
+        id: node.id(),
+        label: nodeData.label || node.id(),
+        ip: nodeData.ip,
+        node_type: nodeData.node_type || 'ip',
+        risk_score: nodeData.risk_score || 0,
+        event_count: nodeData.event_count || 0,
+        is_compromised: Boolean(nodeData.is_compromised),
+        role: nodeData.role,
+        stage: nodeData.kill_chain_stage,
+        is_stage_known: nodeData.is_stage_known,
+        inDegree: node.incomers('edge').length,
+        outDegree: node.outgoers('edge').length,
+        neighbors: neighborhood.nodes().map(n => ({
+          id: n.id(),
+          label: n.data('label') || n.id(),
+          node_type: n.data('node_type') || 'ip',
+          is_compromised: Boolean(n.data('is_compromised')),
+        })),
+      })
+
       setTooltip({
-        node: node.data(),
+        node: nodeData,
         position: { x: container.left + rendered.x, y: container.top + rendered.y },
       })
       node.select()
     })
 
-    /* Click canvas → close tooltip */
+    /* Click canvas → close tooltip and clear neighbor dimming */
     cy.on('tap', (evt) => {
-      if (evt.target === cy) { setTooltip(null); cy.nodes().unselect() }
+      if (evt.target === cy) {
+        setTooltip(null)
+        setSelectedNode(null)
+        cy.elements().removeClass('faded highlighted-neighbor highlighted-edge')
+        cy.nodes().unselect()
+      }
     })
 
     /* Hover */
     cy.on('mouseover', 'node', (evt) => evt.target.addClass('hovered'))
-    cy.on('mouseout',  'node', (evt) => evt.target.removeClass('hovered'))
+    cy.on('mouseout', 'node', (evt) => evt.target.removeClass('hovered'))
 
     return () => {
       cy.destroy()
@@ -293,9 +557,13 @@ export default memo(function AttackGraph() {
     if (!nodes.length && !edges.length) return
 
     cy.batch(() => {
-      /* Add new nodes */
       nodes.forEach(n => {
+        if (!n || !n.id) return // skip malformed node
         if (!cy.getElementById(n.id).length) {
+          const rawStage = resolveNodeStage(n)
+          const norm = normalizeKillChainStage(rawStage)
+          const depth = norm.isKnown ? norm.depth : UNKNOWN_DEPTH
+
           cy.add({
             group: 'nodes',
             data: {
@@ -307,16 +575,24 @@ export default memo(function AttackGraph() {
               event_count: n.event_count || 0,
               is_compromised: n.is_compromised || false,
               role: n.role,
+              kill_chain_stage: norm.stage,
+              is_stage_known: norm.isKnown,
+              node_size: depth.nodeSize,
+              depth_opacity: depth.opacity,
+              depth_border_width: depth.borderWidth,
+              depth_z_index: depth.zIndex,
+              depth_border_color: riskBorderColor(n.risk_score || 0, n.is_compromised),
             },
           })
         } else {
-          // Update data in place
           cy.getElementById(n.id).data(n)
         }
       })
 
-      /* Add new edges */
       edges.forEach(e => {
+        if (!e || !e.id || !e.source || !e.target) return // skip malformed edge
+        // Cytoscape will crash if source or target node is missing from cy
+        if (!cy.getElementById(e.source).length || !cy.getElementById(e.target).length) return
         if (!cy.getElementById(e.id).length) {
           cy.add({
             group: 'edges',
@@ -327,6 +603,7 @@ export default memo(function AttackGraph() {
               is_anomalous: e.is_anomalous || false,
               frequency: e.frequency || 1,
               label: e.label || '',
+              edge_type: e.edge_type || 'observed_telemetry',
             },
           })
         }
@@ -335,181 +612,877 @@ export default memo(function AttackGraph() {
 
     applyDynamicStyles(cy)
 
-    /* dagre hierarchical layout — attackers on left, victims on right */
+    /* Hierarchical Dagre layout */
     cy.layout({
       name: 'dagre',
-      rankDir: 'LR',              // Left → Right
-      nodeSep: 50,
-      rankSep: 100,
-      edgeSep: 10,
-      animate: true,
-      animationDuration: 450,
+      rankDir: 'LR',
+      nodeSep: 60,
+      rankSep: 110,
+      edgeSep: 14,
+      animate: !reducedMotion,
+      animationDuration: reducedMotion ? 0 : 380,
       fit: true,
       padding: 24,
     }).run()
 
-    /* Update counters */
     setNodeCount(cy.nodes().length)
     setEdgeCount(cy.edges().length)
     setAnomalousCount(cy.edges().filter('[?is_anomalous]').length)
+  }, [graphData, applyDynamicStyles, reducedMotion, resolveNodeStage])
 
-  }, [graphData, applyDynamicStyles])
+  /* ── Camera Glide & Focus on Incident Selection ── */
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
 
-  /* Reference mock data for standalone preview */
+    if (!selectedIncidentId) {
+      applyDynamicStyles(cy)
+      return
+    }
+
+    const inc = incidents.find(i =>
+      i.incident_id === selectedIncidentId ||
+      i.event_id === selectedIncidentId ||
+      (Array.isArray(i.alert_ids) && i.alert_ids.includes(selectedIncidentId))
+    )
+
+    if (!inc) return
+
+    const involved = new Set(
+      inc.affected_entities ||
+      [inc.src_entity, inc.dst_entity, inc.primary_attacker, inc.primary_target].filter(Boolean)
+    )
+
+    if (Array.isArray(inc.relationship_evidence)) {
+      inc.relationship_evidence.forEach(r => {
+        if (r.source_entity) involved.add(r.source_entity)
+        if (r.target_entity) involved.add(r.target_entity)
+      })
+    }
+
+    const targetNodes = cy.nodes().filter(n => involved.has(n.id()))
+    if (targetNodes.length > 0) {
+      // 1. Camera Glide
+      if (reducedMotion) {
+        cy.fit(targetNodes, 40)
+      } else {
+        cy.animate({
+          fit: { eles: targetNodes, padding: 50 },
+          duration: 420,
+          easing: 'ease-in-out-cubic',
+        })
+      }
+
+      // 2. Dim unrelated nodes and highlight involved nodes
+      cy.batch(() => {
+        cy.nodes().forEach(n => {
+          if (involved.has(n.id())) {
+            n.style({ opacity: 1.0, 'border-width': 3.5 })
+          } else {
+            n.style({ opacity: 0.18 })
+          }
+        })
+
+        // 3. Highlight only edges backed by real relationship evidence or direct entity interaction
+        const relPairs = new Set()
+        if (Array.isArray(inc.relationship_evidence)) {
+          inc.relationship_evidence.forEach(r => {
+            if (r.source_entity && r.target_entity) {
+              relPairs.add(`${r.source_entity}->${r.target_entity}`)
+            }
+          })
+        }
+
+        cy.edges().forEach(e => {
+          const pair = `${e.source().id()}->${e.target().id()}`
+          const isDirectInvolved = involved.has(e.source().id()) && involved.has(e.target().id())
+          if (relPairs.has(pair) || isDirectInvolved) {
+            e.style({ opacity: 1.0, width: 3.0 })
+          } else {
+            e.style({ opacity: 0.08 })
+          }
+        })
+      })
+    }
+  }, [selectedIncidentId, incidents, reducedMotion, applyDynamicStyles])
+
+  /* ── Hunting-Driven Graph Focus Effect (Stage 4) ── */
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+
+    // If an incident is specifically selected, that takes precedence, or if huntingFocus is null/inactive
+    if (selectedIncidentId || !huntingFocus || !huntingFocus.active) {
+      if (!selectedIncidentId) {
+        applyDynamicStyles(cy)
+      }
+      return
+    }
+
+    const matchedIds = new Set(huntingFocus.matchedEntityIds || [])
+    const targetNodes = cy.nodes().filter(n => matchedIds.has(n.id()))
+
+    if (targetNodes.length > 0) {
+      // 1. Camera Glide or reduced-motion snap
+      if (reducedMotion) {
+        cy.fit(targetNodes, 40)
+      } else {
+        cy.animate({
+          fit: { eles: targetNodes, padding: 50 },
+          duration: 420,
+          easing: 'ease-in-out-cubic',
+        })
+      }
+
+      // 2. Dim non-matching nodes, highlight matches
+      cy.batch(() => {
+        cy.nodes().forEach(n => {
+          if (matchedIds.has(n.id())) {
+            n.style({ opacity: 1.0, 'border-width': 3.5 })
+          } else {
+            n.style({ opacity: 0.15 })
+          }
+        })
+
+        // 3. Keep evidence-backed edges only
+        cy.edges().forEach(e => {
+          const isDirectInvolved = matchedIds.has(e.source().id()) && matchedIds.has(e.target().id())
+          if (isDirectInvolved) {
+            e.style({ opacity: 1.0, width: 3.0 })
+          } else {
+            e.style({ opacity: 0.05 })
+          }
+        })
+      })
+    } else {
+      // If no entities match, do NOT zoom or dim to an empty graph
+      applyDynamicStyles(cy)
+    }
+  }, [huntingFocus, selectedIncidentId, reducedMotion, applyDynamicStyles])
+
+  /* ── Historical Scrubber Filtering Effect ── */
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+
+    if (scrubberTime === null) {
+      cy.batch(() => {
+        cy.nodes().style('display', 'element')
+        cy.edges().style('display', 'element')
+      })
+      setNodeCount(cy.nodes().length)
+      setEdgeCount(cy.edges().length)
+      return
+    }
+
+    const historical = stateAsOf(alerts, incidents, scrubberTime)
+    cy.batch(() => {
+      cy.nodes().forEach(n => {
+        if (historical.visibleEntityIds.has(n.id())) {
+          n.style('display', 'element')
+        } else {
+          n.style('display', 'none')
+        }
+      })
+
+      const visibleEdgeKeys = new Set(
+        historical.visibleEdges.map(e => `${e.source}->${e.target}`)
+      )
+      cy.edges().forEach(e => {
+        const key = `${e.source().id()}->${e.target().id()}`
+        if (visibleEdgeKeys.has(key) ||
+            (historical.visibleEntityIds.has(e.source().id()) && historical.visibleEntityIds.has(e.target().id()))) {
+          e.style('display', 'element')
+        } else {
+          e.style('display', 'none')
+        }
+      })
+    })
+
+    setNodeCount(cy.nodes(':visible').length)
+    setEdgeCount(cy.edges(':visible').length)
+  }, [scrubberTime, alerts, incidents])
+
+  /* Graph controls */
+  const fitGraph = useCallback(() => {
+    if (cyRef.current) cyRef.current.fit(undefined, 30)
+  }, [])
+
+  const resetZoom = useCallback(() => {
+    if (cyRef.current) cyRef.current.zoom(1)
+  }, [])
+
+  const zoomIn = useCallback(() => {
+    if (cyRef.current) cyRef.current.zoom(cyRef.current.zoom() * 1.3)
+  }, [])
+
+  const zoomOut = useCallback(() => {
+    if (cyRef.current) cyRef.current.zoom(cyRef.current.zoom() * 0.75)
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    const cy = cyRef.current
+    if (!cy) return
+    cy.elements().removeClass('faded highlighted-neighbor highlighted-edge')
+    cy.nodes().unselect()
+    setSelectedNode(null)
+    setTooltip(null)
+  }, [])
+
+  const focusOnNode = useCallback((nodeId) => {
+    const cy = cyRef.current
+    if (!cy) return
+    const target = cy.getElementById(nodeId)
+    if (target.length) {
+      const neighborhood = target.neighborhood()
+      cy.elements().addClass('faded').removeClass('highlighted-neighbor highlighted-edge')
+      target.removeClass('faded').select()
+      neighborhood.nodes().removeClass('faded').addClass('highlighted-neighbor')
+      neighborhood.edges().removeClass('faded').addClass('highlighted-edge')
+      cy.animate({
+        center: { eles: target },
+        zoom: Math.min(2.5, Math.max(1.2, cy.zoom() * 1.4)),
+        duration: reducedMotion ? 0 : 350,
+      })
+      const nodeData = target.data()
+      setSelectedNode({
+        id: target.id(),
+        label: nodeData.label || target.id(),
+        ip: nodeData.ip,
+        node_type: nodeData.node_type || 'ip',
+        risk_score: nodeData.risk_score || 0,
+        event_count: nodeData.event_count || 0,
+        is_compromised: Boolean(nodeData.is_compromised),
+        role: nodeData.role,
+        stage: nodeData.kill_chain_stage,
+        is_stage_known: nodeData.is_stage_known,
+        inDegree: target.incomers('edge').length,
+        outDegree: target.outgoers('edge').length,
+        neighbors: neighborhood.nodes().map(n => ({
+          id: n.id(),
+          label: n.data('label') || n.id(),
+          node_type: n.data('node_type') || 'ip',
+          is_compromised: Boolean(n.data('is_compromised')),
+        })),
+      })
+    }
+  }, [reducedMotion])
+
+  /* Attribute filtering effect: entity types and link provenance */
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+
+    cy.batch(() => {
+      cy.nodes().forEach(n => {
+        const matchesType = nodeTypeFilter === 'all' || n.data('node_type') === nodeTypeFilter
+        if (matchesType) {
+          n.style('display', 'element')
+        } else {
+          n.style('display', 'none')
+        }
+      })
+
+      cy.edges().forEach(e => {
+        const isAnom = Boolean(e.data('is_anomalous'))
+        const isHyp = e.data('edge_type') === 'inferred_correlation'
+        let matchesEdge = true
+        if (edgeTypeFilter === 'anomalous') matchesEdge = isAnom
+        else if (edgeTypeFilter === 'observed') matchesEdge = !isHyp
+        else if (edgeTypeFilter === 'inferred') matchesEdge = isHyp
+
+        const sourceVisible = e.source().style('display') !== 'none'
+        const targetVisible = e.target().style('display') !== 'none'
+
+        if (matchesEdge && sourceVisible && targetVisible) {
+          e.style('display', 'element')
+        } else {
+          e.style('display', 'none')
+        }
+      })
+    })
+
+    setNodeCount(cy.nodes(':visible').length)
+    setEdgeCount(cy.edges(':visible').length)
+    setAnomalousCount(cy.edges(':visible').filter('[?is_anomalous]').length)
+  }, [nodeTypeFilter, edgeTypeFilter])
+
+  /* Mock data generator demonstrating known stages and an explicit unknown node */
   const injectMockData = useCallback(() => {
     const cy = cyRef.current
     if (!cy) return
-    const now = Date.now()
+
     cy.add([
-      { group:'nodes', data:{ id:'att1', label:'192.168.1.10', ip:'192.168.1.10', node_type:'ip', risk_score:0.92, event_count:48, is_compromised:false, role:'attacker' } },
-      { group:'nodes', data:{ id:'srv1', label:'10.0.0.5', ip:'10.0.0.5', node_type:'ip', risk_score:0.61, event_count:12, is_compromised:true, role:'server' } },
-      { group:'nodes', data:{ id:'p1',   label:'cmd.exe',  node_type:'process', risk_score:0.78, event_count:5 } },
-      { group:'nodes', data:{ id:'u1',   label:'admin',    node_type:'user',    risk_score:0.45, event_count:20 } },
-      { group:'nodes', data:{ id:'vic1', label:'10.0.0.20', ip:'10.0.0.20', node_type:'ip', risk_score:0.15, event_count:3 } },
-      { group:'edges', data:{ id:'e1', source:'att1', target:'srv1', is_anomalous:true,  frequency:9 } },
-      { group:'edges', data:{ id:'e2', source:'srv1', target:'p1',   is_anomalous:true,  frequency:4 } },
-      { group:'edges', data:{ id:'e3', source:'p1',   target:'u1',   is_anomalous:false, frequency:2 } },
-      { group:'edges', data:{ id:'e4', source:'u1',   target:'vic1', is_anomalous:false, frequency:1 } },
+      { group: 'nodes', data: { id: 'att1', label: '198.51.100.11', ip: '198.51.100.11', node_type: 'ip', risk_score: 0.95, event_count: 52, is_compromised: true, role: 'attacker', stage: 'Weaponize' } },
+      { group: 'nodes', data: { id: 'srv1', label: '10.0.0.50', ip: '10.0.0.50', node_type: 'ip', risk_score: 0.65, event_count: 14, is_compromised: true, role: 'server', stage: 'Delivery' } },
+      { group: 'nodes', data: { id: 'p1',   label: 'powershell.exe', node_type: 'process', risk_score: 0.82, event_count: 8, stage: 'Install' } },
+      { group: 'nodes', data: { id: 'c2',   label: '203.0.113.19', ip: '203.0.113.19', node_type: 'ip', risk_score: 0.91, event_count: 22, stage: 'C2' } },
+      { group: 'nodes', data: { id: 'exf',  label: '192.0.2.77', ip: '192.0.2.77', node_type: 'ip', risk_score: 0.98, event_count: 18, is_compromised: true, stage: 'Exfiltrate' } },
+      // Deliberately unknown stage entity demonstrating empirical honesty
+      { group: 'nodes', data: { id: 'unk_host', label: '10.0.1.99 (Unknown)', ip: '10.0.1.99', node_type: 'ip', risk_score: 0.15, event_count: 2, stage: null } },
+      { group: 'edges', data: { id: 'e1', source: 'att1', target: 'srv1', is_anomalous: true, frequency: 12 } },
+      { group: 'edges', data: { id: 'e2', source: 'srv1', target: 'p1',   is_anomalous: true, frequency: 6 } },
+      { group: 'edges', data: { id: 'e3', source: 'p1',   target: 'c2',   is_anomalous: true, frequency: 15 } },
+      { group: 'edges', data: { id: 'e4', source: 'c2',   target: 'exf',  is_anomalous: true, frequency: 24 } },
+      { group: 'edges', data: { id: 'e5', source: 'srv1', target: 'unk_host', is_anomalous: false, frequency: 1 } },
     ])
+
     applyDynamicStyles(cy)
-    cy.layout({ name:'dagre', rankDir:'LR', nodeSep:50, rankSep:100, animate:true, animationDuration:400, fit:true, padding:30 }).run()
+    cy.layout({
+      name: 'dagre',
+      rankDir: 'LR',
+      nodeSep: 60,
+      rankSep: 110,
+      animate: !reducedMotion,
+      animationDuration: reducedMotion ? 0 : 380,
+      fit: true,
+      padding: 30,
+    }).run()
+
     setNodeCount(cy.nodes().length)
     setEdgeCount(cy.edges().length)
     setAnomalousCount(cy.edges().filter('[?is_anomalous]').length)
-  }, [applyDynamicStyles])
-
-  const fitGraph = () => cyRef.current?.fit(undefined, 24)
-  const resetZoom = () => cyRef.current?.zoom({ level: 1, renderedPosition:{ x:300, y:200 } })
+  }, [applyDynamicStyles, reducedMotion])
 
   return (
-    <div style={{
-      background: 'rgba(255,255,255,0.72)',
-      backdropFilter: 'blur(18px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(18px) saturate(160%)',
-      border: '1px solid rgba(96,165,250,0.18)',
-      borderRadius: 18,
-      boxShadow: '0 4px 24px rgba(59,130,246,0.07)',
-      display: 'flex', flexDirection: 'column',
-      height: '100%', overflow: 'hidden',
-    }}>
-
-      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+    <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* ── Top Bar: Metrics & Controls ── */}
       <div style={{
-        display:'flex', justifyContent:'space-between', alignItems:'center',
-        padding:'12px 18px', borderBottom:'1px solid rgba(96,165,250,0.12)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 12,
+        padding: '8px 12px',
+        background: 'var(--surface-1)',
+        border: '1px solid var(--border-hairline)',
+        borderRadius: 10,
       }}>
-        {/* Title */}
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <div style={{
-            width:32, height:32, borderRadius:10, fontSize:14,
-            background:'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(14,165,233,0.06))',
-            border:'1px solid rgba(59,130,246,0.15)',
-            display:'flex', alignItems:'center', justifyContent:'center',
-          }}>🌐</div>
-          <div>
-            <div style={{ fontWeight:700, fontSize:13, color:'#1e3a5f', fontFamily:"'Sora', sans-serif" }}>Attack Graph</div>
-            <div style={{ fontSize:9, color:'#a0bdd4', letterSpacing:1, textTransform:'uppercase' }}>
-              Dagre · Hierarchical Layout
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+            Topology Projection
+          </span>
+          <span style={{ color: 'var(--border-subtle)' }}>|</span>
+          <div className="tabular-nums" style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+            <span>Nodes: <strong style={{ color: 'var(--text-primary)' }}>{nodeCount}</strong></span>
+            <span>Edges: <strong style={{ color: 'var(--text-primary)' }}>{edgeCount}</strong></span>
+            <span>Anomalies: <strong style={{ color: anomalousCount > 0 ? 'var(--severity-critical-fg)' : 'var(--text-primary)' }}>{anomalousCount}</strong></span>
           </div>
         </div>
 
-        {/* Stats pills */}
-        <div style={{ display:'flex', gap:6 }}>
-          {[
-            [nodeCount, 'nodes', '#3b82f6'],
-            [edgeCount, 'edges', '#6b8cae'],
-            [anomalousCount, 'anomalous', '#ef4444'],
-          ].map(([count, label, color]) => (
-            <span key={label} style={{
-              background: `${color}11`, border:`1px solid ${color}33`,
-              color, borderRadius:20, padding:'3px 10px', fontSize:10, fontFamily:'monospace', fontWeight:700,
-            }}>{count} {label}</span>
-          ))}
-        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Zoom controls */}
+          <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border-hairline)' }}>
+            <button
+              type="button"
+              onClick={zoomIn}
+              aria-label="Zoom in"
+              title="Zoom In"
+              style={{
+                background: 'none', border: 'none', color: 'var(--accent-cyan)',
+                padding: '5px 9px', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+              }}
+            >
+              +
+            </button>
+            <span style={{ color: 'var(--border-subtle)', alignSelf: 'center' }}>|</span>
+            <button
+              type="button"
+              onClick={zoomOut}
+              aria-label="Zoom out"
+              title="Zoom Out"
+              style={{
+                background: 'none', border: 'none', color: 'var(--accent-cyan)',
+                padding: '5px 9px', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+              }}
+            >
+              −
+            </button>
+          </div>
 
-        {/* Controls */}
-        <div style={{ display:'flex', gap:6 }}>
-          {[
-            ['Fit', fitGraph, '⊡'],
-            ['1x', resetZoom, '◎'],
-            ['Mock', injectMockData, '⚡'],
-          ].map(([label, fn, icon]) => (
-            <button key={label} onClick={fn} style={{
-              background:'rgba(59,130,246,0.06)', border:'1px solid rgba(59,130,246,0.18)',
-              color:'#3b82f6', borderRadius:8, padding:'5px 12px', fontSize:10,
-              fontWeight:600, cursor:'pointer', fontFamily:"'Sora', sans-serif",
-              display:'flex', alignItems:'center', gap:4, transition:'all 0.15s',
+          {selectedIncidentId && (
+            <button
+              type="button"
+              onClick={() => {
+                selectIncident(null)
+                setFocusIncidentId(null)
+                if (cyRef.current) {
+                  applyDynamicStyles(cyRef.current)
+                  cyRef.current.fit(undefined, 30)
+                }
+              }}
+              style={{
+                background: 'rgba(251, 146, 60, 0.15)',
+                border: '1px solid rgba(251, 146, 60, 0.35)',
+                color: 'var(--severity-high-fg)',
+                borderRadius: 8,
+                padding: '5px 12px',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                transition: 'all var(--duration-quick) ease',
+              }}
+            >
+              <span>✕</span>
+              <span>Reset Focus</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={fitGraph}
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-hairline)',
+              color: 'var(--accent-cyan)',
+              borderRadius: 8,
+              padding: '5px 12px',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              transition: 'all var(--duration-quick) ease',
             }}
-              onMouseEnter={e => e.currentTarget.style.background='rgba(59,130,246,0.14)'}
-              onMouseLeave={e => e.currentTarget.style.background='rgba(59,130,246,0.06)'}
-            >{icon} {label}</button>
+          >
+            <span>⊡</span>
+            <span>Fit</span>
+          </button>
+          <button
+            type="button"
+            onClick={resetZoom}
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-hairline)',
+              color: 'var(--accent-cyan)',
+              borderRadius: 8,
+              padding: '5px 12px',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              transition: 'all var(--duration-quick) ease',
+            }}
+          >
+            <span>◎</span>
+            <span>1x</span>
+          </button>
+          <button
+            type="button"
+            onClick={injectMockData}
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-hairline)',
+              color: 'var(--accent-cyan)',
+              borderRadius: 8,
+              padding: '5px 12px',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              transition: 'all var(--duration-quick) ease',
+            }}
+          >
+            <span>⚡</span>
+            <span>Mock Scenarios</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Sub-bar: Verified Attribute Filters ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 10,
+        padding: '6px 12px',
+        background: 'var(--surface-0)',
+        border: '1px solid var(--border-hairline)',
+        borderRadius: 8,
+        fontSize: 11,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, fontSize: 10 }}>Entity Filter:</span>
+          {['all', 'ip', 'process', 'user'].map(t => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setNodeTypeFilter(t)}
+              style={{
+                background: nodeTypeFilter === t ? 'rgba(0, 240, 255, 0.12)' : 'transparent',
+                color: nodeTypeFilter === t ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                border: nodeTypeFilter === t ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid transparent',
+                borderRadius: 6,
+                padding: '2px 8px',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, fontSize: 10 }}>Edge Provenance:</span>
+          {[
+            { id: 'all', label: 'All Links' },
+            { id: 'anomalous', label: 'Anomalous' },
+            { id: 'observed', label: 'Observed Telemetry' },
+            { id: 'inferred', label: 'Inferred Hypotheses' }
+          ].map(f => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setEdgeTypeFilter(f.id)}
+              style={{
+                background: edgeTypeFilter === f.id ? 'rgba(168, 85, 247, 0.12)' : 'transparent',
+                color: edgeTypeFilter === f.id ? 'var(--accent-violet, #c084fc)' : 'var(--text-secondary)',
+                border: edgeTypeFilter === f.id ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid transparent',
+                borderRadius: 6,
+                padding: '2px 8px',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {f.label}
+            </button>
           ))}
         </div>
       </div>
 
-      {/* ── Legend ──────────────────────────────────────────────────────── */}
-      <div style={{
-        display:'flex', gap:16, padding:'8px 18px',
-        borderBottom:'1px solid rgba(96,165,250,0.06)',
-        flexWrap:'wrap',
-      }}>
-        <span style={{ fontSize:9, color:'#a0bdd4', fontWeight:700, letterSpacing:1, textTransform:'uppercase', display:'flex', alignItems:'center' }}>
-          LEGEND:
-        </span>
-        {[
-          { icon:'○', label:'IP Node', color:'#3b82f6' },
-          { icon:'◇', label:'Process', color:'#8b5cf6' },
-          { icon:'□', label:'User', color:'#0ea5e9' },
-        ].map(({ icon, label, color }) => (
-          <span key={label} style={{ display:'flex', alignItems:'center', gap:5, fontSize:10, color:'#6b8cae' }}>
-            <span style={{ color, fontWeight:800 }}>{icon}</span>{label}
+      {/* ── Spatial Depth Scale & Provenance Legend ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <DepthLegend />
+        
+        {/* Edge Provenance Legend */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, padding: '4px 12px',
+          background: 'rgba(0, 0, 0, 0.2)', borderRadius: 6, fontSize: 10, color: 'var(--text-secondary)',
+          flexWrap: 'wrap'
+        }}>
+          <span style={{ fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Edge Types:</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 16, height: 2, background: 'rgba(148, 163, 184, 0.7)', display: 'inline-block' }} />
+            Observed Telemetry (Direct Packet Log)
           </span>
-        ))}
-        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:10, color:'#6b8cae' }}>
-          <span style={{ width:24, height:2, background:'repeating-linear-gradient(90deg, #ef4444 0, #ef4444 4px, transparent 4px, transparent 8px)', display:'inline-block' }}/>
-          Anomalous Edge
-        </span>
-        {[
-          ['#ef4444','Critical >0.8'],
-          ['#f97316','High >0.5'],
-          ['#eab308','Medium >0.2'],
-          ['#3b82f6','Low'],
-        ].map(([c,l]) => (
-          <span key={l} style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, color:'#6b8cae' }}>
-            <span style={{ width:8, height:8, borderRadius:'50%', background:c, display:'inline-block' }}/>
-            {l}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 16, height: 2, borderTop: '2px dashed #c084fc', display: 'inline-block' }} />
+            Inferred Correlation (Correlator Hypothesis)
           </span>
-        ))}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 16, height: 2, borderTop: '2px dashed var(--severity-critical-fg)', display: 'inline-block' }} />
+            Anomalous Attack Flow
+          </span>
+          <span style={{ color: 'var(--border-subtle)', margin: '0 4px' }}>|</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)' }}>
+            <span style={{ fontWeight: 700, textTransform: 'uppercase' }}>Keys:</span>
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>+</kbd> In
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>-</kbd> Out
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>F</kbd> Fit
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>R</kbd> Reset
+            <kbd className="mono-font" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)' }}>Esc</kbd> Clear
+          </span>
+        </div>
       </div>
 
-      {/* ── Graph canvas ────────────────────────────────────────────────── */}
-      <div style={{ flex:1, position:'relative' }}>
-        <div ref={containerRef} style={{ width:'100%', height:'100%' }}/>
+      {/* ── Canvas Container with Floating Scope Summary ── */}
+      <div
+        style={{
+          position: 'relative',
+          flex: 1,
+          width: '100%',
+          minHeight: 460,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* Scope Summary Banner for Hunting Focus */}
+        {huntingFocus && huntingFocus.active && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position: 'absolute',
+              top: 14,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 100,
+              background: 'var(--surface-3)',
+              border: '1px solid var(--border-medium)',
+              borderRadius: 9999,
+              padding: '6px 16px',
+              boxShadow: 'var(--shadow-elevation-3)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              fontSize: 12,
+              color: 'var(--text-primary)',
+              backdropFilter: 'var(--glass-blur)',
+              WebkitBackdropFilter: 'var(--glass-blur)',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background:
+                    huntingFocus.hasMatches && huntingFocus.matchedInGraphCount > 0
+                      ? 'var(--accent-cyan)'
+                      : 'var(--text-tertiary)',
+                  boxShadow:
+                    huntingFocus.hasMatches && huntingFocus.matchedInGraphCount > 0
+                      ? '0 0 8px var(--accent-cyan)'
+                      : 'none',
+                }}
+              />
+              {huntingFocus.hasMatches && huntingFocus.matchedInGraphCount > 0
+                ? `Focused on ${huntingFocus.matchedInGraphCount} of ${nodeCount} entities matching: ${huntingFocus.filterSummary}`
+                : `No entities match active hunting filters (${huntingFocus.filterSummary}). Graph remains unfocused.`}
+            </span>
+            <button
+              type="button"
+              onClick={clearHuntingFocus}
+              style={{
+                background: 'var(--surface-1)',
+                border: '1px solid var(--border-hairline)',
+                borderRadius: 9999,
+                padding: '3px 10px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all var(--duration-quick) ease',
+              }}
+            >
+              <span aria-hidden="true" style={{ marginRight: 4 }}>✕</span>
+              Clear focus
+            </button>
+          </div>
+        )}
 
-        {!nodeCount && (
-          <div style={{
-            position:'absolute', inset:0,
-            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-            color:'#c7d9ef', fontSize:12, pointerEvents:'none',
-            fontFamily:"'Sora', sans-serif",
-          }}>
-            <div style={{ fontSize:40, marginBottom:12 }}>🌐</div>
-            <div style={{ fontWeight:600, marginBottom:6 }}>No graph data yet</div>
-            <div style={{ fontSize:10, color:'#d4e8fc' }}>Start simulation or click ⚡ Mock to preview</div>
+        <div
+          ref={containerRef}
+          role="region"
+          aria-label="Interactive Cytoscape Entity Graph (press + to zoom in, - to zoom out, F to fit view, Esc to clear selection)"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            const targetTag = e.target?.tagName?.toUpperCase()
+            if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT' || e.target?.isContentEditable) {
+              return
+            }
+            if (e.key === '+' || e.key === '=') {
+              e.preventDefault()
+              zoomIn()
+            } else if (e.key === '-' || e.key === '_') {
+              e.preventDefault()
+              zoomOut()
+            } else if (e.key === 'f' || e.key === 'F' || e.key === '0') {
+              e.preventDefault()
+              fitGraph()
+            } else if (e.key === 'r' || e.key === 'R') {
+              e.preventDefault()
+              resetZoom()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              clearSelection()
+            }
+          }}
+          style={{
+            flex: 1,
+            width: '100%',
+            minHeight: 460,
+            background: 'var(--surface-0)',
+            borderRadius: 12,
+            border: '1px solid var(--border-hairline)',
+            outline: 'none',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        />
+
+        {/* ── Node Inspector Panel ── */}
+        {selectedNode && (
+          <div
+            role="region"
+            aria-label={`Entity details for ${selectedNode.label}`}
+            className="glass-panel animate-slide-up"
+            style={{
+              position: 'absolute',
+              top: 14,
+              right: 14,
+              width: 290,
+              maxWidth: 'calc(100% - 28px)',
+              zIndex: 100,
+              padding: '14px 16px',
+              background: 'rgba(12, 17, 28, 0.96)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-elevation-3)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700, letterSpacing: 0.8 }}>
+                  Entity Inspector
+                </div>
+                <div className="mono-font" style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, wordBreak: 'break-all' }}>
+                  {selectedNode.label}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={clearSelection}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--text-tertiary)',
+                  cursor: 'pointer', fontSize: 14, padding: 4, lineHeight: 1
+                }}
+                title="Close Inspector"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
+                background: 'rgba(0, 240, 255, 0.1)', color: 'var(--accent-cyan)',
+                border: '1px solid rgba(0, 240, 255, 0.25)', textTransform: 'uppercase'
+              }}>
+                {selectedNode.node_type}
+              </span>
+              {selectedNode.is_compromised && (
+                <span style={{
+                  fontSize: 9, fontWeight: 800, padding: '2px 8px', borderRadius: 6,
+                  background: 'var(--severity-critical-bg)', color: 'var(--severity-critical-fg)',
+                  border: '1px solid var(--severity-critical-border)', textTransform: 'uppercase'
+                }}>
+                  Compromised
+                </span>
+              )}
+              <span style={{
+                fontSize: 9, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
+                background: 'var(--surface-2)', color: 'var(--text-secondary)',
+                border: '1px solid var(--border-hairline)'
+              }}>
+                {selectedNode.stage || 'Stage Unknown'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '8px 10px', background: 'var(--surface-1)', borderRadius: 8 }}>
+              <div>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Inbound Edges</div>
+                <div className="mono-font" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedNode.inDegree}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Outbound Edges</div>
+                <div className="mono-font" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedNode.outDegree}</div>
+              </div>
+            </div>
+
+            {selectedNode.neighbors && selectedNode.neighbors.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 6 }}>
+                  Connected Neighbors ({selectedNode.neighbors.length}):
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 90, overflowY: 'auto' }}>
+                  {selectedNode.neighbors.map(nb => (
+                    <button
+                      key={nb.id}
+                      type="button"
+                      onClick={() => focusOnNode(nb.id)}
+                      className="mono-font"
+                      style={{
+                        fontSize: 10, padding: '3px 6px', borderRadius: 4,
+                        background: 'var(--surface-2)', border: '1px solid var(--border-subtle)',
+                        color: nb.is_compromised ? 'var(--severity-critical-fg)' : 'var(--text-primary)',
+                        cursor: 'pointer'
+                      }}
+                      title="Focus on neighbor"
+                    >
+                      {nb.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={() => focusOnNode(selectedNode.id)}
+                style={{
+                  flex: 1, padding: '6px 10px', borderRadius: 8,
+                  background: 'rgba(0, 240, 255, 0.12)', border: '1px solid var(--accent-cyan)',
+                  color: 'var(--accent-cyan)', fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                }}
+              >
+                Focus Camera
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                style={{
+                  padding: '6px 12px', borderRadius: 8,
+                  background: 'var(--surface-2)', border: '1px solid var(--border-hairline)',
+                  color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, cursor: 'pointer'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Empty State ── */}
+        {nodeCount === 0 && (
+          <div
+            style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', zIndex: 10,
+              background: 'rgba(7, 10, 18, 0.85)', backdropFilter: 'blur(4px)',
+              padding: 24, textAlign: 'center'
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              No Active Topology Entities
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 360, marginBottom: 14 }}>
+              Select an active dataset or start live telemetry playback to project interactive entity relationships.
+            </div>
+            <button
+              type="button"
+              onClick={injectMockData}
+              style={{
+                padding: '7px 14px', borderRadius: 8,
+                background: 'rgba(0, 240, 255, 0.1)', border: '1px solid var(--accent-cyan)',
+                color: 'var(--accent-cyan)', fontSize: 11, fontWeight: 700, cursor: 'pointer'
+              }}
+            >
+              Load Verification Scenario
+            </button>
           </div>
         )}
       </div>
 
-      {/* ── Tooltip ─────────────────────────────────────────────────────── */}
-      {tooltip && <Tooltip node={tooltip.node} position={tooltip.position} />}
-
-      <style>{`
-        @keyframes aegis-pulse-node {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.6; }
-        }
-      `}</style>
+      {/* ── Tooltip Dossier ── */}
+      <Tooltip node={tooltip?.node} position={tooltip?.position || { x: 0, y: 0 }} />
     </div>
   )
 })

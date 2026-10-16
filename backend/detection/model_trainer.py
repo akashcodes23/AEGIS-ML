@@ -75,29 +75,34 @@ DATASET_LABEL_MAP = {
     # Benign variations
     "benign": "benign",
     "normal": "benign",
-    # Brute force
+    # Brute force (strictly authentication and credential attacks)
     "ftp-patator": "brute_force",
     "ssh-patator": "brute_force",
     "web attack \x96 brute force": "brute_force",
     "web attack - brute force": "brute_force",
-    "web attack - xss": "brute_force",
-    "web attack - sql injection": "brute_force",
     "brute force": "brute_force",
-    # Lateral movement / reconnaissance
+    # Lateral movement / internal network reconnaissance
     "portscan": "lateral_movement",
     "infiltration": "lateral_movement",
     "lateral_movement": "lateral_movement",
     # Data exfiltration
     "heartbleed": "data_exfiltration",
     "data_exfiltration": "data_exfiltration",
-    # Command & Control / DoS
+    # Command & Control
     "bot": "c2_beaconing",
     "c2_beaconing": "c2_beaconing",
-    "ddos": "c2_beaconing",
-    "dos hulk": "c2_beaconing",
-    "dos goldeneye": "c2_beaconing",
-    "dos slowhttptest": "c2_beaconing",
-    "dos slowloris": "c2_beaconing",
+}
+
+# Out-of-taxonomy attack types that must NOT be forced into the 5 canonical classes.
+# These represent distinct threat categories evaluated via the anomaly detection layer.
+OUT_OF_TAXONOMY_ATTACKS = {
+    "ddos",
+    "dos hulk",
+    "dos goldeneye",
+    "dos slowhttptest",
+    "dos slowloris",
+    "web attack - xss",
+    "web attack - sql injection",
 }
 
 
@@ -604,23 +609,37 @@ def train_pipeline(
         raise ValueError("No valid events could be loaded for training.")
 
     # Extract labels — prefer attack_type when populated; fall back to raw_label via DATASET_LABEL_MAP.
-    # The synthetic dataset stores labels in raw_label (attack_type is None).
-    unmapped_count = 0
-    labels = []
+    # Unmapped/unknown labels are surfaced and accounted for; they are NEVER silently defaulted to benign.
+    unmapped_labels_encountered: Counter = Counter()
+    canonical_events: List[UnifiedEvent] = []
+    labels: List[str] = []
     for e in events:
         if e.attack_type and e.attack_type in CANONICAL_CLASSES:
+            canonical_events.append(e)
             labels.append(e.attack_type)
         elif e.raw_label:
-            mapped = DATASET_LABEL_MAP.get(e.raw_label.strip().lower())
-            if mapped and mapped in CANONICAL_CLASSES:
-                labels.append(mapped)
-            else:
+            cleaned_raw = e.raw_label.strip().lower()
+            if cleaned_raw in ("", "none", "nan", "null"):
+                canonical_events.append(e)
                 labels.append("benign")
-                unmapped_count += 1
+            elif cleaned_raw in DATASET_LABEL_MAP:
+                mapped = DATASET_LABEL_MAP[cleaned_raw]
+                if mapped in CANONICAL_CLASSES:
+                    e.attack_type = mapped
+                    canonical_events.append(e)
+                    labels.append(mapped)
+            else:
+                unmapped_labels_encountered[e.raw_label] += 1
         else:
+            canonical_events.append(e)
             labels.append("benign")
-    if unmapped_count > 0:
-        print(f"WARNING: {unmapped_count} events had unmapped labels — defaulted to 'benign'. Check DATASET_LABEL_MAP.")
+
+    if unmapped_labels_encountered:
+        print(f"SURFACED UNMAPPED LABELS: {dict(unmapped_labels_encountered)} "
+              f"({sum(unmapped_labels_encountered.values())} events excluded from 5-class canonical pipeline; "
+              f"NEVER silently defaulted to benign).")
+    events = canonical_events
+
     class_counts = Counter(labels)
     print(f"Class distribution before splitting: {dict(class_counts)}")
 
@@ -630,14 +649,28 @@ def train_pipeline(
         print("WARNING: Rare classes with < 2 samples detected. Falling back to non-stratified split.")
 
     # 1. STRICT TRAIN/TEST SPLIT (80% train, 20% test)
-    train_events, test_events, y_train, y_test = train_test_split(
-        events,
-        labels,
-        test_size=0.20,
-        stratify=labels if can_stratify else None,
-        random_state=random_seed
-    )
-    print(f"Partition: {len(train_events)} Train events / {len(test_events)} Untouched Test events")
+    # If scenario_id is present, use group-aware partitioning to prevent flow-level leakage
+    has_scenarios = any(bool(e.scenario_id) for e in events)
+    if has_scenarios:
+        from backend.evaluation.behavioral_diversity_evaluation import partition_behavioral_diversity_split
+        tr_indices, te_indices, split_stats = partition_behavioral_diversity_split(
+            events, labels, test_ratio=0.20, seed=random_seed
+        )
+        train_events = [events[i] for i in tr_indices]
+        test_events = [events[i] for i in te_indices]
+        y_train = [labels[i] for i in tr_indices]
+        y_test = [labels[i] for i in te_indices]
+        print(f"Scenario-Grouped Partition: {split_stats['train_scenarios_count']} Train scenarios ({len(train_events)} events) / "
+              f"{split_stats['test_scenarios_count']} Test scenarios ({len(test_events)} events). 0.0% scenario overlap.")
+    else:
+        train_events, test_events, y_train, y_test = train_test_split(
+            events,
+            labels,
+            test_size=0.20,
+            stratify=labels if can_stratify else None,
+            random_state=random_seed
+        )
+        print(f"Row-Level Partition: {len(train_events)} Train events / {len(test_events)} Untouched Test events")
     print(f"Train class distribution: {dict(Counter(y_train))}")
     print(f"Test class distribution:  {dict(Counter(y_test))}")
 
@@ -825,18 +858,37 @@ def evaluate_pipeline(data_path: str, model_dir: Optional[str] = None) -> Dict[s
         print(f"Classifier model could not be loaded from {mdir}. Please run train pipeline first.")
         return {}
 
-    failed_auth_rates = calculate_failed_auth_rate(events)
-    X = build_feature_matrix(events, if_detector, profiler, failed_auth_rates)
-    # Same label extraction logic as train_pipeline — prefer attack_type then raw_label fallback
-    extracted = []
+    unmapped_eval: Counter = Counter()
+    canonical_eval_events: List[UnifiedEvent] = []
+    extracted: List[str] = []
     for e in events:
         if e.attack_type and e.attack_type in CANONICAL_CLASSES:
+            canonical_eval_events.append(e)
             extracted.append(e.attack_type)
         elif e.raw_label:
-            mapped = DATASET_LABEL_MAP.get(e.raw_label.strip().lower())
-            extracted.append(mapped if (mapped and mapped in CANONICAL_CLASSES) else "benign")
+            cleaned_raw = e.raw_label.strip().lower()
+            if cleaned_raw in ("", "none", "nan", "null"):
+                canonical_eval_events.append(e)
+                extracted.append("benign")
+            elif cleaned_raw in DATASET_LABEL_MAP:
+                mapped = DATASET_LABEL_MAP[cleaned_raw]
+                if mapped in CANONICAL_CLASSES:
+                    canonical_eval_events.append(e)
+                    extracted.append(mapped)
+            else:
+                unmapped_eval[e.raw_label] += 1
         else:
+            canonical_eval_events.append(e)
             extracted.append("benign")
+
+    if unmapped_eval:
+        print(f"SURFACED UNMAPPED EVAL LABELS: {dict(unmapped_eval)} "
+              f"({sum(unmapped_eval.values())} events excluded from 5-class evaluation; "
+              f"NEVER silently defaulted to benign).")
+
+    events = canonical_eval_events
+    failed_auth_rates = calculate_failed_auth_rate(events)
+    X = build_feature_matrix(events, if_detector, profiler, failed_auth_rates)
     labels = np.array(extracted)
 
     t_start = time.time()

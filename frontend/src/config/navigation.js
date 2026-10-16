@@ -20,6 +20,8 @@ export const ROUTE_TABS = {
   '/graph': 'Entity Graph',
   '/reports': 'Reports',
   '/report': 'Reports',
+  '/model-assurance': 'Reports',
+  '/assurance': 'Reports',
 }
 
 /**
@@ -31,7 +33,7 @@ export const ROUTE_TABS = {
 export function resolveTabFromLocation(loc = (typeof window !== 'undefined' ? window.location : null)) {
   if (!loc) return 'Dashboard'
 
-  // If a hash is explicitly specified (e.g. #/threat-hunting or #reports), check it first
+  // If a hash is explicitly specified (e.g. #/threat-hunting or #reports or #model-assurance), check it first
   const hash = (loc.hash || '').toLowerCase().replace(/^#\/?/, '').replace(/\/+$/, '')
   if (hash) {
     if (ROUTE_TABS['/' + hash]) {
@@ -39,7 +41,7 @@ export function resolveTabFromLocation(loc = (typeof window !== 'undefined' ? wi
     }
     if (hash === 'threat-hunting' || hash === 'hunting') return 'Threat Hunting'
     if (hash === 'entity-graph' || hash === 'graph') return 'Entity Graph'
-    if (hash === 'reports' || hash === 'report') return 'Reports'
+    if (hash === 'reports' || hash === 'report' || hash === 'model-assurance' || hash === 'assurance') return 'Reports'
   }
 
   const pathname = (loc.pathname || '').toLowerCase().replace(/\/+$/, '') || '/'

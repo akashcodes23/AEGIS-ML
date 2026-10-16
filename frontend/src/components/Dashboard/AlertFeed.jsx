@@ -1,123 +1,274 @@
 import { memo, useState } from 'react'
-import { BellRing, ShieldAlert, ArrowRight, Shield, Zap, Database, ShieldCheck, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  BellRing,
+  ShieldAlert,
+  ArrowRight,
+  Shield,
+  Zap,
+  Database,
+  ShieldCheck,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+} from 'lucide-react'
 import useAlertStore from '../../store/alertStore'
+import useReducedMotion from '../../hooks/useReducedMotion'
+import { SEVERITY_TOKENS, confidenceToFocus } from '../../utils/depth'
+import EvidenceTrail from '../Common/EvidenceTrail'
+import { stateAsOf } from '../../utils/scrubber'
 
-const SEV_STYLE = {
-  critical: { bg: 'rgba(220, 38, 38, 0.06)', color: 'var(--accent-critical)', dot: 'var(--accent-critical)' },
-  high:     { bg: 'rgba(217, 119, 6, 0.06)',  color: 'var(--accent-high)',     dot: 'var(--accent-high)' },
-  medium:   { bg: 'rgba(79, 70, 229, 0.06)',  color: 'var(--accent-brand)',    dot: 'var(--accent-brand)' },
-  low:      { bg: 'rgba(5, 150, 105, 0.06)',  color: 'var(--accent-success)',  dot: 'var(--accent-success)' },
-}
-
+/* ── Severity Badge ───────────────────────────────────────────────────────── */
 function SeverityBadge({ severity }) {
-  const s = SEV_STYLE[severity] || SEV_STYLE.low
+  const token = SEVERITY_TOKENS[severity] || SEVERITY_TOKENS.low
   return (
-    <div style={{
-      background: s.bg, color: s.color,
-      borderRadius: 16, padding: '4px 10px',
-      fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
-      display: 'flex', alignItems: 'center', gap: 6,
-    }}>
-      <div style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot, flexShrink: 0 }} />
-      {severity}
+    <div
+      style={{
+        background: token.bg,
+        color: token.fg,
+        border: `1px solid ${token.border}`,
+        borderRadius: 14,
+        padding: '3px 10px',
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      <div
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: token.fg,
+          flexShrink: 0,
+        }}
+        aria-hidden="true"
+      />
+      <span>{token.label}</span>
     </div>
   )
 }
 
+/* ── Alert Row Component ──────────────────────────────────────────────────── */
 function AlertRow({ alert, index }) {
   const selectIncident = useAlertStore(s => s.selectIncident)
-  const ts = new Date(alert.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  
+  const reducedMotion = useReducedMotion()
+  const [showEvidence, setShowEvidence] = useState(false)
+  const rawTs = alert.timestamp || alert.created_at
+  const ts = rawTs
+    ? new Date(rawTs).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : '--:--:--'
+
   // Staggered animation delay
-  const delay = Math.min(index * 50, 500)
+  const delay = Math.min(index * 40, 400)
+
+  // Calibrated vs Uncalibrated vs Missing confidence focus calculation
+  const hasCalibrated = Boolean(alert.is_calibrated && alert.calibrated_confidence != null)
+  const rawScore = alert.calibrated_confidence != null
+    ? alert.calibrated_confidence
+    : alert.classifier_probability != null
+      ? alert.classifier_probability
+      : alert.confidence
+
+  const focusInfo = confidenceToFocus({
+    confidence: rawScore,
+    isCalibrated: hasCalibrated,
+  })
+
+  const sevToken = SEVERITY_TOKENS[alert.severity] || SEVERITY_TOKENS.low
 
   return (
     <div
       className="glass-panel animate-slide-up"
       onClick={() => (alert.incident_id || alert.alert_id || alert.event_id) && selectIncident(alert.incident_id || alert.alert_id || alert.event_id)}
       style={{
-        padding: '16px 20px', 
-        cursor: (alert.incident_id || alert.alert_id) ? 'pointer' : 'default',
+        padding: '16px 20px',
+        cursor: (alert.incident_id || alert.alert_id || alert.event_id) ? 'pointer' : 'default',
         marginBottom: 12,
         animationDelay: `${delay}ms`,
         display: 'grid',
         gridTemplateColumns: 'auto 1fr',
         gap: 16,
-        alignItems: 'start'
+        alignItems: 'start',
+        position: 'relative',
+        background: 'var(--surface-1)',
+        // Apply confidence focus ONLY to non-text decoration (border and glow)
+        borderColor: `rgba(255, 255, 255, ${focusInfo.decorationStyle.borderOpacity})`,
+        boxShadow: reducedMotion ? 'var(--shadow-elevation-1)' : focusInfo.decorationStyle.glowBoxShadow,
+        transition: reducedMotion ? 'none' : 'box-shadow var(--duration-smooth) ease, border-color var(--duration-smooth) ease',
       }}
     >
-      <div style={{
-        marginTop: 2,
-        width: 32, height: 32, borderRadius: 10,
-        background: SEV_STYLE[alert.severity || 'low'].bg,
-        color: SEV_STYLE[alert.severity || 'low'].color,
-        display: 'flex', alignItems: 'center', justifyContent: 'center'
-      }}>
-        {alert.severity === 'critical' ? <ShieldAlert size={16} /> : <Zap size={16} />}
+      {/* Severity Icon with non-text focus halo */}
+      <div style={{ position: 'relative' }}>
+        {/* Decorative confidence focus halo ring behind icon (never blurs text/icon itself) */}
+        {!reducedMotion && focusInfo.isCalibrated && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: -3,
+              borderRadius: 14,
+              background: sevToken.fg,
+              filter: `blur(${focusInfo.decorationStyle.haloBlur}px)`,
+              opacity: focusInfo.decorationStyle.haloOpacity,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+        <div
+          style={{
+            position: 'relative',
+            marginTop: 2,
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            background: sevToken.bg,
+            border: `1px solid ${sevToken.border}`,
+            color: sevToken.fg,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {alert.severity === 'critical' ? <ShieldAlert size={16} /> : <Zap size={16} />}
+        </div>
       </div>
 
+      {/* Content Body: All text is 100% crisp without blur */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <SeverityBadge severity={alert.severity || 'low'} />
-          <div className="mono-font" style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{ts}</div>
+          <div className="tabular-nums" style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+            {ts}
+          </div>
         </div>
 
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.3px' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.2px' }}>
           {alert.threat_type?.replace(/_/g, ' ').toUpperCase() || 'ANOMALY DETECTED'}
         </div>
 
-        <div style={{ 
-          display: 'flex', alignItems: 'center', gap: 10, 
-          background: 'var(--bg-page)', padding: '8px 12px', borderRadius: 8,
-          border: '1px solid var(--border-light)'
+        {/* Entity path */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          background: 'var(--surface-2)',
+          padding: '8px 12px',
+          borderRadius: 8,
+          border: '1px solid var(--border-hairline)',
         }}>
-          <span className="mono-font" style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>{alert.src_entity}</span>
+          <span className="mono-font" style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
+            {alert.src_entity || 'Unknown Source'}
+          </span>
           <ArrowRight size={14} color="var(--text-tertiary)" />
-          <span className="mono-font" style={{ fontSize: 11, color: 'var(--text-primary)', fontWeight: 600 }}>{alert.dst_entity}</span>
+          <span className="mono-font" style={{ fontSize: 11, color: 'var(--text-primary)', fontWeight: 600 }}>
+            {alert.dst_entity || 'Unknown Destination'}
+          </span>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+        {/* Footer: Metadata & Honest Confidence Text */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
             {alert.source_file && (
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Database size={12} />
-                {alert.source_file.replace('.pcap_ISCX.csv', '')}
+                <span>{alert.source_file.replace('.pcap_ISCX.csv', '')}</span>
               </span>
             )}
             {alert.is_synthetic && (
               <span style={{
-                fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8,
-                background: 'rgba(147, 51, 234, 0.1)', color: '#9333ea',
-                border: '1px solid rgba(147, 51, 234, 0.2)'
+                fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 6,
+                background: 'rgba(168, 85, 247, 0.12)', color: '#c084fc',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                textTransform: 'uppercase', letterSpacing: 0.5
               }}>
                 Synthetic
               </span>
             )}
-            {alert.is_calibrated && (
-              <span
-                title="Calibrated probability (evaluated on synthetic scenario benchmarks)"
-                style={{
-                  fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8,
-                  background: 'rgba(16, 185, 129, 0.1)', color: '#10b981',
-                  border: '1px solid rgba(16, 185, 129, 0.2)'
-                }}
-              >
+            {hasCalibrated && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 6,
+                background: 'rgba(52, 211, 153, 0.12)', color: 'var(--severity-success-fg)',
+                border: '1px solid rgba(52, 211, 153, 0.3)',
+                textTransform: 'uppercase', letterSpacing: 0.5
+              }}>
                 Calibrated
               </span>
             )}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--accent-info)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Shield size={12} />
-            {alert.is_calibrated ? (
-              <span title="Calibrated posterior probability (synthetic scenario evaluation; real-world empirical risk not guaranteed)">
-                {Math.round((alert.calibrated_confidence != null ? alert.calibrated_confidence : alert.confidence) * 100)}% Calibrated Conf.
+            {!hasCalibrated && rawScore != null && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 6,
+                background: 'rgba(148, 163, 184, 0.12)', color: 'var(--text-secondary)',
+                border: '1px solid var(--border-subtle)',
+                textTransform: 'uppercase', letterSpacing: 0.5
+              }}>
+                Uncalibrated
               </span>
-            ) : alert.classifier_probability != null ? (
-              `${Math.round(alert.classifier_probability * 100)}% Consensus`
-            ) : (
-              alert.anomaly_score ? `Score ${Number(alert.anomaly_score).toFixed(2)}` : `${Math.round((alert.confidence || 0) * 100)}% Risk`
             )}
           </div>
+
+          {/* Truthful Confidence Metric Display */}
+          <div style={{
+            fontSize: 11,
+            fontWeight: 700,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            fontFamily: 'var(--font-mono)',
+            color: hasCalibrated ? 'var(--accent-cyan)' : 'var(--text-secondary)'
+          }}>
+            <Shield size={12} aria-hidden="true" />
+            {hasCalibrated ? (
+              <span title="Isotonically calibrated posterior probability (synthetic benchmark evaluated; not real-world ground truth)">
+                {Math.round(alert.calibrated_confidence * 100)}% Calibrated Conf.
+              </span>
+            ) : rawScore != null ? (
+              <span title="Raw model classification score (uncalibrated probability)">
+                {Math.round(rawScore * 100)}% Uncalibrated Score
+              </span>
+            ) : (
+              <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                No confidence reported
+              </span>
+            )}
+          </div>
+
+          {/* Inspect Evidence Trail toggle */}
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              aria-label={showEvidence ? 'Hide Provenance' : `Inspect Evidence Trail for alert ${alert.alert_id || alert.event_id || ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowEvidence(prev => !prev)
+              }}
+              style={{
+                background: showEvidence ? 'var(--surface-3)' : 'transparent',
+                border: '1px solid var(--border-subtle)',
+                color: showEvidence ? 'var(--text-primary)' : 'var(--accent-cyan)',
+                borderRadius: 6,
+                padding: '3px 8px',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {showEvidence ? 'Hide Provenance' : 'Inspect Evidence Trail'}
+            </button>
+          </div>
+
+          {showEvidence && (
+            <div style={{ marginTop: 10 }} onClick={(e) => e.stopPropagation()}>
+              <EvidenceTrail alert={alert} />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -126,109 +277,175 @@ function AlertRow({ alert, index }) {
 
 const MemoizedAlertRow = memo(AlertRow, (prev, next) => prev.alert.event_id === next.alert.event_id)
 
+/* ── Main AlertFeed Component ─────────────────────────────────────────────── */
 export default function AlertFeed() {
   const alerts = useAlertStore(s => s.alerts)
+  const incidents = useAlertStore(s => s.incidents)
+  const scrubberTime = useAlertStore(s => s.scrubberTime)
   const clearAlerts = useAlertStore(s => s.clearAlerts)
   const [page, setPage] = useState(1)
 
+  const activeAlerts = scrubberTime !== null
+    ? stateAsOf(alerts, incidents, scrubberTime).alerts
+    : alerts
+
   const itemsPerPage = 8
-  const totalPages = Math.max(1, Math.ceil(alerts.length / itemsPerPage))
-  
-  // Ensure page is valid if alerts shrink
+  const totalPages = Math.max(1, Math.ceil(activeAlerts.length / itemsPerPage))
+
   if (page > totalPages) setPage(totalPages)
 
-  const visibleAlerts = alerts.slice().reverse().slice((page - 1) * itemsPerPage, page * itemsPerPage)
+  const visibleAlerts = activeAlerts.slice().reverse().slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
   return (
     <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{
-        padding: '24px 28px',
-        borderBottom: '1px solid var(--border-light)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        background: 'rgba(255, 255, 255, 0.4)'
+        padding: '18px 24px',
+        borderBottom: '1px solid var(--border-hairline)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        background: 'var(--surface-1)',
+        flexWrap: 'wrap',
+        gap: 12,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 10,
-            background: 'rgba(79, 70, 229, 0.08)', color: 'var(--accent-brand)',
+            background: 'rgba(0, 240, 255, 0.1)', color: 'var(--accent-cyan)',
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>
             <BellRing size={18} strokeWidth={2.5} />
           </div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>Threat Log</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Real-time telemetry</div>
+            <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+              Threat Log
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+              Real-time telemetry stream
+            </div>
           </div>
         </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Pagination Controls */}
           {alerts.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-page)', padding: '4px', borderRadius: 20 }}>
-              <button 
-                onClick={() => setPage(p => Math.max(1, p - 1))} 
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'var(--surface-2)', padding: '3px 8px', borderRadius: 20,
+              border: '1px solid var(--border-hairline)'
+            }}>
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
-                style={{ background: 'none', border: 'none', cursor: page === 1 ? 'default' : 'pointer', opacity: page === 1 ? 0.3 : 1, display: 'flex', alignItems: 'center', padding: 2 }}
-              ><ChevronLeft size={16} /></button>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>{page} / {totalPages}</span>
-              <button 
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))} 
+                aria-label="Previous alerts page"
+                style={{
+                  background: 'none', border: 'none',
+                  cursor: page === 1 ? 'default' : 'pointer',
+                  opacity: page === 1 ? 0.3 : 1,
+                  display: 'flex', alignItems: 'center', padding: 2,
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="tabular-nums" style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                {page} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                style={{ background: 'none', border: 'none', cursor: page === totalPages ? 'default' : 'pointer', opacity: page === totalPages ? 0.3 : 1, display: 'flex', alignItems: 'center', padding: 2 }}
-              ><ChevronRight size={16} /></button>
+                aria-label="Next alerts page"
+                style={{
+                  background: 'none', border: 'none',
+                  cursor: page === totalPages ? 'default' : 'pointer',
+                  opacity: page === totalPages ? 0.3 : 1,
+                  display: 'flex', alignItems: 'center', padding: 2,
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <ChevronRight size={16} />
+              </button>
             </div>
           )}
-          
-          <div style={{
+
+          <div className="tabular-nums" style={{
             fontSize: 11, fontWeight: 700, padding: '4px 12px',
-            borderRadius: 20, background: 'var(--bg-page)', color: 'var(--text-secondary)'
+            borderRadius: 20, background: 'var(--surface-2)', color: 'var(--text-secondary)',
+            border: '1px solid var(--border-hairline)'
           }}>
             {alerts.length} Total
           </div>
+
           <button
+            type="button"
             onClick={() => { clearAlerts(); setPage(1); }}
             style={{
               padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-              color: 'var(--accent-critical)', background: 'rgba(220, 38, 38, 0.06)',
-              border: '1px solid rgba(220, 38, 38, 0.2)', cursor: 'pointer',
-              transition: 'all 0.2s',
+              color: 'var(--severity-critical-fg)',
+              background: 'var(--severity-critical-bg)',
+              border: '1px solid var(--severity-critical-border)',
+              cursor: 'pointer',
+              transition: 'all var(--duration-quick) ease',
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(220, 38, 38, 0.1)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(220, 38, 38, 0.06)'}
           >
             Clear Log
           </button>
         </div>
       </div>
 
+      {/* Confidence Focus Explanatory Legend */}
+      <div style={{
+        padding: '7px 20px',
+        background: 'var(--surface-1)',
+        borderBottom: '1px solid var(--border-hairline)',
+        fontSize: 10,
+        color: 'var(--text-secondary)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        <Info size={12} color="var(--accent-cyan)" aria-hidden="true" />
+        <span>
+          <strong>Focus Encoding:</strong> Crisper card halo indicates higher calibrated confidence. Uncalibrated alerts receive neutral treatment. Visuals reflect model certainty, not ground-truth detection accuracy.
+        </span>
+      </div>
+
       {/* Feed List */}
       <div style={{
-        flex: 1, overflowY: 'auto', padding: '20px 24px',
-        background: 'rgba(250, 249, 246, 0.3)'
+        flex: 1,
+        overflowY: 'auto',
+        padding: '16px 20px',
+        background: 'var(--surface-0)',
       }}>
         {alerts.length === 0 ? (
           <div style={{
             height: '100%', display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 16
+            alignItems: 'center', justifyContent: 'center', gap: 14
           }} className="animate-slide-up">
             <div style={{
-              width: 64, height: 64, borderRadius: 20,
-              background: 'var(--bg-page)', color: 'var(--text-tertiary)',
+              width: 56, height: 56, borderRadius: 18,
+              background: 'var(--surface-1)', color: 'var(--text-tertiary)',
+              border: '1px solid var(--border-hairline)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
             }}>
-              <ShieldCheck size={32} strokeWidth={1.5} />
+              <ShieldCheck size={28} strokeWidth={1.5} />
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>All Clear</div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Waiting for incoming events...</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>
+                All Clear
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                Waiting for incoming stream telemetry...
+              </div>
             </div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {visibleAlerts.map((a, i) => (
-              <MemoizedAlertRow key={a.event_id || i} alert={a} index={i} />
+              <MemoizedAlertRow key={a.event_id || a.alert_id || i} alert={a} index={i} />
             ))}
           </div>
         )}

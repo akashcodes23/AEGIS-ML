@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import useAlertStore from '../store/alertStore'
-import { getWsUrl } from '../config/api'
+import useAlertStore from '../store/alertStore.js'
+import { getWsUrl } from '../config/api.js'
 
 const getDefaultWsUrl = () => {
   return getWsUrl()
 }
 
-const INITIAL_RECONNECT_DELAY_MS = 2000
-const MAX_RECONNECT_DELAY_MS = 6000
-const MAX_RECONNECT_ATTEMPTS = 60
+export const INITIAL_RECONNECT_DELAY_MS = 2000
+export const MAX_RECONNECT_DELAY_MS = 6000
+export const MAX_RECONNECT_ATTEMPTS = 60
+
+export function calculateReconnectDelay(attempts) {
+  return Math.min(
+    INITIAL_RECONNECT_DELAY_MS + attempts * 500,
+    MAX_RECONNECT_DELAY_MS
+  )
+}
 
 const useWebSocket = (url = null) => {
   const [connected, setConnected] = useState(false)
@@ -19,6 +26,7 @@ const useWebSocket = (url = null) => {
   const reconnectTimerRef = useRef(null)
   const attemptsRef = useRef(0)
   const mountedRef = useRef(true)
+  const connectRef = useRef(null)
 
   const { addAlert, addIncident, updateGraph, updateStats, setSimulationRunning, setAlerts, setIncidents } = useAlertStore()
 
@@ -132,7 +140,9 @@ const useWebSocket = (url = null) => {
         if (attemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
           setConnecting(true)
           console.warn(`[WS] Closed (code=${e.code}). Reconnecting in ${delay}ms (attempt ${attemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})...`)
-          reconnectTimerRef.current = setTimeout(connect, delay)
+          reconnectTimerRef.current = setTimeout(() => {
+            connectRef.current?.()
+          }, delay)
         } else {
           setConnecting(false)
           setError(`Disconnected from backend stream after ${MAX_RECONNECT_ATTEMPTS} attempts.`)
@@ -144,11 +154,19 @@ const useWebSocket = (url = null) => {
     }
   }, [url, handleMessage])
 
+  useEffect(() => {
+    connectRef.current = connect
+  }, [connect])
+
   const manualReconnect = useCallback(() => {
     attemptsRef.current = 0
     setError(null)
     if (wsRef.current) {
-      try { wsRef.current.close() } catch {}
+      try {
+        wsRef.current.close()
+      } catch {
+        /* ignore close errors on teardown */
+      }
       wsRef.current = null
     }
     clearTimeout(reconnectTimerRef.current)
@@ -157,10 +175,13 @@ const useWebSocket = (url = null) => {
 
   useEffect(() => {
     mountedRef.current = true
-    connect()
+    const initTimer = setTimeout(() => {
+      connectRef.current?.()
+    }, 0)
 
     return () => {
       mountedRef.current = false
+      clearTimeout(initTimer)
       clearTimeout(reconnectTimerRef.current)
       if (wsRef.current) {
         wsRef.current.onclose = null // prevent reconnect loop on unmount
