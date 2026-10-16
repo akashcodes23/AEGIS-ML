@@ -47,7 +47,7 @@ This release marks the completion of the 30-phase architectural development, har
 - **324 Passing Backend Tests:** 100% test pass rate across unit, integration, security, and regression test suites.
 - **Comprehensive Documentation Suite:**
   - `docs/ARCHITECTURE.md`: Complete system architecture and sequence specifications.
-  - `docs/MODEL_CARD.md`: Model card detailing features, methodology, metrics, and failure modes.
+  - `docs/model-card.md`: Model card detailing features, methodology, metrics, and failure modes.
   - `docs/DEMO_GUIDE.md`: Step-by-step operator guide for local execution and verification.
   - `docs/PHASE30_FINAL_VALIDATION_AND_RELEASE_READINESS.md`: Complete audit and validation report.
 
