@@ -2,7 +2,7 @@
 
 # 🛡️ AEGIS-ML
 
-### Multi-Layer Cyber Threat Detection & Incident Correlation Engine
+###An ML-Based Network Intrusion Detection and Security Incident Correlation System
 
 **Release Candidate 1 (`v1.0.0-rc.1`)**
 
