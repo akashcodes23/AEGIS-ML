@@ -58,15 +58,15 @@ AEGIS-ML bridges telemetry silos by unifying **network flows, host process execu
 The frontend provides an accessible, spatial investigation console built with React 19, Cytoscape.js, and Three.js adhering to **WCAG 2.1 Level AA** standards. All screenshots are captured directly from live application execution on the synthetic demonstration scenario.
 
 | View | Operational Role & Capabilities |
-| :--- | :---: | :--- |
-| **SOC Operator Dashboard** | ![Dashboard](docs/assets/dashboard.png) | High-density operations center displaying real-time ingestion rate (EPS), threat level gauges, active incident dossiers, live alert feed, and simulation controls. |
-| **Kill-Chain Spatial Topology** | ![Entity Graph](docs/assets/entity_graph_depth.png) | Interactive Cytoscape network graph projecting entities across MITRE ATT&CK stages. Solid cyan edges denote verified telemetry; dashed purple lines denote inferred correlation hypotheses. |
-| **Calibrated Alert Stream** | ![Alert Feed](docs/assets/alert_feed_confidence.png) | Live alert feed pairing WCAG AA severity badges with calibrated posterior probabilities $\hat{P}(Y=c\|X)$ (ECE: 0.0011) and top model feature importance weights. |
-| **Evidence Provenance Trail** | ![Evidence Trail](docs/assets/evidence_trail_gap.png) | 5-tier causal verification chain (`Packet` → `ML Classifier` → `Graph Pivot` → `Incident` → `Response`). Missing telemetry links are truthfully badged as absent gaps. |
-| **Temporal Investigation Scrubber** | ![Temporal Scrubber](docs/assets/scrubber_past_state.png) | Non-destructive time-slider reconstructing network state as of historical time $t$ while buffering live streaming events in memory. |
-| **Command & Entity Palette** | ![Command Palette](docs/assets/command_palette.png) | Global keyboard navigator (`⌘K` / `Ctrl+K`) supporting sub-millisecond search across active entities, IP addresses, threat categories, and navigation shortcuts. |
-| **Threat Hunting Focus Mode** | ![Hunting Focus](docs/assets/hunting_focus.png) | Query-driven investigation overlay highlighting matched threat entities while dimming non-relevant background topology. |
-| **Executive Incident Briefing** | ![Briefing Report](docs/assets/printed_briefing.png) | Print-ready incident dossier with canonical SHA-256 data integrity checksum, fact vs. hypothesis timeline, and exportable JSON evidence. |
+| :--- | :--- |
+| **SOC Operator Dashboard** | High-density operations center displaying real-time ingestion rate (EPS), threat level gauges, active incident dossiers, live alert feed, and simulation controls. |
+| **Kill-Chain Spatial Topology** | Interactive Cytoscape network graph projecting entities across MITRE ATT&CK stages. Solid cyan edges denote verified telemetry; dashed purple lines denote inferred correlation hypotheses. |
+| **Calibrated Alert Stream** | Live alert feed pairing WCAG AA severity badges with calibrated posterior probabilities $\hat{P}(Y=c\|X)$ (ECE: 0.0011) and top model feature importance weights. |
+| **Evidence Provenance Trail** | 5-tier causal verification chain (`Packet` → `ML Classifier` → `Graph Pivot` → `Incident` → `Response`). Missing telemetry links are truthfully badged as absent gaps. |
+| **Temporal Investigation Scrubber** | Non-destructive time-slider reconstructing network state as of historical time $t$ while buffering live streaming events in memory. |
+| **Command & Entity Palette** | Global keyboard navigator (`⌘K` / `Ctrl+K`) supporting sub-millisecond search across active entities, IP addresses, threat categories, and navigation shortcuts. |
+| **Threat Hunting Focus Mode** | Query-driven investigation overlay highlighting matched threat entities while dimming non-relevant background topology. |
+| **Executive Incident Briefing** | Print-ready incident dossier with canonical SHA-256 data integrity checksum, fact vs. hypothesis timeline, and exportable JSON evidence. |
 
 *For complete design system tokens, color contrast proofs, and motion settings, see [`docs/design-system.md`](docs/design-system.md).*
 
