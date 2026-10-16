@@ -57,7 +57,7 @@ AEGIS-ML bridges telemetry silos by unifying **network flows, host process execu
 
 The frontend provides an accessible, spatial investigation console built with React 19, Cytoscape.js, and Three.js adhering to **WCAG 2.1 Level AA** standards. All screenshots are captured directly from live application execution on the synthetic demonstration scenario.
 
-| View | Screenshot | Operational Role & Capabilities |
+| View | Operational Role & Capabilities |
 | :--- | :---: | :--- |
 | **SOC Operator Dashboard** | ![Dashboard](docs/assets/dashboard.png) | High-density operations center displaying real-time ingestion rate (EPS), threat level gauges, active incident dossiers, live alert feed, and simulation controls. |
 | **Kill-Chain Spatial Topology** | ![Entity Graph](docs/assets/entity_graph_depth.png) | Interactive Cytoscape network graph projecting entities across MITRE ATT&CK stages. Solid cyan edges denote verified telemetry; dashed purple lines denote inferred correlation hypotheses. |
