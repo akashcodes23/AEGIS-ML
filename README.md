@@ -2,365 +2,414 @@
 
 # 🛡️ AEGIS-ML
 
-### Multi-Layer Cyber Threat Detection & Incident Correlation Engine
+### Multi-layer threat detection with evidence you can audit
 
-**Release Candidate 1 (`v1.0.0-rc.1`)**
+Network, endpoint, and authentication telemetry in. Calibrated detections, kill-chain incidents, and an investigation console that shows what it knows, what it doesn't, and how it got there.
 
-An open-source cyber defense and security operations platform that ingests multi-source security telemetry, extracts an immutable 48-dimensional causal feature vector, fuses supervised classification with unsupervised anomaly detection and behavioral profiling, and correlates multi-stage attacks along the **MITRE ATT&CK** kill chain into actionable incident dossiers.
+<br/>
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
-[![Vite](https://img.shields.io/badge/Vite-v8-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
-[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.7.2-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org)
-[![Automated Tests](https://img.shields.io/badge/tests-437%20passing-brightgreen)](tests/)
+<img src="docs/assets/dashboard.png" alt="AEGIS-ML SOC dashboard running the synthetic demonstration scenario" width="900"/>
+
+<sub>Synthetic demonstration scenario. Not real network data.</sub>
+
+<br/><br/>
+
+[![Release](https://img.shields.io/badge/Release-v1.0.0--rc.1-blue)](CHANGELOG.md)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.7.2-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org/)
+[![Tests](https://img.shields.io/badge/tests-437%20passing-brightgreen)](tests/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Audit](https://img.shields.io/badge/Stage%2010%20Audit-Verified-success)](docs/STAGE10_FINAL_RELEASE_AUDIT.md)
 
-[Quick Start](#-quick-start) · [Architecture](#-architecture-overview) · [Detection Pipeline](#-detection-pipeline) · [Evaluation & Evidence](#-evaluation-methodology--empirical-results) · [Interface & Evidence Tour](#-interface--evidence-tour) · [Benchmarks](#-performance-benchmarks) · [Limitations & Scope](#-limitations--operational-scope)
+<br/>
+
+[Quick Start](#-quick-start) · [Visual Tour](#-visual-tour) · [Architecture](#-architecture) · [Evidence](#-evidence-what-the-numbers-do-and-dont-say) · [Limitations](#-limitations)
 
 </div>
 
 ---
 
-## 📌 Project Status & Truthful Disclosure
+## ✨ In 30 seconds
 
-**Current Status: Stage 10 Release Audit Completed (`v1.0.0-rc.1`)**  
-AEGIS-ML has undergone a rigorous, audit-first release verification covering mathematical claim truthfulness, relationship evidence deduplication, administrative security hardening, and test reproducibility across **437 automated tests** (347 backend + 90 frontend).
+| Aspect | Detail |
+| :--- | :--- |
+| **What it is** | A detection, evidence-provenance, and incident-correlation platform with an accessible investigation UI. |
+| **How it works** | 48 causal features feed a calibrated Random Forest, two Isolation Forests, and per-entity baselines. Their outputs are fused and correlated into MITRE ATT&CK kill-chain incidents. |
+| **What's unusual** | It publishes its failure modes, shows missing evidence as explicit gaps, and separates calibrated probabilities from heuristic scores. |
+| **Status** | Release candidate. Evaluated on synthetic scenarios only. Observational: it never blocks or isolates anything for real. |
 
 > [!IMPORTANT]
-> **Empirical Scope & Synthetic Demonstration Disclosure:**
-> 1. **Synthetic Telemetry Benchmark:** The primary preloaded evaluation dataset ([`data/raw/behavioral_diversity_labeled.jsonl`](data/raw/behavioral_diversity_labeled.jsonl)) is a scenario-grouped synthetic dataset designed to evaluate rule correctness, merge prevention, temporal causality, and probability calibration. Synthetic results **do not establish real-world enterprise detection accuracy**.
-> 2. **External Evaluation Status (CIC-IDS2017):** Evaluation against public CIC-IDS2017 releases is marked **`BLOCKED_AWAITING_LOCAL_COPY`**. Public flow summaries lack the host process identities, command-line arguments, and socket context required by AEGIS-ML's 48-feature schema (17 of 48 features missing, 35.4%). Zero benchmark numbers are fabricated.
-> 3. **Non-Enforcing Architecture:** AEGIS-ML is an observational detection, evidence provenance, and incident correlation platform; it does not deploy kernel-level EDR drivers or automated firewall enforcement rules. Host isolation in playbooks is explicitly simulated.
+> **Read this before trusting any number.**
+> - **Synthetic evidence only:** Headline metrics come from a scenario-grouped synthetic dataset. They show the pipeline behaves correctly under controlled conditions. They do not show real-world detection accuracy.
+> - **External benchmark blocked:** CIC-IDS2017 evaluation is `BLOCKED_AWAITING_LOCAL_COPY`: public flow summaries lack 17 of the 48 required features (35.4%). No external numbers are reported or estimated.
+> - **Non-enforcing:** Host isolation in playbooks is simulated. AEGIS-ML observes and correlates; it does not touch firewalls or endpoints.
 
 ---
 
-## 🌐 The Problem & The Solution
+## 🎯 Why AEGIS-ML
 
-### The Challenge in Enterprise Security Operations
-Modern Security Operations Centers (SOCs) contend with two persistent structural deficits:
-- **Telemetry Silos:** Network flow tools miss process execution and privilege escalation; host-based EDR agents lack visibility into lateral network hops and encrypted external beaconing.
-- **Alert Fatigue & Disconnection:** Independent rule engines emit uncoordinated alerts, forcing human analysts to manually query multiple consoles to reconstruct multi-stage intrusions.
+Security teams lose time in two places: telemetry that lives in silos (network tools can't see processes; endpoint agents can't see lateral hops), and alerts that arrive as unrelated fragments of one intrusion.
 
-### The Implemented AEGIS-ML Solution
-AEGIS-ML bridges telemetry silos by unifying **network flows, host process executions, and authentication logs** into a single normalized pipeline:
-1. **Normalizes** inbound security logs with monotonic UTC timestamps and schema verification.
-2. **Extracts** an immutable 48-dimensional causal feature vector with strict zero forward-looking temporal leakage.
-3. **Fuses** calibrated supervised threat probabilities ($\hat{P}(Y=c|X)$ via isotonic regression), unsupervised Isolation Forest anomaly scores, and entity behavioral baseline deviations into a weighted severity assessment.
-4. **Correlates** alerts sharing common infrastructure, credentials, or pivot targets within sliding time windows into coherent, kill-chain-mapped incident dossiers.
-5. **Presents** verified evidence trails, spatial graph topology, and non-destructive temporal replay within a high-density, accessible SOC interface.
+AEGIS-ML unifies network flows, host process events, and authentication logs, then does the correlation work an analyst would otherwise do by hand.
+
+### What makes it different
+- **🔗 Cross-layer incidents, not alert piles:** Alerts that share victims, credentials, or pivot targets are grouped into kill-chain-mapped incident dossiers.
+- **🎚️ Honest confidence:** `calibrated_confidence` is a calibrated probability. Raw classifier votes, anomaly scores, and heuristic priority are labeled as different things and never mixed.
+- **🧵 Provenance with visible gaps:** Every detection has a five-step evidence trail. Missing telemetry shows as a dashed gap labeled "not recorded", never as inferred evidence.
+- **⏪ Non-destructive time travel:** A temporal scrubber reconstructs the graph as of any past moment while live events keep buffering.
+- **📋 Pre-registered evaluation, failures included:** Group-aware splits, bootstrap confidence intervals, and a zero-day stress test that shows where the supervised model goes blind.
 
 ---
 
-## 🖼️ Interface & Evidence Tour
+## 🖼️ Visual Tour
 
-The frontend provides an accessible, spatial investigation console built with React 19, Cytoscape.js, and Three.js adhering to **WCAG 2.1 Level AA** standards. All screenshots are captured directly from live application execution on the synthetic demonstration scenario.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/entity_graph_depth.png" alt="Entity graph with kill-chain depth"/>
+      <br/>
+      <b>Kill-chain depth graph</b><br/>
+      Entities sit at visual depth by ATT&CK stage. Solid edges are verified telemetry; dashed edges are inferred hypotheses.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/alert_feed_confidence.png" alt="Alert feed with calibrated confidence"/>
+      <br/>
+      <b>Calibrated alert stream</b><br/>
+      Severity badges beside calibrated probabilities, an explicit "uncalibrated" label where applicable, and top feature contributions.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/evidence_trail_gap.png" alt="Evidence provenance trail with a gap"/>
+      <br/>
+      <b>Evidence provenance trail</b><br/>
+      Packet → classifier → graph pivot → incident → response. Absent links are drawn as gaps, not smoothed over.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/scrubber_past_state.png" alt="Temporal scrubber at a past state"/>
+      <br/>
+      <b>Temporal scrubber</b><br/>
+      Replay the network as of time <i>t</i>. Live events buffer in memory, and a banner shows how many arrived since.
+    </td>
+  </tr>
+</table>
 
-| View | Screenshot | Operational Role & Capabilities |
+<details>
+<summary><b>More views</b>: command palette, hunting focus, executive briefing</summary>
+<br/>
+
+| View | Screenshot | What it does |
 | :--- | :---: | :--- |
-| **SOC Operator Dashboard** | ![Dashboard](docs/assets/dashboard.png) | High-density operations center displaying real-time ingestion rate (EPS), threat level gauges, active incident dossiers, live alert feed, and simulation controls. |
-| **Kill-Chain Spatial Topology** | ![Entity Graph](docs/assets/entity_graph_depth.png) | Interactive Cytoscape network graph projecting entities across MITRE ATT&CK stages. Solid cyan edges denote verified telemetry; dashed purple lines denote inferred correlation hypotheses. |
-| **Calibrated Alert Stream** | ![Alert Feed](docs/assets/alert_feed_confidence.png) | Live alert feed pairing WCAG AA severity badges with calibrated posterior probabilities $\hat{P}(Y=c\|X)$ (ECE: 0.0011) and top model feature importance weights. |
-| **Evidence Provenance Trail** | ![Evidence Trail](docs/assets/evidence_trail_gap.png) | 5-tier causal verification chain (`Packet` → `ML Classifier` → `Graph Pivot` → `Incident` → `Response`). Missing telemetry links are truthfully badged as absent gaps. |
-| **Temporal Investigation Scrubber** | ![Temporal Scrubber](docs/assets/scrubber_past_state.png) | Non-destructive time-slider reconstructing network state as of historical time $t$ while buffering live streaming events in memory. |
-| **Command & Entity Palette** | ![Command Palette](docs/assets/command_palette.png) | Global keyboard navigator (`⌘K` / `Ctrl+K`) supporting sub-millisecond search across active entities, IP addresses, threat categories, and navigation shortcuts. |
-| **Threat Hunting Focus Mode** | ![Hunting Focus](docs/assets/hunting_focus.png) | Query-driven investigation overlay highlighting matched threat entities while dimming non-relevant background topology. |
-| **Executive Incident Briefing** | ![Briefing Report](docs/assets/printed_briefing.png) | Print-ready incident dossier with canonical SHA-256 data integrity checksum, fact vs. hypothesis timeline, and exportable JSON evidence. |
+| **Command palette**<br/>(`⌘K` / `Ctrl+K`) | <img src="docs/assets/command_palette.png" width="420" alt="Command palette"/> | Keyboard-first search across entities, incidents, alerts, and navigation. Privileged actions are deliberately excluded. |
+| **Hunting focus** | <img src="docs/assets/hunting_focus.png" width="420" alt="Hunting focus on the graph"/> | Threat-hunting filters dim everything that didn't match and state the scope in text (*"Focused on N of M entities"*). |
+| **Executive briefing** | <img src="docs/assets/printed_briefing.png" width="420" alt="Printable executive briefing"/> | Print-ready dossier separating observations from hypotheses, with a downloadable JSON whose SHA-256 matches the printed checksum. |
 
-*For complete design system tokens, color contrast proofs, and motion settings, see [`docs/design-system.md`](docs/design-system.md).*
+</details>
 
----
+<br/>
 
-## ⚡ Core Capabilities
-
-- **Streaming Normalization & Ingestion:** Ingests heterogeneous network flows, process events, and authentication attempts. Enforces UTC monotonicity, port/IP boundary validation, payload SHA-256 fingerprinting, and dual-key LRU deduplication.
-- **Causal 48-Feature Extraction:** Computes backward-looking causal features spanning baseline deviation, graph topology, missingness indicators, and host sequence transitions with zero forward temporal leakage.
-- **Calibrated Supervised Classification:** Classifies threats across 5 canonical classes via a Balanced Random Forest with isotonic probability calibration, achieving an Expected Calibration Error (ECE) of **0.0011**.
-- **Unsupervised Anomaly Detection:** Runs dual Isolation Forests (network and endpoint) alongside per-entity Z-score statistical profilers to flag zero-day deviations that escape supervised training boundaries.
-- **Deterministic Incident Correlation:** Aggregates alerts across sliding time windows based on shared victim entities, pivot credentials, or target subnets, mapping stages to the MITRE ATT&CK kill chain.
-- **Defensive Application Security:** Privileged operations (`/api/model/reload`, `/api/ingest/reset`, `/api/ingest/replay`) require constant-time `AEGIS_ADMIN_KEY` authentication (`hmac.compare_digest`). Dead-letter queues recursively redact sensitive credentials.
-- **Spatial Investigation Dashboard:** React 19 interface featuring Cytoscape network topology, Three.js ambient background with adaptive performance scaling, WCAG AA contrast compliance, and full keyboard navigation.
+The interface is designed to meet WCAG 2.1 AA. Automated checks and a programmatic contrast audit are documented in [`docs/design-system.md`](docs/design-system.md); the manual screen-reader checklist is in [`docs/accessibility-checklist.md`](docs/accessibility-checklist.md).
 
 ---
 
-## 🏗️ Architecture Overview
-
-The AEGIS-ML architecture strictly decouples admission ingestion from asynchronous model inference and stateful incident correlation:
+## 🏗️ Architecture
 
 ```mermaid
-flowchart TD
-    subgraph Ingestion ["1. Streaming Ingestion & In-Memory Queue"]
-        Raw["Raw Telemetry (JSON / JSONL)<br/>Network • Endpoint • Auth Logs"] --> Norm["Event Normalizer<br/>Schema Validation • Monotonic UTC"]
-        Norm --> Dedup["LRU Deduplicator<br/>SHA-256 Fingerprint + Event ID"]
-        Dedup --> Queue["Bounded In-Memory Queue<br/>asyncio.Queue • Host Partition Locks"]
-    end
-
-    subgraph Featurization ["2. Causal Feature Assembly"]
-        Queue --> State["Temporal State & Graph Tracker<br/>Sequence Transitions • NetworkX Topology"]
-        State --> Vector["48-Dimensional Causal Feature Vector<br/>Strict Zero Forward Temporal Leakage"]
-    end
-
-    subgraph Detection ["3. Multi-Model Detection & Calibration"]
-        Vector --> IF["Isolation Forest<br/>Unsupervised Anomaly Score"]
-        Vector --> Drift["Entity Behavioral Profiler<br/>Z-Score Statistical Deviation"]
-        Vector --> RF["Threat Classifier<br/>Balanced Random Forest (5 Classes)"]
-        RF --> Calib["Isotonic Calibrator<br/>Posterior Probability P(Y=c|X)"]
-    end
-
-    subgraph Correlation ["4. Evidence Fusion & Incident Correlation"]
-        IF & Drift & Calib --> Fusion["Weighted Evidence Fusion<br/>Composite Severity Assessment"]
-        Fusion --> Correlator["Incident Correlator & Graph Engine<br/>Sliding Time Window • MITRE ATT&CK Mapping"]
-        Correlator --> API["FastAPI Application Server<br/>REST Endpoints • /ws/live Broadcast"]
-    end
-
-    subgraph SOC ["5. Investigation Frontend"]
-        API -->|WebSocket /ws/live| UI["React 19 Spatial Dashboard<br/>Cytoscape Graph • Temporal Scrubber • Dossiers"]
-    end
+flowchart LR
+    A["Telemetry<br/>network · endpoint · auth"] --> B["Normalize + dedupe<br/>monotonic UTC · SHA-256"]
+    B --> C["Bounded async queue<br/>per-host ordering"]
+    C --> D["48 causal features<br/>no forward-looking leakage"]
+    D --> E1["Random Forest<br/>+ isotonic calibration"]
+    D --> E2["Isolation Forests<br/>network + endpoint"]
+    D --> E3["Entity baselines<br/>z-score deviation"]
+    E1 --> F["Evidence fusion"]
+    E2 --> F
+    E3 --> F
+    F --> G["Incident correlator<br/>MITRE ATT&CK kill chain"]
+    G --> H["FastAPI<br/>REST + WebSocket"]
+    H --> I["React investigation console"]
 ```
 
-### Architectural Notes & Constraints:
-- **Bounded In-Memory Queue:** Ingestion buffers events in a bounded `asyncio.Queue` with per-host partition locks to maintain sequence causality during concurrent processing. *The queue is in-memory; uncompleted items will be lost if the server process terminates.*
-- **Graph Engine:** Topological graph metrics (degrees, bipartite ratios, clustering) are computed deterministically via NetworkX; the system does not utilize an experimental or end-to-end Graph Neural Network (GNN).
-- **Separation of Concerns:** Fast ingestion admission (~6,691–10,688 EPS) is decoupled from CPU-bound model featurization and scoring (~20–71 EPS).
+### Design decisions that matter
+- **Admission is decoupled from inference:** Ingestion accepts events in microseconds; featurization and scoring are CPU-bound and run in workers. Backpressure returns HTTP 429 instead of silently dropping.
+- **Per-host locks preserve causality:** Workers take a lock per host so out-of-order dequeues can't corrupt sequence features or graph state.
+- **Graph metrics are deterministic:** Degrees, bipartite ratios, and clustering come from NetworkX. There is no graph neural network.
+- **The queue is in memory:** A process crash loses in-flight events. A durable broker is the documented path to zero-loss.
+
+*Deep dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)*
 
 ---
 
 ## 🔬 Detection Pipeline
 
-### 1. 48-Dimensional Causal Feature Contract
-The feature extraction engine computes 48 backward-looking numerical features grouped into five functional categories:
+### 48 causal features
+Every feature looks backward only.
 
-| Feature Category | Count | Key Features & Signals |
+| Category | # | Examples |
 | :--- | :---: | :--- |
-| **Base Behavioral & Telemetry** | 15 | Byte volumes, packet ratios, flow duration, port risk rating, auth failure rate, entity baseline deviation, Isolation Forest baseline anomaly score. |
-| **Relational Graph Topology** | 6 | Source out-degree, destination in-degree, bipartite ratio, multi-hop indicator, local density, clustering coefficient (via NetworkX). |
-| **Context & Privilege Flags** | 10 | Telemetry layer flags (network, endpoint, auth), admin account indicator, service account flag, business hours flag, cross-subnet routing indicator. |
-| **Explicit Missingness Indicators** | 5 | Binary indicators for missing parent process ID, missing user account, missing payload hash, missing destination port, missing session token. |
-| **Host Sequence Transitions** | 12 | Rolling event rates, burstiness ratio, state transition indicators (`auth` $\rightarrow$ `exec` $\rightarrow$ `egress`), inter-event time delta variances. |
+| **Base behavior and telemetry** | 15 | Byte volumes, packet ratios, flow duration, port risk, auth-failure rate, baseline deviation, Isolation Forest score |
+| **Graph topology** | 6 | Out/in-degree, bipartite ratio, multi-hop indicator, local density, clustering |
+| **Context and privilege** | 10 | Layer flags, admin/service-account flags, business hours, cross-subnet routing |
+| **Explicit missingness** | 5 | Missing parent PID, user, payload hash, destination port, session token |
+| **Host sequence transitions** | 12 | Rolling rates, burstiness, auth → exec → egress transitions, inter-event timing variance |
 
-### 2. Threat Taxonomy & MITRE ATT&CK Mapping
-AEGIS-ML classifies events into five canonical classes mapped directly to kill-chain progression:
+### Five threat classes
 
-| Canonical Class | Description | Kill-Chain Stage | Primary Indicators |
-| :--- | :--- | :--- | :--- |
-| **`benign`** | Legitimate enterprise activity and regular background workloads | N/A | Normal port access, business hours, expected process hierarchy |
-| **`brute_force`** | Credential stuffing, password spraying, repeated auth failures | Weaponize / Delivery | High auth failure frequency, multi-user targeting from single IP |
-| **`lateral_movement`** | Internal network reconnaissance, PsExec execution, SMB token reuse | Install | Cross-subnet admin shares (SMB/RPC), unusual parent-child process pairs |
-| **`c2_beaconing`** | Periodic command & control heartbeats, external tunneling | Command & Control | Regular interval delta variance, low-byte beacons, non-standard egress |
-| **`data_exfiltration`** | Staging archive creation, high-volume outbound network egress | Exfiltrate | Abnormal upload/download byte ratios, off-hours large archive egress |
-
-### 3. Metric Provenance & Score Demarcation
-To avoid epistemic confusion, AEGIS-ML clearly separates model probabilities from heuristic operational scores:
-- **`calibrated_confidence` ($\in [0, 1]$):** Statistically calibrated posterior probability $\hat{P}(Y=c|X)$ produced by isotonic regression fitted on held-out validation data (ECE: 0.0011).
-- **`classifier_probability` ($\in [0, 1]$):** Raw, uncalibrated tree vote consensus fraction from the Random Forest ensemble.
-- **`anomaly_score` ($\in [0, 1]$):** Outlier score computed by the unsupervised Isolation Forest (scores $>0.65$ indicate anomalous deviation).
-- **`priority_score` ($\in [0, 99]$):** Composite operational triage rating computed heuristically:
-  $$\text{Priority} = \min\left(99, \; \text{round}\left(S_{\text{base}} + 12 \cdot (N_{\text{layers}} - 1) + 15 \cdot \text{conf} + 4 \cdot \ln(N_{\text{alerts}} + 1)\right)\right)$$
-
----
-
-## 📊 Evaluation Methodology & Empirical Results
-
-The model evaluation follows a strict, pre-registered protocol on held-out scenario partitions. All preprocessing scalers, baseline distributions, and isotonic calibrators were fitted exclusively on training or validation splits.
-
-- **Pre-Registered Evaluation Protocol:** [`docs/evaluation.md`](docs/evaluation.md)
-- **Detailed Evaluation Results:** [`docs/evaluation/RESULTS.md`](docs/evaluation/RESULTS.md)
-- **Formal Model Card:** [`docs/model-card.md`](docs/model-card.md)
-- **Machine-Readable Raw Evaluation Data:** [`docs/evaluation/results.json`](docs/evaluation/results.json)
-
-### 1. Headline Benchmark Results
-*Benchmark Dataset: `data/raw/behavioral_diversity_labeled.jsonl` (SHA-256: `1a8967f3...`)*  
-*Partitioning: Group-aware split by `scenario_id` (Zero Scenario Overlap, 0.0%)*  
-*Split Sizes: 70% Train (4,155 events / 80 scenarios), 15% Validation (676 events / 17 scenarios), 15% Held-out Test (886 events / 19 scenarios)*
-
-| Metric | Measured Point Estimate | 95% Group-Bootstrap Confidence Interval | Metric Interpretation |
-| :--- | :---: | :---: | :--- |
-| **Macro F1 Score** | **0.9866** | [0.7803, 0.9987] | Unweighted harmonic mean across all 5 classes |
-| **Weighted F1 Score** | **0.9943** | — | Support-weighted average F1 score across test set |
-| **Balanced Accuracy** | **0.9810** | — | Arithmetic mean of recall across all classes |
-| **Overall Accuracy** | **0.9944** | — | 881 of 886 held-out test events classified correctly |
-| **Benign False Alarm Rate (Argmax)** | **0.0024** | [0.0000, 0.0097] | Exactly 1 false positive out of 419 true benign samples |
-| **Alerts / 1,000,000 Benign Flows** | **2,386.63** | — | Extrapolated false alarm burden on benign traffic |
-| **Expected Calibration Error (ECE)** | **0.0011** | [0.0003, 0.0120] | Expected difference between predicted confidence and accuracy |
-| **Multi-Class Brier Score** | **0.0109** | — | Mean squared probability error (0.0 = perfect calibration) |
-
-### 2. Per-Class Performance & Confusion Matrix
-Evaluated on the 886 held-out test events from unseen scenario instances:
-
-| Class | Precision | Recall | F1-Score | Support | Detection Notes |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **`benign`** | 99.29% | 99.76% | 99.52% | 419 | 1 false alarm misclassified as data exfiltration |
-| **`brute_force`** | 100.00% | 100.00% | 100.00% | 238 | 238 of 238 events correctly identified |
-| **`lateral_movement`** | 100.00% | 91.43% | 95.52% | 35 | 32 of 35 identified (2 missed as benign, 1 as C2) |
-| **`data_exfiltration`** | 99.32% | 99.32% | 99.32% | 147 | 146 of 147 identified (1 missed as benign) |
-| **`c2_beaconing`** | 97.92% | 100.00% | 98.95% | 47 | 47 of 47 events correctly identified |
-
-```
-Confusion Matrix (Actual Rows × Predicted Columns):
-Labels: [benign, brute_force, lateral_movement, data_exfiltration, c2_beaconing]
-[[418,   0,   0,   1,   0],   <-- benign (1 false positive to data_exfiltration)
- [  0, 238,   0,   0,   0],   <-- brute_force (100% recall)
- [  2,   0,  32,   0,   1],   <-- lateral_movement (2 missed as benign, 1 misclassified as c2)
- [  1,   0,   0, 146,   0],   <-- data_exfiltration (1 missed as benign)
- [  0,   0,   0,   0,  47]]   <-- c2_beaconing (100% recall)
-```
-
-### 3. Comparative Baseline Progression
-| Model Configuration | Macro F1 | Weighted F1 | Bal. Acc | Benign FPR | ECE | Brier |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1. Majority Class Dummy** | 0.1284 | 0.3037 | 0.2000 | 0.0000 | 0.5271 | 1.0542 |
-| **2. L2 Logistic Regression (Scaled 48)** | 0.8644 | 0.9044 | 0.9556 | 0.2220 | 0.0709 | 0.1715 |
-| **3. Untuned Random Forest (Raw)** | 0.8703 | 0.9270 | 0.9609 | 0.1957 | 0.1060 | 0.1218 |
-| **4. Balanced RF + SMOTE (Uncalibrated)** | 0.8750 | 0.9310 | 0.9632 | 0.1838 | 0.1141 | 0.1144 |
-| **5. Full AEGIS-ML (Balanced RF + Isotonic Cal.)** | **0.9866** | **0.9943** | **0.9810** | **0.0024** | **0.0011** | **0.0109** |
-
-### 4. Zero-Day Generalization Stress Test (Leave-One-Attack-Type-Out)
-When an entire attack archetype is excluded from training, the supervised classifier fails to generalize to the novel attack:
-- **`data_exfiltration` held out:** 100.0% escape as benign.
-- **`lateral_movement` held out:** 94.3% escape as benign (5.7% misclassified as C2).
-- **`brute_force` held out:** 92.4% escape as benign (7.6% misclassified as C2).
-- **`c2_beaconing` held out:** 44.7% escape as benign; the **unsupervised Isolation Forest flagged 38.3%** of unseen C2 instances.
-*Defense-in-depth finding: Novel, unobserved zero-day attack tactics cannot be detected by supervised models alone and require anomaly detection and temporal incident correlation.*
-
----
-
-## 🚀 Performance Benchmarks
-
-Performance was evaluated on a local Apple Silicon workstation (macOS arm64, Python 3.10.12). Measurements distinguish fast admission ingestion from CPU-bound feature extraction and model inference.
-
-### 1. Ingestion Admission vs. Completed Detection Throughput
-*Source: [`data/models/streaming_benchmark_results.json`](data/models/streaming_benchmark_results.json) & [`data/models/async_benchmark_results.json`](data/models/async_benchmark_results.json)*
-
-| Operating Mode | Event Volume | Throughput (EPS) | Latency (p50 Median) | Latency (p95) | Memory Peak |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Ingestion Admission (Only)** | 1,000 | **10,651.59 EPS** | **0.096 ms** | 0.107 ms | 0.30 MB |
-| **Async Admission (Worker Enqueue)** | 100 | **6,691.01 EPS** | **0.146 ms** | 0.180 ms | 2.15 MB |
-| **Full Detection (Sync, 1 Worker)** | 1,000 | **20.54 EPS** | **52.99 ms** | 54.44 ms | 5.28 MB |
-| **Full Detection (Async Queue, Multi-Worker)** | 500 | **71.02 EPS** | **13.50 ms** (proc) | 15.52 ms (proc) | 3.03 MB |
-
-### 2. Sustained Load, Queue Accounting & Backpressure
-*Source: [`data/models/sustained_load_test_results.json`](data/models/sustained_load_test_results.json)*
-
-During sustained load tests, the queue reconciliation system accounts for 100% of events across terminal states:
-- **Workload 100:** 109 events streamed $\rightarrow$ 109 accepted, 108 completed, 1 in-queue duplicate, 0 rejected, **0 unexplained loss**. Throughput: 68.91 EPS.
-- **Workload 250:** 271 events streamed $\rightarrow$ 271 accepted, 268 completed, 3 in-queue duplicates, 0 rejected, **0 unexplained loss**. Throughput: 71.63 EPS.
-- **Workload 500:** 542 events streamed $\rightarrow$ 542 accepted, 537 completed, 5 in-queue duplicates, 0 rejected, **0 unexplained loss**. Throughput: 71.02 EPS.
-- **Workload 1,000 (Burst Over Queue Capacity):** 1,084 events streamed into a 500-capacity queue $\rightarrow$ 756 accepted, 749 completed, 7 in-queue duplicates, **328 rejected via backpressure (HTTP 429)**, **0 unexplained loss**.
-
----
-
-## 🔒 Security & Reliability Controls
-
-| Control Area | Implementation Mechanism | Defensive Behavior |
+| Class | Kill-chain stage | Signals |
 | :--- | :--- | :--- |
-| **Administrative Auth** | Constant-time `hmac.compare_digest` validation | Endpoints (`/api/model/reload`, `/api/ingest/reset`, `/api/ingest/replay`, `/api/ingest/queue/dead-letter`) strictly require `AEGIS_ADMIN_KEY`. Fails closed with HTTP 503 if unconfigured. |
-| **Ingestion Deduplication** | High-capacity dual-key LRU cache (100,000 entries) | Discards re-transmitted duplicates based on `event_id` and payload SHA-256 fingerprint without inflating incident relationship counts. |
-| **Dead-Letter Sanitization** | Recursive payload scrubber | Sensitive attributes (`password`, `token`, `secret`, `authorization`, `private_key`) are redacted before persisting failed payloads to dead-letter queues. |
-| **Concurrency Safety** | Host-partitioned async locks | Workers acquire per-host locks to prevent out-of-order dequeues from corrupting host sequence transitions or graph states. |
-| **CORS Governance** | Dynamic regex authorization | Production deployments restrict origins matching `^https://.*\.vercel\.app$`. Disallows credentialed wildcards (`*`). |
-| **Zero Secrets Policy** | Environment variable isolation | Zero secret values, credentials, or private machine paths are committed or printed in logs. |
+| **`benign`** | N/A | Normal ports, hours, process hierarchy |
+| **`brute_force`** | Weaponize / Delivery | Repeated auth failures, one source against many accounts |
+| **`lateral_movement`** | Install | Cross-subnet SMB/RPC, PsExec, unusual parent-child processes |
+| **`c2_beaconing`** | Command & Control | Regular intervals, low-byte beacons, non-standard egress |
+| **`data_exfiltration`** | Exfiltrate | Abnormal upload ratios, off-hours archive egress |
+
+### Four numbers, four meanings
+
+| Field | Range | What it actually is |
+| :--- | :---: | :--- |
+| **`calibrated_confidence`** | 0 to 1 | Calibrated probability from isotonic regression fitted on held-out validation data |
+| **`classifier_probability`** | 0 to 1 | Raw Random Forest vote fraction. Not calibrated |
+| **`anomaly_score`** | 0 to 1 | Isolation Forest outlier score (above 0.65 means anomalous) |
+| **`priority_score`** | 0 to 99 | Heuristic triage rating. Convenient, not probabilistic |
+
+---
+
+## 📊 Evidence: What the Numbers Do and Don't Say
+
+- **Protocol:** Pre-registered in [`docs/evaluation.md`](docs/evaluation.md). Group-aware split by `scenario_id` with zero scenario overlap. Scalers, baselines, and calibrators were fitted on training or validation data only.
+- **Data:** [`data/raw/behavioral_diversity_labeled.jsonl`](data/raw/behavioral_diversity_labeled.jsonl), synthetic. 70% train (4,155 events, 80 scenarios), 15% validation (676 events, 17 scenarios), 15% held-out test (886 events, 19 scenarios).
+
+### Headline results (held-out test)
+
+| Metric | Value | 95% CI (group bootstrap) |
+| :--- | :---: | :---: |
+| **Macro F1** | **0.9866** | [0.7803, 0.9987] |
+| **Weighted F1** | **0.9943** | — |
+| **Balanced accuracy** | **0.9810** | — |
+| **Accuracy** | **0.9944** (881 / 886) | — |
+| **Benign false-alarm rate** | **0.0024** (1 / 419) | [0.0000, 0.0097] |
+| **Expected calibration error** | **0.0011** | [0.0003, 0.0120] |
+| **Brier score** | **0.0109** | — |
+
+> [!NOTE]
+> **Read the confidence intervals.** The test set is 886 events but only 19 scenarios, and events within a scenario are highly correlated. The macro-F1 interval's lower bound of 0.78 reflects that. Treat 0.9866 as *"works well on this synthetic benchmark,"* not as a precise estimate of anything beyond it. The benign false-alarm rate extrapolates to roughly 2,387 alerts per million benign flows from a single observed false positive.
+
+<details>
+<summary><b>Per-class results and confusion matrix</b></summary>
+<br/>
+
+| Class | Precision | Recall | F1 | Support |
+| :--- | :---: | :---: | :---: | :---: |
+| **`benign`** | 99.29% | 99.76% | 99.52% | 419 |
+| **`brute_force`** | 100.00% | 100.00% | 100.00% | 238 |
+| **`lateral_movement`** | 100.00% | 91.43% | 95.52% | 35 |
+| **`data_exfiltration`** | 99.32% | 99.32% | 99.32% | 147 |
+| **`c2_beaconing`** | 97.92% | 100.00% | 98.95% | 47 |
+
+```
+Rows = actual, columns = predicted
+Labels: [benign, brute_force, lateral_movement, data_exfiltration, c2_beaconing]
+[[418,   0,   0,   1,   0],
+ [  0, 238,   0,   0,   0],
+ [  2,   0,  32,   0,   1],
+ [  1,   0,   0, 146,   0],
+ [  0,   0,   0,   0,  47]]
+```
+
+*`lateral_movement` is the weakest class: 3 of 35 missed (2 as benign, 1 as C2).*
+
+</details>
+
+<details>
+<summary><b>Baseline comparison</b></summary>
+<br/>
+
+| Configuration | Macro F1 | Weighted F1 | Bal. Acc | Benign FPR | ECE | Brier |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Majority class** | 0.1284 | 0.3037 | 0.2000 | 0.0000 | 0.5271 | 1.0542 |
+| **Logistic regression (scaled, 48 features)** | 0.8644 | 0.9044 | 0.9556 | 0.2220 | 0.0709 | 0.1715 |
+| **Untuned Random Forest** | 0.8703 | 0.9270 | 0.9609 | 0.1957 | 0.1060 | 0.1218 |
+| **Balanced RF + SMOTE (uncalibrated)** | 0.8750 | 0.9310 | 0.9632 | 0.1838 | 0.1141 | 0.1144 |
+| **Full AEGIS-ML (Balanced RF + isotonic calibration)** | **0.9866** | **0.9943** | **0.9810** | **0.0024** | **0.0011** | **0.0109** |
+
+*Baselines give context, not a component-by-component attribution. A per-component ablation is on the [roadmap](#-roadmap). Configuration details: [`docs/evaluation/RESULTS.md`](docs/evaluation/RESULTS.md).*
+
+</details>
+
+### 🚨 Where it fails: the zero-day stress test
+When an entire attack type is removed from training, the supervised classifier can't recognize it:
+
+| Held-out attack type | Escaped as benign | Visual Escape Rate |
+| :--- | :---: | :--- |
+| **`data_exfiltration`** | **100.0%** | `██████████` |
+| **`lateral_movement`** | **94.3%** | `█████████░` |
+| **`brute_force`** | **92.4%** | `█████████░` |
+| **`c2_beaconing`** | **44.7%** | `████░░░░░░` |
+
+The unsupervised Isolation Forest flagged **38.3%** of the unseen C2 instances.  
+*Takeaway:* Supervised classification alone won't catch novel tactics. This is why anomaly detection and temporal incident correlation sit alongside it.
+
+📎 **Full results:** [`RESULTS.md`](docs/evaluation/RESULTS.md) · [`results.json`](docs/evaluation/results.json) · [`Model card`](docs/model-card.md)
+
+---
+
+## ⚡ Performance
+
+Measured on an Apple Silicon workstation (macOS arm64, Python 3.10.12).
+
+| Mode | Events | Throughput | Median latency |
+| :--- | :---: | :---: | :---: |
+| **Admission only** | 1,000 | **10,651 EPS** | **0.096 ms** |
+| **Async admission (enqueue)** | 100 | **6,691 EPS** | **0.146 ms** |
+| **Full detection, sync, 1 worker** | 1,000 | **20.5 EPS** | **52.99 ms** |
+| **Full detection, async queue, multi-worker** | 500 | **71.0 EPS** | **13.50 ms** |
+
+*Read this correctly:* Admission is fast because it only validates and enqueues. Completed detection, meaning featurization plus model scoring, runs at tens of events per second per host on this setup. Size deployments against the second number.
+
+<details>
+<summary><b>Sustained load and backpressure accounting</b></summary>
+<br/>
+
+Every event is accounted for in a terminal state, with **0 unexplained loss** across all runs.
+
+| Workload | Streamed | Accepted | Completed | Duplicates | Rejected (HTTP 429) | EPS |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **100** | 109 | 109 | 108 | 1 | 0 | 68.91 |
+| **250** | 271 | 271 | 268 | 3 | 0 | 71.63 |
+| **500** | 542 | 542 | 537 | 5 | 0 | 71.02 |
+| **1,000 (burst over 500-slot queue)** | 1,084 | 756 | 749 | 7 | **328** | — |
+
+*Sources: [`data/models/streaming_benchmark_results.json`](data/models/streaming_benchmark_results.json), [`data/models/async_benchmark_results.json`](data/models/async_benchmark_results.json), [`data/models/sustained_load_test_results.json`](data/models/sustained_load_test_results.json).*
+
+</details>
+
+---
+
+## 🔒 Security Controls
+
+| Area | Mechanism |
+| :--- | :--- |
+| **Admin endpoints** | `/api/model/reload`, `/api/ingest/reset`, `/api/ingest/replay`, and the dead-letter endpoints require `AEGIS_ADMIN_KEY`, compared in constant time (`hmac.compare_digest`). If the key is unset, they fail closed with HTTP 503. |
+| **Deduplication** | 100,000-entry dual-key LRU on `event_id` and payload SHA-256, so retransmissions don't inflate incident evidence. |
+| **Dead-letter hygiene** | Failed payloads are recursively scrubbed of `password`, `token`, `secret`, `authorization`, and `private_key` before storage. |
+| **Concurrency** | Per-host async locks keep sequence state consistent under parallel workers. |
+| **CORS** | Origin allow-list with no credentialed wildcard. Set it to your own domains for deployment. |
+| **Secrets** | No credentials in the repo. Configuration comes from the environment. |
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
-- **Python:** 3.10+ (tested on Python 3.10.12)
-- **Node.js & npm:** Node 18+ and npm 9+
-- **Git:** Standard Git installation
+**Prerequisites:** Python 3.10+, Node 18+, Git.
 
-### 2. Installation & Environment Setup
 ```bash
 # Clone the repository
 git clone https://github.com/akashcodes23/AEGIS-ML.git
 cd AEGIS-ML
 
-# Configure Python virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
+# Setup Python virtual environment & backend dependencies
+python3 -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
 pip install -r backend/requirements.txt
 
-# Install Frontend dependencies
+# Setup Frontend dependencies
 npm --prefix frontend install
 
-# Copy environment template
-cp .env.example .env
+# Configure environment
+cp .env.example .env  # Windows: copy .env.example .env
 ```
 
-### 3. Launching Locally
-**Terminal 1 — Backend API Server:**
+### Terminal 1: API
 ```bash
 source .venv/bin/activate
 uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-*API Swagger documentation will be accessible at `http://localhost:8000/docs`.*
 
-**Terminal 2 — Frontend Application:**
+### Terminal 2: Console
 ```bash
 npm --prefix frontend run dev
 ```
-*The spatial SOC dashboard will be accessible at `http://localhost:5173`.*
 
----
+Open [http://localhost:5173](http://localhost:5173) (API docs at [http://localhost:8000/docs](http://localhost:8000/docs)), then follow [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) to start the synthetic replay.
 
-## 🧪 Verification & Testing Commands
-
-All test suites and verification scripts can be executed locally:
+<details>
+<summary><b>Verify everything yourself</b></summary>
+<br/>
 
 ```bash
-# 1. Full Backend Test Suite (347 tests, ~2m 15s)
+# 347 backend tests (~2 min)
 PYTHONPATH=. pytest tests/
 
-# 2. Frontend Unit & Logic Suite (90 tests, ~170ms)
+# 90 frontend tests
 node --test frontend/src/**/*.test.js
 
-# 3. Frontend Lint
+# Frontend lint & build
 npm --prefix frontend run lint
-
-# 4. Frontend Production Build (~300ms)
 npm --prefix frontend run build
 
-# 5. Cryptographic Artifact Integrity Verification
+# Artifact integrity checks
 shasum -a 256 data/models/calibrated_threat_classifier.pkl
-# Expected: 98e926edc4dc53e3e34d48c78aa0390565c70029325bea896e0ab631e757ce71
+# 98e926edc4dc53e3e34d48c78aa0390565c70029325bea896e0ab631e757ce71
 
 shasum -a 256 data/raw/behavioral_diversity_labeled.jsonl
-# Expected: 1a8967f3253bb6dfdd19d278a3f1f486759305fa447c5a84a4daafbb892ce352
+# 1a8967f3253bb6dfdd19d278a3f1f486759305fa447c5a84a4daafbb892ce352
 ```
 
----
-
-## ⚠️ Limitations & Operational Scope
-
-1. **Synthetic Benchmark Scope:** All reported evaluation metrics derive from controlled scenario-grouped synthetic benchmarks. Real-world corporate networks exhibit substantially more diverse benign workloads, sensor outages, and covariate drift.
-2. **Zero-Day Classifier Blindness:** The supervised Random Forest model is blind to novel attack archetypes omitted during training (44.7% to 100% benign escape rate). Unseen zero-day intrusions must be detected via the unsupervised Isolation Forest and temporal correlation.
-3. **External Benchmark Status (CIC-IDS2017):** Evaluation against public CIC-IDS2017 flow datasets is `BLOCKED_AWAITING_LOCAL_COPY` due to absent endpoint process and socket telemetry.
-4. **In-Memory Queue Volatility:** The async queue operates in memory (`asyncio.Queue`). Abnormal process termination will drop in-flight queue items. Zero-loss guarantees across node reboots require an external durable message broker (Kafka or RabbitMQ).
-5. **Deterministic Graph Analytics:** Network topology metrics are computed via NetworkX rather than an end-to-end trained Temporal Graph Neural Network (T-GNN).
-6. **No Automated Enforcement:** AEGIS-ML is strictly an observational detection and incident correlation system; it does not deploy kernel-level EDR drivers or apply automated firewall modifications.
+</details>
 
 ---
 
-## 📚 Technical Documentation Directory
+## ⚠️ Limitations
 
-| Document | Description |
+- **Synthetic benchmark scope:** Real networks have more varied benign workloads, sensor outages, and drift. Expect lower performance.
+- **Small effective test size:** 19 held-out scenarios means wide uncertainty, as the confidence intervals show.
+- **Zero-day blindness of the classifier:** Unseen attack types escape as benign 44.7% to 100% of the time. Only the anomaly layer and correlation help.
+- **No external validation yet:** CIC-IDS2017 is blocked on missing process and socket telemetry.
+- **Throughput:** Completed detection is tens of EPS on the tested hardware, not enterprise line rate.
+- **Volatile queue:** In-memory `asyncio.Queue`; a crash drops in-flight events.
+- **No enforcement:** Observational only; playbook isolation is simulated.
+- **Adversarial robustness is not evaluated.**
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] Evaluate on a real or externally sourced dataset that provides the full feature schema
+- [ ] Component ablation to attribute performance gains (calibration vs. resampling vs. features)
+- [ ] Durable ingestion (Kafka or RabbitMQ) for zero-loss restarts
+- [ ] Adversarial-evasion and drift evaluation
+- [ ] Learned temporal graph model, compared against the current deterministic metrics
+
+---
+
+## 📚 Documentation
+
+| Document | Contents |
 | :--- | :--- |
-| [`docs/STAGE10_FINAL_RELEASE_AUDIT.md`](docs/STAGE10_FINAL_RELEASE_AUDIT.md) | Exhaustive 11-section Stage 10 release audit, security review, and merge readiness verdict. |
-| [`docs/model-card.md`](docs/model-card.md) | Formal ML model card detailing data provenance, model architecture, calibrated metrics, and failure modes. |
-| [`docs/evaluation.md`](docs/evaluation.md) | Pre-registered empirical evaluation protocol, data leakage safeguards, and baseline criteria. |
-| [`docs/evaluation/RESULTS.md`](docs/evaluation/RESULTS.md) | Complete empirical evaluation tables, bootstrap confidence intervals, and confusion matrices. |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | In-depth technical architecture, data lifecycle specifications, and component interactions. |
-| [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) | Step-by-step operator guide for reproducing synthetic demonstration replays. |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deployment instructions for Render backend and Vercel frontend. |
-| [`docs/design-system.md`](docs/design-system.md) | Complete design token specifications, spatial typography, and programmatic contrast audit tables. |
-| [`docs/accessibility-checklist.md`](docs/accessibility-checklist.md) | WCAG 2.1 AA assistive screen-reader manual verification checklist. |
-| [`CHANGELOG.md`](CHANGELOG.md) | Historical release notes and architectural evolution across development stages. |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Data lifecycle and component interactions |
+| [`docs/evaluation.md`](docs/evaluation.md) · [`docs/evaluation/RESULTS.md`](docs/evaluation/RESULTS.md) | Pre-registered protocol and full results |
+| [`docs/model-card.md`](docs/model-card.md) | Data provenance, metrics, failure modes, intended use |
+| [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) | Reproduce the synthetic demonstration |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Render (backend) and Vercel (frontend) |
+| [`docs/design-system.md`](docs/design-system.md) | Tokens, motion, contrast audit |
+| [`docs/accessibility-checklist.md`](docs/accessibility-checklist.md) | Manual screen-reader verification |
+| [`docs/STAGE10_FINAL_RELEASE_AUDIT.md`](docs/STAGE10_FINAL_RELEASE_AUDIT.md) | Release audit and security review |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history |
 
 ---
 
-## 📄 License & Maintainer
+## 🤝 Contributing
 
-- **Release Version:** `v1.0.0-rc.1` (Release Candidate 1)
-- **License:** [Apache License 2.0](LICENSE)
-- **Author & Maintainer:** [@akashcodes23](https://github.com/akashcodes23)
+Issues and pull requests are welcome. Please run the backend and frontend suites and the linter before opening a PR. If your change affects detection behavior, update the evaluation docs with it.
+
+---
+
+## 📄 License
+
+[Apache License 2.0](LICENSE) · Maintained by [@akashcodes23](https://github.com/akashcodes23)
+
+<br/>
+
+<div align="center">
+<sub>Built to be audited, not just demoed. ⭐ Star the repo if it's useful.</sub>
+</div>
