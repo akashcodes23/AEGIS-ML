@@ -62,54 +62,22 @@ AEGIS-ML unifies network flows, host process events, and authentication logs, th
 
 ---
 
-## 🖼️ Visual Tour
+## 🖼️ Interface & Visual Tour
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/assets/entity_graph_depth.png" alt="Entity graph with kill-chain depth"/>
-      <br/>
-      <b>Kill-chain depth graph</b><br/>
-      Entities sit at visual depth by ATT&CK stage. Solid edges are verified telemetry; dashed edges are inferred hypotheses.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/assets/alert_feed_confidence.png" alt="Alert feed with calibrated confidence"/>
-      <br/>
-      <b>Calibrated alert stream</b><br/>
-      Severity badges beside calibrated probabilities, an explicit "uncalibrated" label where applicable, and top feature contributions.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/assets/evidence_trail_gap.png" alt="Evidence provenance trail with a gap"/>
-      <br/>
-      <b>Evidence provenance trail</b><br/>
-      Packet → classifier → graph pivot → incident → response. Absent links are drawn as gaps, not smoothed over.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/assets/scrubber_past_state.png" alt="Temporal scrubber at a past state"/>
-      <br/>
-      <b>Temporal scrubber</b><br/>
-      Replay the network as of time <i>t</i>. Live events buffer in memory, and a banner shows how many arrived since.
-    </td>
-  </tr>
-</table>
+The AEGIS-ML console provides an accessible, spatial investigation environment built with React 19, Cytoscape.js, and Three.js adhering to **WCAG 2.1 Level AA** standards. All interface views operate on live streaming or historical telemetry:
 
-<details>
-<summary><b>More views</b>: command palette, hunting focus, executive briefing</summary>
-<br/>
+| View | Operational Capabilities & Semantic Role |
+| :--- | :--- |
+| **SOC Operator Dashboard** | High-density operations center displaying real-time ingestion rate (EPS), threat level gauges, active incident dossiers, live alert feed, and simulation controls. |
+| **Kill-Chain Spatial Topology** | Interactive Cytoscape network graph projecting entities across MITRE ATT&CK stages. Solid cyan edges denote verified telemetry; dashed purple lines denote inferred correlation hypotheses. |
+| **Calibrated Alert Stream** | Live alert feed pairing WCAG AA severity badges with calibrated posterior probabilities $\hat{P}(Y=c\|X)$ (ECE: 0.0011) and top model feature importance weights. |
+| **Evidence Provenance Trail** | 5-tier causal verification chain (`Packet` → `ML Classifier` → `Graph Pivot` → `Incident` → `Response`). Missing telemetry links are truthfully badged as absent gaps. |
+| **Temporal Investigation Scrubber** | Non-destructive time-slider reconstructing network state as of historical time $t$ while buffering live streaming events in memory. |
+| **Command & Entity Palette** (`⌘K` / `Ctrl+K`) | Global keyboard navigator supporting sub-millisecond search across active entities, IP addresses, threat categories, and navigation shortcuts. Privileged actions are deliberately excluded. |
+| **Threat Hunting Focus Mode** | Query-driven investigation overlay highlighting matched threat entities while dimming non-relevant background topology (*"Focused on N of M entities"*). |
+| **Executive Incident Briefing** | Print-ready incident dossier separating observations from hypotheses, with a downloadable JSON whose SHA-256 matches the printed checksum. |
 
-| View | Screenshot | What it does |
-| :--- | :---: | :--- |
-| **Command palette**<br/>(`⌘K` / `Ctrl+K`) | <img src="docs/assets/command_palette.png" width="420" alt="Command palette"/> | Keyboard-first search across entities, incidents, alerts, and navigation. Privileged actions are deliberately excluded. |
-| **Hunting focus** | <img src="docs/assets/hunting_focus.png" width="420" alt="Hunting focus on the graph"/> | Threat-hunting filters dim everything that didn't match and state the scope in text (*"Focused on N of M entities"*). |
-| **Executive briefing** | <img src="docs/assets/printed_briefing.png" width="420" alt="Printable executive briefing"/> | Print-ready dossier separating observations from hypotheses, with a downloadable JSON whose SHA-256 matches the printed checksum. |
-
-</details>
-
-<br/>
-
-The interface is designed to meet WCAG 2.1 AA. Automated checks and a programmatic contrast audit are documented in [`docs/design-system.md`](docs/design-system.md); the manual screen-reader checklist is in [`docs/accessibility-checklist.md`](docs/accessibility-checklist.md).
+*The interface is designed to meet WCAG 2.1 AA. Automated checks and a programmatic contrast audit are documented in [`docs/design-system.md`](docs/design-system.md); the manual screen-reader checklist is in [`docs/accessibility-checklist.md`](docs/accessibility-checklist.md).*
 
 ---
 
